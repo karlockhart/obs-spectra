@@ -44,19 +44,26 @@ add_library(OBS::spectra-vision ALIAS spectra-vision)
 target_sources(
   spectra-vision
   PRIVATE
+    include/spectra-vision/chat.hpp
     include/spectra-vision/export.hpp
     include/spectra-vision/image.hpp
+    include/spectra-vision/imaging.hpp
     include/spectra-vision/ocr.hpp
+    include/spectra-vision/text.hpp
+    src/chat.cpp
     src/geometry.cpp
     src/geometry.hpp
     src/image.cpp
+    src/imaging.cpp
     src/ocr.cpp
+    src/text.cpp
 )
 
 target_include_directories(spectra-vision PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_definitions(spectra-vision PRIVATE SPECTRA_VISION_BUILD)
 target_compile_features(spectra-vision PUBLIC cxx_std_20)
-target_link_libraries(spectra-vision PRIVATE Spectra::onnxruntime)
+find_package(Qt6 REQUIRED Core Gui)
+target_link_libraries(spectra-vision PUBLIC Qt::Core PRIVATE Spectra::onnxruntime)
 
 set_target_properties_obs(spectra-vision PROPERTIES FOLDER spectra)
 
@@ -83,8 +90,13 @@ target_add_resource(spectra-vision "${SPECTRA_OCR_REC_MODEL_PATH}" "${OBS_DATA_D
 target_add_resource(spectra-vision "${onnxruntime_root}/LICENSE" "${OBS_DATA_DESTINATION}/spectra-vision/licenses/onnxruntime")
 
 # Command-line OCR tool, used to compare results with RapidOCR
-find_package(Qt6 REQUIRED Gui)
 add_executable(spectra-ocr tools/spectra-ocr.cpp)
 target_link_libraries(spectra-ocr PRIVATE spectra-vision Qt::Gui)
 set_target_properties(spectra-ocr PROPERTIES FOLDER spectra)
 set_target_properties_obs(spectra-ocr)
+
+# Tests (ports of Obscura/Lucida tests): spectra-vision-tests <tests/data> [screenshots]
+add_executable(spectra-vision-tests tests/spectra-vision-tests.cpp)
+target_link_libraries(spectra-vision-tests PRIVATE spectra-vision Qt::Gui)
+set_target_properties(spectra-vision-tests PROPERTIES FOLDER spectra)
+set_target_properties_obs(spectra-vision-tests)
