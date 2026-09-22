@@ -1053,6 +1053,7 @@ private:
 	QPointer<LoopRecorder> loopRecorder;
 	QPointer<QMenu> spectraMenu;
 	QPointer<QAction> loopToggleAction;
+	QPointer<QAction> captureStatusAction;
 
 	void InitSpectra();
 	void UpdateLoopRecordingUI(bool active);
@@ -1064,6 +1065,7 @@ public:
 	bool LoopRecordingActive() const;
 	bool SplitLoopRecording();
 	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
+	OBSScene GetProgramScene();
 
 public slots:
 	void ShowReplayBufferPauseWarning();

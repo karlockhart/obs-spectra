@@ -54,6 +54,9 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	autoStart->setChecked(recorder->AutoStartEnabled());
 	autoStop = new QCheckBox(QTStr("Spectra.Loop.Settings.AutoStop"));
 	autoStop->setChecked(recorder->AutoStopEnabled());
+	autoCapture = new QCheckBox(QTStr("Spectra.Loop.Settings.AutoCapture"));
+	autoCapture->setChecked(recorder->AutoCaptureEnabled());
+	autoCapture->setToolTip(QTStr("Spectra.Loop.Settings.AutoCaptureTip"));
 
 	processes = new QLineEdit(recorder->ProcessPatterns().join(", "));
 	processes->setToolTip(QTStr("Spectra.Loop.Settings.ProcessesTip"));
@@ -71,6 +74,7 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoStart);
 	form->addRow(QTStr("Spectra.Loop.Settings.Processes"), processes);
 	form->addRow(QString(), autoStop);
+	form->addRow(QString(), autoCapture);
 
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -116,6 +120,7 @@ void SpectraLoopSettings::accept()
 	config_set_int(config, LOOP_SECTION, "ClipSec", clipSec->value());
 	config_set_bool(config, LOOP_SECTION, "AutoStart", autoStart->isChecked());
 	config_set_bool(config, LOOP_SECTION, "AutoStop", autoStop->isChecked());
+	config_set_bool(config, LOOP_SECTION, "AutoCapture", autoCapture->isChecked());
 	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->text().trimmed()));
 	config_save_safe(config, "tmp", nullptr);
 

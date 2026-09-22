@@ -21,6 +21,8 @@ target_sources(
     utility/GoLiveAPI_Network.hpp
     utility/GoLiveAPI_PostData.cpp
     utility/GoLiveAPI_PostData.hpp
+    utility/LoopCapture.cpp
+    utility/LoopCapture.hpp
     utility/LoopRecorder.cpp
     utility/LoopRecorder.hpp
     utility/MissingFilesModel.cpp

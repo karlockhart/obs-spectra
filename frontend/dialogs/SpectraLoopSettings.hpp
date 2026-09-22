@@ -28,6 +28,7 @@ private:
 	QSpinBox *clipSec;
 	QCheckBox *autoStart;
 	QCheckBox *autoStop;
+	QCheckBox *autoCapture;
 	QLineEdit *processes;
 	QLabel *usage;
 

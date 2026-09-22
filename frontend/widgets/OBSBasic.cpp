@@ -765,6 +765,7 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_int(activeConfiguration, "SpectraLoop", "ClipSec", 120);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStart", true);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStop", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoCapture", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
 	config_set_default_string(activeConfiguration, "SpectraLoop", "ClipsPath", "");

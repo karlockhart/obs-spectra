@@ -27,6 +27,10 @@ void OBSBasic::InitSpectra()
 	spectraMenu = new QMenu(QTStr("Spectra.Menu"), this);
 	menuBar()->insertMenu(ui->menuTools->menuAction(), spectraMenu);
 
+	captureStatusAction = spectraMenu->addAction(loopRecorder->Capture()->StatusText());
+	captureStatusAction->setEnabled(false);
+	spectraMenu->addSeparator();
+
 	loopToggleAction = spectraMenu->addAction(QTStr("Spectra.Loop.Start"));
 	connect(loopToggleAction, &QAction::triggered, this, [this]() {
 		if (loopRecorder->Active()) {
@@ -76,7 +80,23 @@ void OBSBasic::InitSpectra()
 		SysTrayNotify(msg, QSystemTrayIcon::Warning);
 	});
 
+	connect(loopRecorder->Capture(), &LoopCapture::stateChanged, this, [this](LoopCapture::State state) {
+		QString status = loopRecorder->Capture()->StatusText();
+		captureStatusAction->setText(status);
+		if (state == LoopCapture::State::NotCapturing || state == LoopCapture::State::WindowCapture) {
+			ShowStatusBarMessage(status);
+			SysTrayNotify(status, state == LoopCapture::State::NotCapturing ? QSystemTrayIcon::Warning
+											: QSystemTrayIcon::Information);
+		}
+	});
+
 	UpdateLoopRecordingUI(false);
+}
+
+OBSScene OBSBasic::GetProgramScene()
+{
+	OBSSource source = IsPreviewProgramMode() ? GetProgramSource() : GetCurrentSceneSource();
+	return obs_scene_from_source(source);
 }
 
 void OBSBasic::UpdateLoopRecordingUI(bool active)

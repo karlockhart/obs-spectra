@@ -49,8 +49,11 @@ static QStringList RunningProcessNames()
 	return names;
 }
 
-LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_)
+LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_), capture(new LoopCapture(main_))
 {
+	captureTimer.setInterval(PROCESS_POLL_MS);
+	connect(&captureTimer, &QTimer::timeout, this, &LoopRecorder::UpdateCapture);
+
 	processTimer.setInterval(PROCESS_POLL_MS);
 	connect(&processTimer, &QTimer::timeout, this, &LoopRecorder::CheckProcesses);
 
@@ -115,6 +118,20 @@ bool LoopRecorder::AutoStopEnabled() const
 	return config_get_bool(main->Config(), LOOP_SECTION, "AutoStop");
 }
 
+bool LoopRecorder::AutoCaptureEnabled() const
+{
+	return config_get_bool(main->Config(), LOOP_SECTION, "AutoCapture");
+}
+
+void LoopRecorder::UpdateCapture()
+{
+	if (AutoCaptureEnabled()) {
+		capture->Update(ProcessPatterns());
+	} else {
+		capture->Reset();
+	}
+}
+
 QStringList LoopRecorder::ProcessPatterns() const
 {
 	QStringList patterns;
@@ -156,6 +173,9 @@ bool LoopRecorder::Start(const QString &label_)
 	currentSegment.clear();
 	sessionSegments.clear();
 
+	/* Put the game on screen before the first frame is recorded */
+	UpdateCapture();
+
 	return main->StartLoopRecording(dir, SegmentSeconds());
 }
 
@@ -178,6 +198,7 @@ void LoopRecorder::OnStarted()
 	blog(LOG_INFO, "[Spectra] Loop recording started in '%s' (quota %llu GB, %d s segments)",
 	     QT_TO_UTF8(LoopDirectory()), QuotaBytes() / (1024ull * 1024ull * 1024ull), SegmentSeconds());
 	EnforceQuota();
+	captureTimer.start();
 	emit activeChanged(true);
 }
 
@@ -195,6 +216,8 @@ void LoopRecorder::OnStopped(int code, const QString &error)
 	}
 
 	autoStarted = false;
+	captureTimer.stop();
+	capture->Reset();
 	ProcessPendingClips();
 	emit activeChanged(false);
 }

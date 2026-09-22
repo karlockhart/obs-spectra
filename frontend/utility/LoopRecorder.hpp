@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <QTimer>
 
+#include "LoopCapture.hpp"
+
 #include <vector>
 
 class OBSBasic;
@@ -31,7 +33,10 @@ public:
 	int DefaultClipSeconds() const;
 	bool AutoStartEnabled() const;
 	bool AutoStopEnabled() const;
+	bool AutoCaptureEnabled() const;
 	QStringList ProcessPatterns() const;
+
+	LoopCapture *Capture() const { return capture; }
 
 	bool Start(const QString &label = QString());
 	void Stop();
@@ -66,6 +71,8 @@ private:
 	OBSBasic *main;
 	QTimer processTimer;
 	QTimer splitTimeout;
+	QTimer captureTimer;
+	LoopCapture *capture;
 
 	QString label;
 	QString currentSegment;
@@ -78,6 +85,7 @@ private:
 	int missingPolls = 0;
 
 	void CheckProcesses();
+	void UpdateCapture();
 	void EnforceQuota();
 	void ProcessPendingClips(bool segmentJustFinalized = true);
 	void ExportClip(int seconds, const QDateTime &requested, double lagSeconds);
