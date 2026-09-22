@@ -35,6 +35,10 @@ public:
 	void Update(const QStringList &processPatterns);
 	void Reset();
 
+	/* Deletes the capture sources Spectra created, so they are recreated
+	 * with default settings on the next update. */
+	void RemoveManagedSources();
+
 	State GetState() const { return state; }
 	QString StatusText() const;
 

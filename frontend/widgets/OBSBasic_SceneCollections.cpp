@@ -20,12 +20,12 @@
 #include <dialogs/OBSMissingFiles.hpp>
 #include <importer/OBSImporter.hpp>
 #include <models/SceneCollection.hpp>
+#include <utility/SpectraDefaults.hpp>
 #include <utility/item-widget-helpers.hpp>
 
 #include <qt-wrappers.hpp>
 
 #include <QDir>
-#include <QFileInfo>
 
 #include <filesystem>
 #include <string>
@@ -1028,60 +1028,6 @@ static void LoadAudioDevice(const char *name, int channel, obs_data_t *parent)
 	}
 }
 
-#ifdef _WIN32
-/* Executable of an installed TeamSpeak client, or empty if none is found */
-static QString FindTeamSpeakExecutable()
-{
-	struct Candidate {
-		QString path;
-		const char *exe;
-	};
-
-	const QString programFiles = qEnvironmentVariable("ProgramFiles");
-	const QString programFilesX86 = qEnvironmentVariable("ProgramFiles(x86)");
-	const QString localAppData = qEnvironmentVariable("LOCALAPPDATA");
-
-	const Candidate candidates[] = {
-		{localAppData + "/Programs/TeamSpeak/TeamSpeak.exe", "TeamSpeak.exe"},
-		{programFiles + "/TeamSpeak/TeamSpeak.exe", "TeamSpeak.exe"},
-		{programFiles + "/TeamSpeak 3 Client/ts3client_win64.exe", "ts3client_win64.exe"},
-		{programFilesX86 + "/TeamSpeak 3 Client/ts3client_win32.exe", "ts3client_win32.exe"},
-		{localAppData + "/TeamSpeak 3 Client/ts3client_win64.exe", "ts3client_win64.exe"},
-	};
-
-	for (const Candidate &candidate : candidates) {
-		if (QFileInfo::exists(candidate.path)) {
-			return candidate.exe;
-		}
-	}
-	return QString();
-}
-
-/* Spectra default: record TeamSpeak's audio (audio only) when installed */
-static void AddTeamSpeakAudio(obs_scene_t *scene)
-{
-	QString exe = FindTeamSpeakExecutable();
-	if (exe.isEmpty()) {
-		return;
-	}
-
-	/* "title:class:exe", matched by executable */
-	QString window = "::" + exe;
-	OBSDataAutoRelease settings = obs_data_create();
-	obs_data_set_string(settings, "window", QT_TO_UTF8(window));
-	obs_data_set_int(settings, "priority", 2 /* WINDOW_PRIORITY_EXE */);
-
-	OBSSourceAutoRelease source =
-		obs_source_create("wasapi_process_output_capture", "TeamSpeak", settings, nullptr);
-	if (!source) {
-		return;
-	}
-
-	obs_scene_add(scene, source);
-	blog(LOG_INFO, "[Spectra] Added TeamSpeak audio capture (%s)", QT_TO_UTF8(exe));
-}
-#endif
-
 void OBSBasic::CreateDefaultScene(bool firstStart)
 {
 	disableSaving++;
@@ -1098,9 +1044,7 @@ void OBSBasic::CreateDefaultScene(bool firstStart)
 
 	if (firstStart) {
 		CreateFirstRunSources();
-#ifdef _WIN32
-		AddTeamSpeakAudio(scene);
-#endif
+		SpectraDefaults::EnsureTeamSpeakAudio(scene);
 	}
 
 	SetCurrentScene(scene, true);

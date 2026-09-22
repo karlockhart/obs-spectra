@@ -309,6 +309,21 @@ void SetItemVisible(obs_scene_t *scene, obs_source_t *source, bool visible)
 
 LoopCapture::LoopCapture(OBSBasic *main_) : QObject(main_), main(main_) {}
 
+void LoopCapture::RemoveManagedSources()
+{
+	for (const char *tag : {TAG_GAME, TAG_WINDOW}) {
+		OBSSourceAutoRelease source = FindTagged(tag);
+		if (source) {
+			blog(LOG_INFO, "[Spectra] Removing '%s' to recreate it with defaults",
+			     obs_source_get_name(source));
+			obs_source_remove(source);
+		}
+	}
+	windowString.clear();
+	windowExe.clear();
+	Reset();
+}
+
 void LoopCapture::Reset()
 {
 	hookingSince = QDateTime();

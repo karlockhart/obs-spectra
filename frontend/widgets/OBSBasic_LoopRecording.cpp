@@ -1,6 +1,7 @@
 #include "OBSBasic.hpp"
 
 #include <dialogs/SpectraLoopSettings.hpp>
+#include <utility/SpectraDefaults.hpp>
 
 #include <qt-wrappers.hpp>
 
@@ -53,6 +54,7 @@ void OBSBasic::InitSpectra()
 	});
 	spectraMenu->addSeparator();
 	spectraMenu->addAction(QTStr("Spectra.Loop.Settings"), this, &OBSBasic::OpenLoopSettings);
+	spectraMenu->addAction(QTStr("Spectra.ResetSources"), this, &OBSBasic::ResetSourcesToDefaults);
 
 	connect(loopRecorder, &LoopRecorder::activeChanged, this, &OBSBasic::UpdateLoopRecordingUI);
 	/* The output handler is recreated when output settings change */
@@ -129,6 +131,47 @@ void OBSBasic::OpenLoopSettings()
 	if (dialog.exec() == QDialog::Accepted) {
 		loopRecorder->SettingsChanged();
 	}
+}
+
+static bool HasInputDevices()
+{
+	OBSProperties props = obs_get_source_properties(App()->InputAudioSource());
+	obs_property_t *devices = props ? obs_properties_get(props, "device_id") : nullptr;
+	return devices && obs_property_list_item_count(devices) != 0;
+}
+
+void OBSBasic::ResetSourcesToDefaults()
+{
+	QMessageBox::StandardButton answer =
+		OBSMessageBox::question(this, QTStr("Spectra.ResetSources.Title"), QTStr("Spectra.ResetSources.Text"));
+	if (answer != QMessageBox::Yes) {
+		return;
+	}
+
+	blog(LOG_INFO, "[Spectra] Resetting sources to defaults");
+
+#ifdef _WIN32
+	/* Game audio is captured per application, not from all desktop audio */
+	ResetAudioDevice(App()->OutputAudioSource(), "disabled", nullptr, 1);
+	ResetAudioDevice(App()->OutputAudioSource(), "disabled", nullptr, 2);
+#endif
+
+	if (HasInputDevices()) {
+		ResetAudioDevice(App()->InputAudioSource(), "default", Str("Basic.AuxDevice1"), 3);
+		OBSSourceAutoRelease mic = obs_get_output_source(3);
+		if (mic) {
+			SpectraDefaults::EnableDefaultPushToTalk(mic);
+		}
+	}
+
+	SpectraDefaults::EnsureTeamSpeakAudio(GetProgramScene());
+
+	if (loopRecorder) {
+		loopRecorder->ResetCapture();
+	}
+
+	SaveProject();
+	ShowStatusBarMessage(QTStr("Spectra.ResetSources.Done"));
 }
 
 bool OBSBasic::StartLoopRecording(const QString &directory, int segmentSeconds)

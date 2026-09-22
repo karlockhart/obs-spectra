@@ -123,6 +123,14 @@ bool LoopRecorder::AutoCaptureEnabled() const
 	return config_get_bool(main->Config(), LOOP_SECTION, "AutoCapture");
 }
 
+void LoopRecorder::ResetCapture()
+{
+	capture->RemoveManagedSources();
+	if (Active()) {
+		UpdateCapture();
+	}
+}
+
 void LoopRecorder::UpdateCapture()
 {
 	if (AutoCaptureEnabled()) {

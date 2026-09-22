@@ -1058,6 +1058,7 @@ private:
 	void InitSpectra();
 	void UpdateLoopRecordingUI(bool active);
 	void OpenLoopSettings();
+	void ResetSourcesToDefaults();
 
 public:
 	bool StartLoopRecording(const QString &directory, int segmentSeconds);

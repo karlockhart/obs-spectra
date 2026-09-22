@@ -38,6 +38,9 @@ public:
 
 	LoopCapture *Capture() const { return capture; }
 
+	/* Recreates Spectra's capture sources with default settings */
+	void ResetCapture();
+
 	bool Start(const QString &label = QString());
 	void Stop();
 	bool Active() const;

@@ -63,6 +63,8 @@ target_sources(
     utility/SettingsEventFilter.hpp
     utility/SimpleOutput.cpp
     utility/SimpleOutput.hpp
+    utility/SpectraDefaults.cpp
+    utility/SpectraDefaults.hpp
     utility/SpectraSplash.cpp
     utility/SpectraSplash.hpp
     utility/SpectraUpdateCheck.cpp
