@@ -707,7 +707,10 @@ bool BasicOutputHandler::StartLoopOutput(const char *directory, int segmentSecon
 
 void BasicOutputHandler::StopLoopRecording(bool force)
 {
-	if (!loopOutput) {
+	/* Stopping an output that never started resets its stopping event,
+	 * which nothing signals again, so obs_output_destroy would wait on
+	 * it forever at shutdown. */
+	if (!LoopRecordingActive()) {
 		return;
 	}
 	if (force) {
