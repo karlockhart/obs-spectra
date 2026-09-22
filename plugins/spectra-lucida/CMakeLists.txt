@@ -37,3 +37,21 @@ add_executable(lucida-tests tests/lucida-tests.cpp)
 target_link_libraries(lucida-tests PRIVATE lucida-core)
 set_target_properties(lucida-tests PROPERTIES FOLDER spectra)
 set_target_properties_obs(lucida-tests)
+
+# The plugin: sampling loop inside Spectra and the "Chat Log" dock
+add_library(spectra-lucida MODULE)
+add_library(OBS::spectra-lucida ALIAS spectra-lucida)
+target_sources(
+  spectra-lucida
+  PRIVATE
+    plugin/frame-grabber.cpp
+    plugin/frame-grabber.hpp
+    plugin/lucida-controller.cpp
+    plugin/lucida-controller.hpp
+    plugin/lucida-dock.cpp
+    plugin/lucida-dock.hpp
+    plugin/lucida-plugin.cpp
+)
+target_link_libraries(spectra-lucida PRIVATE lucida-core OBS::libobs OBS::frontend-api Qt::Widgets)
+set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
+set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")
