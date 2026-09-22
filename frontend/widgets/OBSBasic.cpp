@@ -18,6 +18,8 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+
+#include <utility/SpectraSplash.hpp>
 #include "ui-config.h"
 
 #include "ColorSelect.hpp"
@@ -1065,6 +1067,7 @@ void OBSBasic::OBSInit()
      */
 	RefreshSceneCollections(true);
 
+	SpectraSplash::Message(QTStr("Spectra.Splash.Plugins"));
 	App()->loadAppModules(mfi);
 
 	BPtr<char *> failed_modules = mfi.failed_modules;
@@ -1128,6 +1131,7 @@ void OBSBasic::OBSInit()
 	}
 	UpdateEditMenu();
 
+	SpectraSplash::Message(QTStr("Spectra.Splash.Scenes"));
 	{
 		ProfileScope("OBSBasic::Load");
 		const std::string sceneCollectionName{

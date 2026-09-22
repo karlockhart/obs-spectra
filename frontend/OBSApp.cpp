@@ -17,6 +17,8 @@
 
 #include "OBSApp.hpp"
 
+#include <utility/SpectraSplash.hpp>
+
 #include <components/Multiview.hpp>
 #include <dialogs/LogUploadDialog.hpp>
 #include <plugin-manager/PluginManager.hpp>
@@ -67,6 +69,7 @@ string lastLogFile;
 string lastCrashLogFile;
 
 extern bool portable_mode;
+extern bool opt_minimize_tray;
 extern bool safe_mode;
 extern bool multi;
 extern bool disable_3p_plugins;
@@ -1303,11 +1306,23 @@ bool OBSApp::OBSInit()
 
 	thumbnailManager = new ThumbnailManager(this);
 
+	std::unique_ptr<SpectraSplash> splash;
+	if (!opt_minimize_tray) {
+		splash = std::make_unique<SpectraSplash>(QString::fromStdString(GetVersionString(false)));
+		splash->show();
+		processEvents(QEventLoop::ExcludeUserInputEvents);
+		SpectraSplash::Message(QTStr("Spectra.Splash.Starting"));
+	}
+
 	mainWindow = new OBSBasic();
 
 	mainWindow->setAttribute(Qt::WA_DeleteOnClose, true);
 
 	mainWindow->OBSInit();
+
+	if (splash) {
+		splash->finish(mainWindow);
+	}
 
 	connect(OBSBasic::Get(), &OBSBasic::mainWindowClosed, crashHandler_.get(),
 		&OBS::CrashHandler::applicationShutdownHandler);
