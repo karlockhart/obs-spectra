@@ -265,6 +265,31 @@ void SetCaptureWindow(obs_source_t *source, const QString &window)
 	obs_source_update(source, update);
 }
 
+/* Scales the item to fill the canvas as far as possible without cropping or
+ * distorting it (letterboxed/pillarboxed when the aspect ratios differ).
+ * Bounds scaling keeps it fitted if the game changes resolution. */
+void FitItemToCanvas(obs_sceneitem_t *item)
+{
+	obs_video_info ovi;
+	if (!obs_get_video_info(&ovi)) {
+		return;
+	}
+
+	vec2 bounds;
+	vec2_set(&bounds, (float)ovi.base_width, (float)ovi.base_height);
+	vec2 pos;
+	vec2_set(&pos, 0.0f, 0.0f);
+
+	obs_sceneitem_defer_update_begin(item);
+	obs_sceneitem_set_rot(item, 0.0f);
+	obs_sceneitem_set_alignment(item, OBS_ALIGN_LEFT | OBS_ALIGN_TOP);
+	obs_sceneitem_set_pos(item, &pos);
+	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
+	obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
+	obs_sceneitem_set_bounds(item, &bounds);
+	obs_sceneitem_defer_update_end(item);
+}
+
 /* Returns the scene item showing `source` in `scene`, adding it scaled to
  * fit the canvas at the bottom of the scene if needed. */
 obs_sceneitem_t *EnsureInScene(obs_scene_t *scene, obs_source_t *source)
@@ -279,17 +304,7 @@ obs_sceneitem_t *EnsureInScene(obs_scene_t *scene, obs_source_t *source)
 		return nullptr;
 	}
 
-	obs_video_info ovi;
-	obs_get_video_info(&ovi);
-	vec2 bounds;
-	vec2_set(&bounds, (float)ovi.base_width, (float)ovi.base_height);
-	vec2 pos;
-	vec2_set(&pos, 0.0f, 0.0f);
-
-	obs_sceneitem_set_pos(item, &pos);
-	obs_sceneitem_set_bounds_type(item, OBS_BOUNDS_SCALE_INNER);
-	obs_sceneitem_set_bounds_alignment(item, OBS_ALIGN_CENTER);
-	obs_sceneitem_set_bounds(item, &bounds);
+	FitItemToCanvas(item);
 	obs_sceneitem_set_order(item, OBS_ORDER_MOVE_BOTTOM);
 	return item;
 }
@@ -308,6 +323,45 @@ void SetItemVisible(obs_scene_t *scene, obs_source_t *source, bool visible)
 } // namespace
 
 LoopCapture::LoopCapture(OBSBasic *main_) : QObject(main_), main(main_) {}
+
+void LoopCapture::FitGameToCanvas(const QStringList &patterns)
+{
+	OBSScene scene = main->GetProgramScene();
+	if (!scene) {
+		return;
+	}
+
+	struct Context {
+		const QStringList *patterns;
+		int fitted;
+	} ctx = {&patterns, 0};
+
+	obs_scene_enum_items(
+		scene,
+		[](obs_scene_t *, obs_sceneitem_t *item, void *param) {
+			Context *c = static_cast<Context *>(param);
+			obs_source_t *source = obs_sceneitem_get_source(item);
+			const char *id = obs_source_get_unversioned_id(source);
+			if (!obs_sceneitem_visible(item) ||
+			    (strcmp(id, "game_capture") != 0 && strcmp(id, "window_capture") != 0)) {
+				return true;
+			}
+
+			QString exe;
+			bool hooked = SourceHooked(source, &exe);
+			bool managed = !CaptureTag(source).isEmpty();
+			if (managed || (hooked && MatchesAny(exe, *c->patterns))) {
+				FitItemToCanvas(item);
+				c->fitted++;
+			}
+			return true;
+		},
+		&ctx);
+
+	if (ctx.fitted) {
+		blog(LOG_INFO, "[Spectra] Fitted %d game capture(s) to the canvas", ctx.fitted);
+	}
+}
 
 void LoopCapture::RemoveManagedSources()
 {
@@ -333,6 +387,8 @@ void LoopCapture::Reset()
 
 void LoopCapture::Update(const QStringList &patterns)
 {
+	lastPatterns = patterns;
+
 	if (patterns.isEmpty()) {
 		SetState(State::Idle);
 		return;
@@ -434,6 +490,13 @@ void LoopCapture::SetState(State newState)
 	}
 
 	state = newState;
+
+	/* The game's size is known once it is hooked */
+	if (fitOnHook &&
+	    (state == State::GameCapture || state == State::WindowCapture || state == State::ExistingCapture)) {
+		FitGameToCanvas(lastPatterns);
+	}
+
 	switch (state) {
 	case State::GameCapture:
 		blog(LOG_INFO, "[Spectra] Capturing '%s' with game capture", QT_TO_UTF8(windowExe));

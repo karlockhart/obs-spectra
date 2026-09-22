@@ -39,6 +39,13 @@ public:
 	 * with default settings on the next update. */
 	void RemoveManagedSources();
 
+	/* Scales every capture of the game in the program scene to fill the
+	 * canvas while keeping the game's aspect ratio, centered. */
+	void FitGameToCanvas(const QStringList &processPatterns);
+
+	/* Whether hooking the game fits it to the canvas (loop setting) */
+	void SetFitOnHook(bool fit) { fitOnHook = fit; }
+
 	State GetState() const { return state; }
 	QString StatusText() const;
 
@@ -52,6 +59,9 @@ private:
 	QString windowExe;
 	QDateTime hookingSince;
 	QDateTime fallbackSince;
+
+	QStringList lastPatterns;
+	bool fitOnHook = true;
 
 	void SetState(State newState);
 };

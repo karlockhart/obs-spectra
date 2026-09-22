@@ -29,6 +29,7 @@ private:
 	QCheckBox *autoStart;
 	QCheckBox *autoStop;
 	QCheckBox *autoCapture;
+	QCheckBox *fitToCanvas;
 	QLineEdit *processes;
 	QLabel *usage;
 

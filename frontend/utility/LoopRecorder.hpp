@@ -34,12 +34,17 @@ public:
 	bool AutoStartEnabled() const;
 	bool AutoStopEnabled() const;
 	bool AutoCaptureEnabled() const;
+	bool FitToCanvasEnabled() const;
 	QStringList ProcessPatterns() const;
 
 	LoopCapture *Capture() const { return capture; }
 
 	/* Recreates Spectra's capture sources with default settings */
 	void ResetCapture();
+
+	/* Fits the game's capture to the canvas, keeping its aspect ratio,
+	 * when enabled in the loop recording settings */
+	void FitGameToCanvas();
 
 	/* Armed: loop recording starts by itself when a game process matching
 	 * the patterns runs, and stops again when it exits. */
