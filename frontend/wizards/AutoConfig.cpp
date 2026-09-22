@@ -2,6 +2,7 @@
 #include "AutoConfigStartPage.hpp"
 #include "AutoConfigStreamPage.hpp"
 #include "AutoConfigTestPage.hpp"
+#include "AutoConfigSpectraPage.hpp"
 #include "AutoConfigVideoPage.hpp"
 #include "ui_AutoConfigStartPage.h"
 #include "ui_AutoConfigStreamPage.h"
@@ -82,6 +83,7 @@ AutoConfig::AutoConfig(QWidget *parent) : QWizard(parent)
 	setPage(VideoPage, new AutoConfigVideoPage());
 	setPage(StreamPage, streamPage);
 	setPage(TestPage, new AutoConfigTestPage());
+	setPage(SpectraPage, new AutoConfigSpectraPage());
 	setWindowTitle(QTStr("Basic.AutoConfig"));
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 

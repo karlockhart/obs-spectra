@@ -217,6 +217,12 @@ void ScreenshotObj::saveToFile()
 	const char *filenameFormat = config_get_string(config, "Output", "FilenameFormatting");
 	bool overwriteIfExists = config_get_bool(config, "Output", "OverwriteIfExists");
 
+	/* Spectra keeps screenshots in their own folder when one is set up */
+	const char *screenshotPath = config_get_string(config, "Spectra", "ScreenshotsPath");
+	if (screenshotPath && *screenshotPath) {
+		rec_path = screenshotPath;
+	}
+
 	const char *ext = half_bytes.empty() ? "png" : "jxr";
 	path = GetOutputFilename(rec_path, ext, noSpace, overwriteIfExists,
 				 GetFormatString(filenameFormat, "Screenshot", nullptr).c_str());
