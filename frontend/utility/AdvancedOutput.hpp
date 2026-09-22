@@ -37,6 +37,7 @@ struct AdvancedOutput : BasicOutputHandler {
 	virtual bool StartStreaming(obs_service_t *service) override;
 	virtual bool StartRecording() override;
 	virtual bool StartReplayBuffer() override;
+	virtual bool StartLoopRecording(const char *directory, int segmentSeconds) override;
 	virtual void StopStreaming(bool force) override;
 	virtual void StopRecording(bool force) override;
 	virtual void StopReplayBuffer(bool force) override;

@@ -123,6 +123,8 @@ AdvancedOutput::AdvancedOutput(OBSBasic *main_) : BasicOutputHandler(main_)
 			      "(advanced output)";
 		}
 
+		CreateLoopOutput();
+
 		if (!useStreamEncoder) {
 			videoRecording = obs_video_encoder_create(recordEncoder, "advanced_video_recording",
 								  recordEncSettings, nullptr);
@@ -374,6 +376,9 @@ inline void AdvancedOutput::SetupRecording()
 		if (replayBuffer) {
 			obs_output_set_video_encoder(replayBuffer, videoStreaming);
 		}
+		if (loopOutput) {
+			obs_output_set_video_encoder(loopOutput, videoStreaming);
+		}
 	} else {
 		if (rescaleFilter != OBS_SCALE_DISABLE && rescaleRes && *rescaleRes) {
 			if (sscanf(rescaleRes, "%ux%u", &cx, &cy) != 2) {
@@ -388,6 +393,9 @@ inline void AdvancedOutput::SetupRecording()
 		if (replayBuffer) {
 			obs_output_set_video_encoder(replayBuffer, videoRecording);
 		}
+		if (loopOutput) {
+			obs_output_set_video_encoder(loopOutput, videoRecording);
+		}
 	}
 
 	if (!flv) {
@@ -397,6 +405,9 @@ inline void AdvancedOutput::SetupRecording()
 				if (replayBuffer) {
 					obs_output_set_audio_encoder(replayBuffer, recordTrack[i], idx);
 				}
+				if (loopOutput) {
+					obs_output_set_audio_encoder(loopOutput, recordTrack[i], idx);
+				}
 				idx++;
 			}
 		}
@@ -405,6 +416,9 @@ inline void AdvancedOutput::SetupRecording()
 
 		if (replayBuffer) {
 			obs_output_set_audio_encoder(replayBuffer, recordTrack[tracks - 1], idx);
+		}
+		if (loopOutput) {
+			obs_output_set_audio_encoder(loopOutput, recordTrack[tracks - 1], idx);
 		}
 	}
 
@@ -935,6 +949,27 @@ bool AdvancedOutput::StartReplayBuffer()
 	}
 
 	return true;
+}
+
+bool AdvancedOutput::StartLoopRecording(const char *directory, int segmentSeconds)
+{
+	if (!loopOutput) {
+		return false;
+	}
+
+	if (!useStreamEncoder) {
+		UpdateRecordingSettings();
+	} else if (!obs_output_active(StreamingOutput())) {
+		UpdateStreamSettings();
+	}
+
+	UpdateAudioSettings();
+
+	if (!Active()) {
+		SetupOutputs();
+	}
+
+	return StartLoopOutput(directory, segmentSeconds);
 }
 
 void AdvancedOutput::StopStreaming(bool force)

@@ -759,6 +759,15 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBSize", 512);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecRBPrefix", "Replay");
+
+	config_set_default_uint(activeConfiguration, "SpectraLoop", "QuotaGB", 100);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "SegmentSec", 120);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "ClipSec", 120);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStart", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStop", true);
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
+	config_set_default_string(activeConfiguration, "SpectraLoop", "ClipsPath", "");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecAudioEncoder", "aac");
 	config_set_default_uint(activeConfiguration, "SimpleOutput", "RecTracks", (1 << 0));
@@ -1277,6 +1286,8 @@ void OBSBasic::OBSInit()
 
 	SystemTray(true);
 
+	InitSpectra();
+
 	TaskbarOverlayInit();
 
 #ifdef __APPLE__
@@ -1462,6 +1473,9 @@ void OBSBasic::applicationShutdown() noexcept
 	ClearHotkeys();
 
 	service = nullptr;
+	if (outputHandler) {
+		outputHandler->StopLoopRecording(true);
+	}
 	outputHandler.reset();
 
 	delete interaction;
@@ -1943,7 +1957,8 @@ bool OBSBasic::isReadyToClose()
 bool OBSBasic::shouldPromptForClose()
 {
 	bool confirmOnExit = config_get_bool(App()->GetUserConfig(), "General", "ConfirmOnExit");
-	if (confirmOnExit && outputHandler && outputHandler->Active() && !clearingFailed) {
+	/* Background loop recording alone does not warrant a prompt */
+	if (confirmOnExit && outputHandler && outputHandler->ActiveExceptLoop() && !clearingFailed) {
 		return true;
 	}
 

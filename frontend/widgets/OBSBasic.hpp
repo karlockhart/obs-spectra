@@ -24,6 +24,7 @@
 #include <components/AccessibleAlignmentSelector.hpp>
 #include <oauth/Auth.hpp>
 #include <utility/BasicOutputHandler.hpp>
+#include <utility/LoopRecorder.hpp>
 #include <utility/OBSCanvas.hpp>
 #include <utility/PreviewProgramSizeObserver.hpp>
 #include <utility/VCamConfig.hpp>
@@ -496,6 +497,8 @@ private:
 	obs_hotkey_pair_id streamingHotkeys, recordingHotkeys, pauseHotkeys, replayBufHotkeys, vcamHotkeys,
 		togglePreviewHotkeys, contextBarHotkeys;
 	obs_hotkey_id forceStreamingStopHotkey, splitFileHotkey, addChapterHotkey, saveReplayBufferHotkey;
+	obs_hotkey_pair_id loopHotkeys = 0;
+	obs_hotkey_id clipLastHotkey = 0;
 
 	void InitHotkeys();
 	void CreateHotkeys();
@@ -1047,6 +1050,21 @@ private:
 	bool replayBufferStopping = false;
 	std::string lastReplay;
 
+	QPointer<LoopRecorder> loopRecorder;
+	QPointer<QMenu> spectraMenu;
+	QPointer<QAction> loopToggleAction;
+
+	void InitSpectra();
+	void UpdateLoopRecordingUI(bool active);
+	void OpenLoopSettings();
+
+public:
+	bool StartLoopRecording(const QString &directory, int segmentSeconds);
+	void StopLoopRecording();
+	bool LoopRecordingActive() const;
+	bool SplitLoopRecording();
+	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
+
 public slots:
 	void ShowReplayBufferPauseWarning();
 	void StartReplayBuffer();
@@ -1057,6 +1075,11 @@ public slots:
 	void ReplayBufferSaved();
 	void ReplayBufferStopping();
 	void ReplayBufferStop(int code);
+
+	/* Spectra loop recording (OBSBasic_LoopRecording.cpp) */
+	void LoopRecordingStart();
+	void LoopRecordingStop(int code, QString lastError);
+	void LoopRecordingFileChanged(QString nextFile);
 
 	bool ReplayBufferActive();
 
