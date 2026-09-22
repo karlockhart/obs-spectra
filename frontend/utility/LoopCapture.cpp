@@ -232,6 +232,8 @@ OBSSourceAutoRelease CreateCapture(const char *id, const QString &baseName, cons
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_string(settings, "window", QT_TO_UTF8(window));
 	obs_data_set_int(settings, "priority", PRIORITY_EXE);
+	/* Record the game's own audio (application audio capture) */
+	obs_data_set_bool(settings, "capture_audio", true);
 
 	if (strcmp(id, "game_capture") == 0) {
 		obs_data_set_string(settings, "capture_mode", "window");

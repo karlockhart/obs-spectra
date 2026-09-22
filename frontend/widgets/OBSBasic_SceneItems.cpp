@@ -88,6 +88,43 @@ static inline bool HasAudioDevices(const char *source_id)
 	return count != 0;
 }
 
+/* Spectra default: the default microphone is push-to-talk on N, M and P */
+static void EnableDefaultPushToTalk(obs_source_t *source)
+{
+	obs_source_enable_push_to_talk(source, true);
+
+	struct Context {
+		obs_source_t *source;
+		obs_hotkey_id id;
+	} ctx = {source, OBS_INVALID_HOTKEY_ID};
+
+	obs_enum_hotkeys(
+		[](void *data, obs_hotkey_id id, obs_hotkey_t *key) {
+			Context *c = static_cast<Context *>(data);
+			if (obs_hotkey_get_registerer_type(key) != OBS_HOTKEY_REGISTERER_SOURCE ||
+			    strcmp(obs_hotkey_get_name(key), "libobs.push-to-talk") != 0) {
+				return true;
+			}
+			obs_weak_source_t *weak = static_cast<obs_weak_source_t *>(obs_hotkey_get_registerer(key));
+			if (obs_weak_source_references_source(weak, c->source)) {
+				c->id = id;
+				return false;
+			}
+			return true;
+		},
+		&ctx);
+
+	if (ctx.id == OBS_INVALID_HOTKEY_ID) {
+		blog(LOG_WARNING, "[Spectra] Could not find the push-to-talk hotkey of '%s'",
+		     obs_source_get_name(source));
+		return;
+	}
+
+	obs_key_combination_t keys[] = {{0, OBS_KEY_N}, {0, OBS_KEY_M}, {0, OBS_KEY_P}};
+	obs_hotkey_load_bindings(ctx.id, keys, sizeof(keys) / sizeof(keys[0]));
+	blog(LOG_INFO, "[Spectra] Push-to-talk enabled for '%s' (N, M, P)", obs_source_get_name(source));
+}
+
 void OBSBasic::CreateFirstRunSources()
 {
 	bool hasDesktopAudio = HasAudioDevices(App()->OutputAudioSource());
@@ -106,6 +143,11 @@ void OBSBasic::CreateFirstRunSources()
 	}
 	if (hasInputAudio) {
 		ResetAudioDevice(App()->InputAudioSource(), "default", Str("Basic.AuxDevice1"), 3);
+
+		OBSSourceAutoRelease mic = obs_get_output_source(3);
+		if (mic) {
+			EnableDefaultPushToTalk(mic);
+		}
 	}
 }
 
