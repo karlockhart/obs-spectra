@@ -138,6 +138,12 @@ void OBSBasic::CreateFirstRunSources()
 	}
 #endif
 
+#ifdef _WIN32
+	/* Spectra captures game audio per application (game/window capture and
+	 * TeamSpeak), so all desktop audio is not recorded by default. */
+	hasDesktopAudio = false;
+#endif
+
 	if (hasDesktopAudio) {
 		ResetAudioDevice(App()->OutputAudioSource(), "default", Str("Basic.DesktopDevice1"), 1);
 	}
