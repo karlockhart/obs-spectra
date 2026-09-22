@@ -10,6 +10,7 @@
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 
+#include <QAction>
 #include <QMainWindow>
 #include <QPointer>
 
@@ -22,6 +23,7 @@ MODULE_EXPORT const char *obs_module_description(void)
 }
 
 static QPointer<lucida::Controller> controller;
+static QPointer<lucida::Dock> dock;
 
 static void OnFrontendEvent(enum obs_frontend_event event, void *)
 {
@@ -29,12 +31,23 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING: {
 		auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 		controller = new lucida::Controller(main);
-		auto *dock = new lucida::Dock(controller);
+		dock = new lucida::Dock(controller);
 		obs_frontend_add_dock_by_id("spectra-lucida-chat-log", obs_module_text("Lucida.Dock.Title"), dock);
+		auto *viewer = static_cast<QAction *>(
+			obs_frontend_add_tools_menu_qaction(obs_module_text("Lucida.Menu.Viewer")));
+		QObject::connect(viewer, &QAction::triggered, [] {
+			if (dock) {
+				dock->OpenViewer();
+			}
+		});
 		QObject::connect(controller, &lucida::Controller::failed, [](const QString &message) {
 			blog(LOG_WARNING, "[Lucida] %s", message.toUtf8().constData());
 		});
 		controller->Start();
+		/* Developer aid: open the viewer straight away */
+		if (qEnvironmentVariableIsSet("SPECTRA_LUCIDA_VIEWER")) {
+			dock->OpenViewer();
+		}
 		blog(LOG_INFO, "[Lucida] Started (log: %s)", controller->CurrentSettings().dbPath.toUtf8().constData());
 		break;
 	}

@@ -1,5 +1,6 @@
 #include "lucida-dock.hpp"
 #include "lucida-controller.hpp"
+#include "lucida-viewer.hpp"
 
 #include <obs-module.h>
 
@@ -36,6 +37,8 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	search->setClearButtonEnabled(true);
 
 	QPushButton *sample = new QPushButton(obs_module_text("Lucida.Dock.SampleNow"));
+	QPushButton *open = new QPushButton(obs_module_text("Lucida.Dock.OpenViewer"));
+	open->setToolTip(obs_module_text("Lucida.Dock.OpenViewer.Tip"));
 	pause = new QCheckBox(obs_module_text("Lucida.Dock.Pause"));
 	pause->setChecked(controller->Paused());
 
@@ -51,6 +54,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	QHBoxLayout *row = new QHBoxLayout();
 	row->addWidget(search, 1);
 	row->addWidget(sample);
+	row->addWidget(open);
 	row->addWidget(pause);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
@@ -66,6 +70,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 		}
 	});
 	connect(sample, &QPushButton::clicked, controller, &Controller::SampleNow);
+	connect(open, &QPushButton::clicked, this, [this] { OpenViewer(); });
+	connect(list, &QListWidget::itemDoubleClicked, this,
+		[this](QListWidgetItem *item) { OpenViewer(item->data(Qt::UserRole).toLongLong()); });
 	connect(pause, &QCheckBox::toggled, controller, &Controller::SetPaused);
 	connect(controller, &Controller::statusChanged, status, &QLabel::setText);
 	connect(controller, &Controller::ticked, this, [this](int added, double, bool) {
@@ -75,6 +82,20 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	});
 
 	Reload();
+}
+
+void Dock::OpenViewer(long long lineId)
+{
+	if (!viewer) {
+		viewer = new Viewer(controller, window());
+		viewer->setWindowFlag(Qt::Window);
+	}
+	viewer->show();
+	viewer->raise();
+	viewer->activateWindow();
+	if (lineId) {
+		viewer->ShowLine(lineId);
+	}
 }
 
 void Dock::Reload()

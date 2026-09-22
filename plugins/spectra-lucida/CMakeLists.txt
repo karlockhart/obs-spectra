@@ -51,7 +51,9 @@ target_sources(
     plugin/lucida-dock.cpp
     plugin/lucida-dock.hpp
     plugin/lucida-plugin.cpp
+    plugin/lucida-viewer.cpp
+    plugin/lucida-viewer.hpp
 )
-target_link_libraries(spectra-lucida PRIVATE lucida-core OBS::libobs OBS::frontend-api Qt::Widgets)
+target_link_libraries(spectra-lucida PRIVATE lucida-core spectra-censor OBS::libobs OBS::frontend-api Qt::Widgets)
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")
