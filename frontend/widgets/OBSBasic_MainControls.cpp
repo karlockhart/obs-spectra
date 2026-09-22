@@ -379,6 +379,9 @@ void OBSBasic::on_actionCheckForUpdates_triggered()
 void OBSBasic::on_actionRepair_triggered()
 {
 #if defined(_WIN32)
+	if (!ui->actionRepair) {
+		return;
+	}
 	ui->actionCheckForUpdates->setEnabled(false);
 	ui->actionRepair->setEnabled(false);
 

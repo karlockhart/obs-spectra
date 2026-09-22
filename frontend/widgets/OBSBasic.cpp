@@ -1366,12 +1366,15 @@ void OBSBasic::OBSInit()
 	ui->actionShowMacPermissions = nullptr;
 #endif
 
+#if defined(_WIN32)
+	/* "Repair" reinstalls OBS Studio's files through its updater */
+	delete ui->actionRepair;
+	ui->actionRepair = nullptr;
+#endif
+
 #if defined(_WIN32) || defined(__APPLE__)
 	if (App()->IsUpdaterDisabled()) {
 		ui->actionCheckForUpdates->setEnabled(false);
-#if defined(_WIN32)
-		ui->actionRepair->setEnabled(false);
-#endif
 	}
 #endif
 

@@ -65,6 +65,8 @@ target_sources(
     utility/SimpleOutput.hpp
     utility/SpectraSplash.cpp
     utility/SpectraSplash.hpp
+    utility/SpectraUpdateCheck.cpp
+    utility/SpectraUpdateCheck.hpp
     utility/StartMultiTrackVideoStreamingGuard.hpp
     utility/SurfaceEventFilter.hpp
     utility/ThumbnailItem.cpp
