@@ -1737,6 +1737,20 @@ vector<pair<string, string>> GetLocaleNames()
 #define ALLOW_PORTABLE_MODE 0
 #endif
 
+/* Outside portable mode Spectra keeps its configuration in its own folder,
+ * so it never reads or overwrites an installed OBS Studio's settings. */
+#define SPECTRA_CONFIG_DIR "OBS-Spectra"
+
+static std::string SpectraConfigName(const char *name)
+{
+	std::string spectraName = SPECTRA_CONFIG_DIR;
+	if (name && *name) {
+		spectraName += "/";
+		spectraName += name;
+	}
+	return spectraName;
+}
+
 int GetAppConfigPath(char *path, size_t size, const char *name)
 {
 #if ALLOW_PORTABLE_MODE
@@ -1747,10 +1761,10 @@ int GetAppConfigPath(char *path, size_t size, const char *name)
 			return snprintf(path, size, CONFIG_PATH);
 		}
 	} else {
-		return os_get_config_path(path, size, name);
+		return os_get_config_path(path, size, SpectraConfigName(name).c_str());
 	}
 #else
-	return os_get_config_path(path, size, name);
+	return os_get_config_path(path, size, SpectraConfigName(name).c_str());
 #endif
 }
 
@@ -1766,10 +1780,10 @@ char *GetAppConfigPathPtr(const char *name)
 			return NULL;
 		}
 	} else {
-		return os_get_config_path_ptr(name);
+		return os_get_config_path_ptr(SpectraConfigName(name).c_str());
 	}
 #else
-	return os_get_config_path_ptr(name);
+	return os_get_config_path_ptr(SpectraConfigName(name).c_str());
 #endif
 }
 
