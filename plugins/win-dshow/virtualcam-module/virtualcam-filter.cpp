@@ -37,7 +37,7 @@ VCamFilter::VCamFilter() : OutputFilter()
 	const wchar_t *obs_process = L"obs32.exe";
 #endif
 
-	in_obs = !!wcsstr(file, obs_process);
+	in_obs = !!wcsstr(file, obs_process) || !!wcsstr(file, L"obs-spectra.exe");
 
 	/* ---------------------------------------- */
 	/* add last/current obs res/interval        */
