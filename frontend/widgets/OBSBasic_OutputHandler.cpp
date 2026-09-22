@@ -43,6 +43,10 @@ void OBSBasic::ResetOutputs()
 		}
 
 		UpdateIsRecordingPausable();
+
+		if (loopRecorder) {
+			UpdateLoopRecordingUI(false);
+		}
 	} else {
 		outputHandler->Update();
 	}

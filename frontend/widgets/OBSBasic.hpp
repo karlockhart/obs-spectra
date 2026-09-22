@@ -1082,6 +1082,8 @@ public slots:
 	void LoopRecordingStart();
 	void LoopRecordingStop(int code, QString lastError);
 	void LoopRecordingFileChanged(QString nextFile);
+	void LoopRecordingActionTriggered();
+	void LoopClipActionTriggered();
 
 	bool ReplayBufferActive();
 
@@ -1095,6 +1097,8 @@ signals:
 	void ReplayBufStarted();
 	void ReplayBufStopping();
 	void ReplayBufStopped();
+	void LoopRecordingStateChanged(bool active);
+	void LoopRecordingEnabled(bool enabled);
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_SceneCollections

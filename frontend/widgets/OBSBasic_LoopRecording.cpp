@@ -32,13 +32,7 @@ void OBSBasic::InitSpectra()
 	spectraMenu->addSeparator();
 
 	loopToggleAction = spectraMenu->addAction(QTStr("Spectra.Loop.Start"));
-	connect(loopToggleAction, &QAction::triggered, this, [this]() {
-		if (loopRecorder->Active()) {
-			loopRecorder->Stop();
-		} else {
-			loopRecorder->Start();
-		}
-	});
+	connect(loopToggleAction, &QAction::triggered, this, &OBSBasic::LoopRecordingActionTriggered);
 
 	QMenu *clipMenu = spectraMenu->addMenu(QTStr("Spectra.Loop.ClipLast"));
 	for (int seconds : clipPresets) {
@@ -101,9 +95,31 @@ OBSScene OBSBasic::GetProgramScene()
 
 void OBSBasic::UpdateLoopRecordingUI(bool active)
 {
+	bool available = outputHandler && outputHandler->LoopRecordingAvailable();
 	if (loopToggleAction) {
 		loopToggleAction->setText(QTStr(active ? "Spectra.Loop.Stop" : "Spectra.Loop.Start"));
-		loopToggleAction->setEnabled(outputHandler && outputHandler->LoopRecordingAvailable());
+		loopToggleAction->setEnabled(available);
+	}
+	emit LoopRecordingStateChanged(active);
+	emit LoopRecordingEnabled(available);
+}
+
+void OBSBasic::LoopRecordingActionTriggered()
+{
+	if (!loopRecorder) {
+		return;
+	}
+	if (loopRecorder->Active()) {
+		loopRecorder->Stop();
+	} else {
+		loopRecorder->Start();
+	}
+}
+
+void OBSBasic::LoopClipActionTriggered()
+{
+	if (loopRecorder) {
+		loopRecorder->ClipLast(loopRecorder->DefaultClipSeconds());
 	}
 }
 
