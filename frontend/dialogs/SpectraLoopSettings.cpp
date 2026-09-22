@@ -1,11 +1,13 @@
 #include "SpectraLoopSettings.hpp"
 
 #include <utility/LoopRecorder.hpp>
+#include <utility/SpectraDefaults.hpp>
 #include <widgets/OBSBasic.hpp>
 
 #include <qt-wrappers.hpp>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -61,6 +63,15 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	fitToCanvas->setChecked(recorder->FitToCanvasEnabled());
 	fitToCanvas->setToolTip(QTStr("Spectra.Loop.Settings.FitToCanvasTip"));
 
+	resolution = new QComboBox();
+	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, LOOP_SECTION, "CanvasCX"),
+					     (int)config_get_int(config, LOOP_SECTION, "CanvasCY"));
+	resolution->setToolTip(QTStr("Spectra.Video.ResolutionTip"));
+	quality = new QComboBox();
+	SpectraDefaults::FillQualityCombo(quality,
+					  QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Quality")));
+	quality->setToolTip(QTStr("Spectra.Video.QualityTip"));
+
 	processes = new QLineEdit(recorder->ProcessPatterns().join(", "));
 	processes->setToolTip(QTStr("Spectra.Loop.Settings.ProcessesTip"));
 
@@ -74,6 +85,8 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), usage);
 	form->addRow(QTStr("Spectra.Loop.Settings.Segment"), segmentSec);
 	form->addRow(QTStr("Spectra.Loop.Settings.ClipLength"), clipSec);
+	form->addRow(QTStr("Spectra.Video.Resolution"), resolution);
+	form->addRow(QTStr("Spectra.Video.Quality"), quality);
 	form->addRow(QString(), autoStart);
 	form->addRow(QTStr("Spectra.Loop.Settings.Processes"), processes);
 	form->addRow(QString(), autoStop);
@@ -87,6 +100,11 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	auto *layout = new QVBoxLayout(this);
 	layout->addLayout(form);
 	layout->addWidget(buttons);
+
+	if (main->Active()) {
+		resolution->setEnabled(false);
+		quality->setEnabled(false);
+	}
 
 	if (recorder->Active()) {
 		QLabel *note = new QLabel(QTStr("Spectra.Loop.Settings.ActiveNote"));
@@ -117,6 +135,20 @@ QWidget *SpectraLoopSettings::PathRow(QLineEdit *edit)
 void SpectraLoopSettings::accept()
 {
 	config_t *config = main->Config();
+
+	int cx = 0, cy = 0;
+	if (!SpectraDefaults::ParseResolution(resolution->currentText(), cx, cy)) {
+		OBSMessageBox::warning(this, QTStr("Spectra.Loop.Settings.Title"),
+				       QTStr("Spectra.Video.InvalidResolution"));
+		return;
+	}
+	bool videoChanged = cx != (int)config_get_int(config, LOOP_SECTION, "CanvasCX") ||
+			    cy != (int)config_get_int(config, LOOP_SECTION, "CanvasCY") ||
+			    quality->currentData().toString() !=
+				    QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Quality"));
+	config_set_int(config, LOOP_SECTION, "CanvasCX", cx);
+	config_set_int(config, LOOP_SECTION, "CanvasCY", cy);
+	config_set_string(config, LOOP_SECTION, "Quality", QT_TO_UTF8(quality->currentData().toString()));
 	config_set_string(config, LOOP_SECTION, "Path", QT_TO_UTF8(loopPath->text().trimmed()));
 	config_set_string(config, LOOP_SECTION, "ClipsPath", QT_TO_UTF8(clipsPath->text().trimmed()));
 	config_set_uint(config, LOOP_SECTION, "QuotaGB", (uint64_t)quotaGB->value());
@@ -128,6 +160,10 @@ void SpectraLoopSettings::accept()
 	config_set_bool(config, LOOP_SECTION, "FitToCanvas", fitToCanvas->isChecked());
 	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->text().trimmed()));
 	config_save_safe(config, "tmp", nullptr);
+
+	if (videoChanged) {
+		main->ApplySpectraVideo();
+	}
 
 	QDialog::accept();
 }

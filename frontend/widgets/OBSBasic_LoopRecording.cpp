@@ -95,6 +95,31 @@ void OBSBasic::InitSpectra()
 	UpdateLoopRecordingUI(false);
 }
 
+bool OBSBasic::ApplySpectraVideo()
+{
+	if (Active()) {
+		return false;
+	}
+
+	config_t *config = Config();
+	int cx = (int)config_get_int(config, "SpectraLoop", "CanvasCX");
+	int cy = (int)config_get_int(config, "SpectraLoop", "CanvasCY");
+	QString quality = QString::fromUtf8(config_get_string(config, "SpectraLoop", "Quality"));
+
+	config_set_uint(config, "Video", "BaseCX", cx);
+	config_set_uint(config, "Video", "BaseCY", cy);
+	config_set_uint(config, "Video", "OutputCX", cx);
+	config_set_uint(config, "Video", "OutputCY", cy);
+	config_set_string(config, "SimpleOutput", "RecQuality", SpectraDefaults::QualityToRecQuality(quality));
+	config_save_safe(config, "tmp", nullptr);
+
+	blog(LOG_INFO, "[Spectra] Video set to %dx%d, %s quality", cx, cy, QT_TO_UTF8(quality));
+
+	ResetVideo();
+	ResetOutputs();
+	return true;
+}
+
 OBSScene OBSBasic::GetProgramScene()
 {
 	OBSSource source = IsPreviewProgramMode() ? GetProgramSource() : GetCurrentSceneSource();

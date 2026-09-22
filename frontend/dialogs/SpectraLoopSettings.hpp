@@ -5,6 +5,7 @@
 class LoopRecorder;
 class OBSBasic;
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QSpinBox;
@@ -30,6 +31,8 @@ private:
 	QCheckBox *autoStop;
 	QCheckBox *autoCapture;
 	QCheckBox *fitToCanvas;
+	QComboBox *resolution;
+	QComboBox *quality;
 	QLineEdit *processes;
 	QLabel *usage;
 

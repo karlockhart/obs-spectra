@@ -1,11 +1,58 @@
 #include "SpectraDefaults.hpp"
 
+#include <OBSApp.hpp>
 #include <obs.hpp>
 #include <qt-wrappers.hpp>
 
+#include <QComboBox>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 namespace SpectraDefaults {
+
+const char *const DefaultQuality = "Good";
+
+const char *QualityToRecQuality(const QString &quality)
+{
+	if (quality == "High") {
+		return "HQ"; /* Indistinguishable quality, large file size */
+	}
+	if (quality == "Stream") {
+		return "Stream"; /* Same as stream */
+	}
+	return "Small"; /* Good: high quality, medium file size */
+}
+
+void FillResolutionCombo(QComboBox *combo, int cx, int cy)
+{
+	static const char *resolutions[] = {"1280x720", "1600x900", "1920x1080", "2560x1440", "3840x2160"};
+
+	combo->setEditable(true);
+	for (const char *res : resolutions) {
+		combo->addItem(res);
+	}
+	combo->setCurrentText(QStringLiteral("%1x%2").arg(cx).arg(cy));
+}
+
+bool ParseResolution(const QString &text, int &cx, int &cy)
+{
+	QRegularExpressionMatch match = QRegularExpression("^\\s*(\\d{3,5})\\s*[xX]\\s*(\\d{3,5})\\s*$").match(text);
+	if (!match.hasMatch()) {
+		return false;
+	}
+	cx = match.captured(1).toInt();
+	cy = match.captured(2).toInt();
+	return cx >= 320 && cy >= 240 && cx <= 7680 && cy <= 4320;
+}
+
+void FillQualityCombo(QComboBox *combo, const QString &quality)
+{
+	combo->addItem(QTStr("Spectra.Video.Quality.Good"), "Good");
+	combo->addItem(QTStr("Spectra.Video.Quality.High"), "High");
+	combo->addItem(QTStr("Spectra.Video.Quality.Stream"), "Stream");
+	int index = combo->findData(quality);
+	combo->setCurrentIndex(index >= 0 ? index : 0);
+}
 
 void EnableDefaultPushToTalk(obs_source_t *source)
 {

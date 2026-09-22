@@ -1069,6 +1069,11 @@ public:
 	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
 	OBSScene GetProgramScene();
 
+	/* Applies Spectra's canvas/output resolution and recording quality
+	 * (SpectraLoop CanvasCX/CanvasCY/Quality). Returns false if outputs are
+	 * active, in which case nothing changes. */
+	bool ApplySpectraVideo();
+
 public slots:
 	void ShowReplayBufferPauseWarning();
 	void StartReplayBuffer();

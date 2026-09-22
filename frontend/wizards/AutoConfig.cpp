@@ -269,6 +269,9 @@ void AutoConfig::done(int result)
 		}
 		SaveSettings();
 
+		/* Spectra's recording resolution and quality take precedence */
+		OBSBasic::Get()->ApplySpectraVideo();
+
 #ifdef YOUTUBE_ENABLED
 		if (YouTubeAppDock::IsYTServiceSelected()) {
 			OBSBasic *main = OBSBasic::Get();

@@ -3,6 +3,7 @@
 #include <QWizardPage>
 
 class QCheckBox;
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QSpinBox;
@@ -18,6 +19,8 @@ class AutoConfigSpectraPage : public QWizardPage {
 	QSpinBox *quotaGB;
 	QCheckBox *autoStart;
 	QCheckBox *autoCapture;
+	QComboBox *resolution;
+	QComboBox *quality;
 
 	void UpdatePreview();
 

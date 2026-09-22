@@ -19,6 +19,7 @@
 
 #include "OBSBasic.hpp"
 
+#include <utility/SpectraDefaults.hpp>
 #include <utility/SpectraSplash.hpp>
 #include "ui-config.h"
 
@@ -758,18 +759,22 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "UseAdvanced", false);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "Preset", "veryfast");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "NVENCPreset2", "p5");
-	config_set_default_string(activeConfiguration, "SimpleOutput", "RecQuality", "Stream");
+	/* Spectra default: recordings in good quality */
+	config_set_default_string(activeConfiguration, "SimpleOutput", "RecQuality", "Small");
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "RecRB", false);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBSize", 512);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecRBPrefix", "Replay");
 
 	config_set_default_uint(activeConfiguration, "SpectraLoop", "QuotaGB", 100);
-	config_set_default_int(activeConfiguration, "SpectraLoop", "SegmentSec", 120);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "SegmentSec", 600);
 	config_set_default_int(activeConfiguration, "SpectraLoop", "ClipSec", 120);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStart", true);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStop", true);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoCapture", true);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCX", SpectraDefaults::DefaultCanvasCX);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCY", SpectraDefaults::DefaultCanvasCY);
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Quality", SpectraDefaults::DefaultQuality);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "FitToCanvas", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
@@ -817,6 +822,10 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "AdvOut", "RecRBSize", 512);
 
+	/* Spectra default: record at 1920x1080 regardless of the monitor */
+	cx = SpectraDefaults::DefaultCanvasCX;
+	cy = SpectraDefaults::DefaultCanvasCY;
+
 	config_set_default_uint(activeConfiguration, "Video", "BaseCX", cx);
 	config_set_default_uint(activeConfiguration, "Video", "BaseCY", cy);
 
@@ -847,13 +856,8 @@ bool OBSBasic::InitBasicConfigDefaults()
 	uint32_t scale_cx = cx;
 	uint32_t scale_cy = cy;
 
-	/* use a default scaled resolution that has a pixel count no higher
-	 * than 1280x720 */
-	while (((scale_cx * scale_cy) > (1280 * 720)) && scaled_vals[i] > 0.0) {
-		double scale = scaled_vals[i++];
-		scale_cx = uint32_t(double(cx) / scale);
-		scale_cy = uint32_t(double(cy) / scale);
-	}
+	/* Spectra records at the full canvas resolution (no default downscale) */
+	UNUSED_PARAMETER(i);
 
 	config_set_default_uint(activeConfiguration, "Video", "OutputCX", scale_cx);
 	config_set_default_uint(activeConfiguration, "Video", "OutputCY", scale_cy);

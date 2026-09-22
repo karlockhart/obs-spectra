@@ -2,11 +2,13 @@
 #include "AutoConfig.hpp"
 
 #include <utility/LoopRecorder.hpp>
+#include <utility/SpectraDefaults.hpp>
 #include <widgets/OBSBasic.hpp>
 
 #include <qt-wrappers.hpp>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -64,6 +66,15 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	quotaGB->setSuffix(" GB");
 	quotaGB->setValue((int)config_get_uint(config, "SpectraLoop", "QuotaGB"));
 
+	resolution = new QComboBox();
+	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, "SpectraLoop", "CanvasCX"),
+					     (int)config_get_int(config, "SpectraLoop", "CanvasCY"));
+	resolution->setToolTip(QTStr("Spectra.Video.ResolutionTip"));
+	quality = new QComboBox();
+	SpectraDefaults::FillQualityCombo(quality,
+					  QString::fromUtf8(config_get_string(config, "SpectraLoop", "Quality")));
+	quality->setToolTip(QTStr("Spectra.Video.QualityTip"));
+
 	autoStart = new QCheckBox(QTStr("Spectra.Loop.Settings.AutoStart"));
 	autoStart->setChecked(config_get_bool(config, "SpectraLoop", "AutoStart"));
 	autoCapture = new QCheckBox(QTStr("Spectra.Loop.Settings.AutoCapture"));
@@ -75,6 +86,8 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	form->addRow(QString(), folderPreview);
 	form->addRow(QTStr("Spectra.Loop.Settings.Processes"), processes);
 	form->addRow(QTStr("Spectra.Loop.Settings.Quota"), quotaGB);
+	form->addRow(QTStr("Spectra.Video.Resolution"), resolution);
+	form->addRow(QTStr("Spectra.Video.Quality"), quality);
 	form->addRow(QString(), autoStart);
 	form->addRow(QString(), autoCapture);
 
@@ -102,6 +115,12 @@ int AutoConfigSpectraPage::nextId() const
 
 bool AutoConfigSpectraPage::validatePage()
 {
+	int cx = 0, cy = 0;
+	if (!SpectraDefaults::ParseResolution(resolution->currentText(), cx, cy)) {
+		OBSMessageBox::warning(this, QTStr("Spectra.Wizard.Title"), QTStr("Spectra.Video.InvalidResolution"));
+		return false;
+	}
+
 	QString base = baseFolder->text().trimmed();
 	if (base.isEmpty() || !QDir().mkpath(base)) {
 		OBSMessageBox::warning(this, QTStr("Spectra.Wizard.Title"),
@@ -135,6 +154,12 @@ void AutoConfigSpectraPage::Save()
 	config_set_uint(config, "SpectraLoop", "QuotaGB", (uint64_t)quotaGB->value());
 	config_set_bool(config, "SpectraLoop", "AutoStart", autoStart->isChecked());
 	config_set_bool(config, "SpectraLoop", "AutoCapture", autoCapture->isChecked());
+
+	int cx = SpectraDefaults::DefaultCanvasCX, cy = SpectraDefaults::DefaultCanvasCY;
+	SpectraDefaults::ParseResolution(resolution->currentText(), cx, cy);
+	config_set_int(config, "SpectraLoop", "CanvasCX", cx);
+	config_set_int(config, "SpectraLoop", "CanvasCY", cy);
+	config_set_string(config, "SpectraLoop", "Quality", QT_TO_UTF8(quality->currentData().toString()));
 	config_save_safe(config, "tmp", nullptr);
 
 	blog(LOG_INFO, "[Spectra] Setup wizard: base folder '%s'", QT_TO_UTF8(base.path()));
