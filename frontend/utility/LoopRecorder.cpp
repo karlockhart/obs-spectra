@@ -62,6 +62,9 @@ LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_), captu
 	/* No split happened, so the newest segment ends before the request */
 	connect(&splitTimeout, &QTimer::timeout, this, [this]() { ProcessPendingClips(false); });
 
+	/* Opens armed unless turned off in the settings */
+	armed = AutoStartEnabled();
+
 	SettingsChanged();
 }
 
@@ -153,7 +156,7 @@ QStringList LoopRecorder::ProcessPatterns() const
 
 void LoopRecorder::SettingsChanged()
 {
-	if (AutoStartEnabled() && !ProcessPatterns().isEmpty()) {
+	if (armed && !ProcessPatterns().isEmpty()) {
 		processTimer.start();
 		QTimer::singleShot(0, this, &LoopRecorder::CheckProcesses);
 	} else {
@@ -163,6 +166,28 @@ void LoopRecorder::SettingsChanged()
 
 /* ------------------------------------------------------------------------- */
 /* Start / stop                                                              */
+
+void LoopRecorder::SetArmed(bool arm)
+{
+	if (armed == arm) {
+		return;
+	}
+
+	armed = arm;
+	suppressAutoStart = false;
+	missingPolls = 0;
+	blog(LOG_INFO, "[Spectra] Loop recording %s", armed ? "armed" : "disarmed");
+
+	if (!armed) {
+		autoStarted = false;
+		if (Active()) {
+			main->StopLoopRecording();
+		}
+	}
+
+	SettingsChanged();
+	emit armedChanged(armed);
+}
 
 bool LoopRecorder::Start(const QString &label_)
 {
@@ -282,7 +307,7 @@ void LoopRecorder::CheckProcesses()
 
 	if (!matched.isEmpty()) {
 		missingPolls = 0;
-		if (!Active() && AutoStartEnabled() && !suppressAutoStart) {
+		if (!Active() && armed && !suppressAutoStart) {
 			blog(LOG_INFO, "[Spectra] Detected process matching '%s', starting loop recording",
 			     QT_TO_UTF8(matched));
 			if (Start(LabelForPattern(matched))) {

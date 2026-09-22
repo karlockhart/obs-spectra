@@ -5,6 +5,7 @@
 #include <QFrame>
 #include <QPointer>
 #include <QScopedPointer>
+#include <QTimer>
 
 #include <memory>
 
@@ -18,6 +19,8 @@ class OBSBasicControls : public QFrame {
 	QPointer<QPushButton> loopRecordButton;
 
 	QPointer<QPushButton> loopClipButton;
+	QTimer loopFlashTimer;
+	bool loopFlashOn = false;
 
 	QScopedPointer<QMenu> streamButtonMenu;
 	QPointer<QAction> startStreamAction;
@@ -44,7 +47,7 @@ private slots:
 	void ReplayBufferStopping();
 	void ReplayBufferStopped();
 
-	void LoopRecordingStateChanged(bool active);
+	void LoopRecordingStateChanged(int state);
 	void EnableLoopRecordingButtons(bool enabled);
 
 	void VirtualCamStarted();

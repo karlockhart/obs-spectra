@@ -4,6 +4,10 @@
 
 #include "moc_OBSBasicControls.cpp"
 
+/* Loop recording arm button colors, the same in every theme */
+#define LOOP_ARMED_STYLE "QPushButton { background-color: #e67e22; border-color: #e67e22; color: #1b1b1b; }"
+#define LOOP_RECORDING_STYLE "QPushButton { background-color: #d32f2f; border-color: #d32f2f; color: #ffffff; }"
+
 OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui::OBSBasicControls)
 {
 	/* Create UI elements */
@@ -47,7 +51,7 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 		Qt::DirectConnection);
 
 	/* Spectra loop recording buttons, below the replay buffer buttons */
-	loopRecordButton = new QPushButton(QTStr("Spectra.Loop.Start"), this);
+	loopRecordButton = new QPushButton(QTStr("Spectra.Loop.Arm"), this);
 	loopRecordButton->setObjectName("loopRecordButton");
 	loopRecordButton->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
 
@@ -68,6 +72,13 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	connect(
 		loopRecordButton, &QPushButton::clicked, this, [this]() { emit this->LoopRecordButtonClicked(); },
 		Qt::DirectConnection);
+
+	/* Armed and waiting for a game: the button flashes orange */
+	loopFlashTimer.setInterval(600);
+	connect(&loopFlashTimer, &QTimer::timeout, this, [this]() {
+		loopFlashOn = !loopFlashOn;
+		loopRecordButton->setStyleSheet(loopFlashOn ? LOOP_ARMED_STYLE : "");
+	});
 	connect(
 		loopClipButton, &QPushButton::clicked, this, [this]() { emit this->LoopClipButtonClicked(); },
 		Qt::DirectConnection);
@@ -302,10 +313,30 @@ void OBSBasicControls::EnableBroadcastFlow(bool enabled)
 	ui->broadcastButton->style()->polish(ui->broadcastButton);
 }
 
-void OBSBasicControls::LoopRecordingStateChanged(bool active)
+void OBSBasicControls::LoopRecordingStateChanged(int state)
 {
-	setClasses(loopRecordButton, active ? "state-active" : "");
-	loopRecordButton->setText(QTStr(active ? "Spectra.Loop.Stop" : "Spectra.Loop.Start"));
+	loopFlashTimer.stop();
+	loopFlashOn = false;
+
+	switch (state) {
+	case 2: /* recording */
+		loopRecordButton->setText(QTStr("Spectra.Loop.Recording"));
+		loopRecordButton->setToolTip(QTStr("Spectra.Loop.RecordingTip"));
+		loopRecordButton->setStyleSheet(LOOP_RECORDING_STYLE);
+		break;
+	case 1: /* armed, waiting for a game */
+		loopRecordButton->setText(QTStr("Spectra.Loop.ArmedWaiting"));
+		loopRecordButton->setToolTip(QTStr("Spectra.Loop.ArmedTip"));
+		loopFlashOn = true;
+		loopRecordButton->setStyleSheet(LOOP_ARMED_STYLE);
+		loopFlashTimer.start();
+		break;
+	default: /* disarmed */
+		loopRecordButton->setText(QTStr("Spectra.Loop.Arm"));
+		loopRecordButton->setToolTip(QTStr("Spectra.Loop.ArmTip"));
+		loopRecordButton->setStyleSheet("");
+		break;
+	}
 }
 
 void OBSBasicControls::EnableLoopRecordingButtons(bool enabled)

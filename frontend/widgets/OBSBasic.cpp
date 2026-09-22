@@ -312,7 +312,7 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 
 	connect(controls, &OBSBasicControls::ReplayBufferButtonClicked, this, &OBSBasic::ReplayBufferActionTriggered);
 	connect(controls, &OBSBasicControls::SaveReplayBufferButtonClicked, this, &OBSBasic::ReplayBufferSave);
-	connect(controls, &OBSBasicControls::LoopRecordButtonClicked, this, &OBSBasic::LoopRecordingActionTriggered);
+	connect(controls, &OBSBasicControls::LoopRecordButtonClicked, this, &OBSBasic::LoopArmActionTriggered);
 	connect(controls, &OBSBasicControls::LoopClipButtonClicked, this, &OBSBasic::LoopClipActionTriggered);
 
 	connect(controls, &OBSBasicControls::VirtualCamButtonClicked, this, &OBSBasic::VirtualCamActionTriggered);

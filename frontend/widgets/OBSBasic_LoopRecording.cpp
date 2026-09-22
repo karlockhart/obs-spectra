@@ -32,6 +32,10 @@ void OBSBasic::InitSpectra()
 	captureStatusAction->setEnabled(false);
 	spectraMenu->addSeparator();
 
+	loopArmAction = spectraMenu->addAction(QTStr("Spectra.Loop.ArmedMenu"));
+	loopArmAction->setCheckable(true);
+	connect(loopArmAction, &QAction::triggered, this, [this](bool checked) { loopRecorder->SetArmed(checked); });
+
 	loopToggleAction = spectraMenu->addAction(QTStr("Spectra.Loop.Start"));
 	connect(loopToggleAction, &QAction::triggered, this, &OBSBasic::LoopRecordingActionTriggered);
 
@@ -57,6 +61,8 @@ void OBSBasic::InitSpectra()
 	spectraMenu->addAction(QTStr("Spectra.ResetSources"), this, &OBSBasic::ResetSourcesToDefaults);
 
 	connect(loopRecorder, &LoopRecorder::activeChanged, this, &OBSBasic::UpdateLoopRecordingUI);
+	connect(loopRecorder, &LoopRecorder::armedChanged, this,
+		[this]() { UpdateLoopRecordingUI(loopRecorder->Active()); });
 	/* The output handler is recreated when output settings change */
 	connect(spectraMenu, &QMenu::aboutToShow, this, [this]() { UpdateLoopRecordingUI(loopRecorder->Active()); });
 	connect(loopRecorder, &LoopRecorder::clipStarted, this, [this](int seconds) {
@@ -102,8 +108,21 @@ void OBSBasic::UpdateLoopRecordingUI(bool active)
 		loopToggleAction->setText(QTStr(active ? "Spectra.Loop.Stop" : "Spectra.Loop.Start"));
 		loopToggleAction->setEnabled(available);
 	}
-	emit LoopRecordingStateChanged(active);
+	bool armed = loopRecorder && loopRecorder->Armed();
+	if (loopArmAction) {
+		loopArmAction->setChecked(armed);
+	}
+	emit LoopRecordingStateChanged(active ? 2 : (armed ? 1 : 0));
 	emit LoopRecordingEnabled(available);
+}
+
+void OBSBasic::LoopArmActionTriggered()
+{
+	if (!loopRecorder) {
+		return;
+	}
+	/* The button disarms while armed or recording, and arms otherwise */
+	loopRecorder->SetArmed(!(loopRecorder->Armed() || loopRecorder->Active()));
 }
 
 void OBSBasic::LoopRecordingActionTriggered()

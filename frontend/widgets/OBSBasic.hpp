@@ -1053,6 +1053,7 @@ private:
 	QPointer<LoopRecorder> loopRecorder;
 	QPointer<QMenu> spectraMenu;
 	QPointer<QAction> loopToggleAction;
+	QPointer<QAction> loopArmAction;
 	QPointer<QAction> captureStatusAction;
 
 	void InitSpectra();
@@ -1084,6 +1085,7 @@ public slots:
 	void LoopRecordingStop(int code, QString lastError);
 	void LoopRecordingFileChanged(QString nextFile);
 	void LoopRecordingActionTriggered();
+	void LoopArmActionTriggered();
 	void LoopClipActionTriggered();
 
 	bool ReplayBufferActive();
@@ -1098,7 +1100,8 @@ signals:
 	void ReplayBufStarted();
 	void ReplayBufStopping();
 	void ReplayBufStopped();
-	void LoopRecordingStateChanged(bool active);
+	/* 0: disarmed, 1: armed and waiting for a game, 2: recording */
+	void LoopRecordingStateChanged(int state);
 	void LoopRecordingEnabled(bool enabled);
 
 	/* -------------------------------------

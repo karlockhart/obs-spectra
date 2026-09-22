@@ -41,6 +41,11 @@ public:
 	/* Recreates Spectra's capture sources with default settings */
 	void ResetCapture();
 
+	/* Armed: loop recording starts by itself when a game process matching
+	 * the patterns runs, and stops again when it exits. */
+	void SetArmed(bool armed);
+	bool Armed() const { return armed; }
+
 	bool Start(const QString &label = QString());
 	void Stop();
 	bool Active() const;
@@ -61,6 +66,7 @@ public:
 
 signals:
 	void activeChanged(bool active);
+	void armedChanged(bool armed);
 	void clipStarted(int seconds);
 	void clipSaved(const QString &path);
 	void clipFailed(const QString &error);
@@ -83,6 +89,7 @@ private:
 	std::vector<PendingClip> pendingClips;
 	QHash<QString, int> lockedSegments;
 
+	bool armed = false;
 	bool autoStarted = false;
 	bool suppressAutoStart = false;
 	int missingPolls = 0;
