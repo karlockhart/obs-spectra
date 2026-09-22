@@ -1074,6 +1074,10 @@ public:
 	 * active, in which case nothing changes. */
 	bool ApplySpectraVideo();
 
+	/* Switches Simple output mode from x264 to the best hardware encoder
+	 * (a chosen hardware encoder is kept). Returns true if changed. */
+	bool PreferHardwareEncoder();
+
 public slots:
 	void ShowReplayBufferPauseWarning();
 	void StartReplayBuffer();

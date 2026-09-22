@@ -8,7 +8,31 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+extern bool EncoderAvailable(const char *encoder);
+
 namespace SpectraDefaults {
+
+const char *PreferredSimpleEncoder()
+{
+	if (EncoderAvailable("obs_nvenc_h264_tex") || EncoderAvailable("ffmpeg_nvenc")) {
+		return "nvenc";
+	}
+	if (EncoderAvailable("h264_texture_amf")) {
+		return "amd";
+	}
+	if (EncoderAvailable("obs_qsv11")) {
+		return "qsv";
+	}
+	if (EncoderAvailable("com.apple.videotoolbox.videoencoder.ave.avc")) {
+		return "apple_h264";
+	}
+	return "x264";
+}
+
+bool IsSoftwareSimpleEncoder(const char *encoder)
+{
+	return !encoder || !*encoder || strcmp(encoder, "x264") == 0 || strcmp(encoder, "x264_lowcpu") == 0;
+}
 
 const char *const DefaultQuality = "Good";
 

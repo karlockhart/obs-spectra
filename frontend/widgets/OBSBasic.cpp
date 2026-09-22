@@ -899,13 +899,11 @@ bool OBSBasic::InitBasicConfigDefaults()
 
 void OBSBasic::InitBasicConfigDefaults2()
 {
-	bool oldEncDefaults = config_get_bool(App()->GetUserConfig(), "General", "Pre23Defaults");
-	bool useNV = EncoderAvailable("ffmpeg_nvenc") && !oldEncDefaults;
-
-	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamEncoder",
-				  useNV ? SIMPLE_ENCODER_NVENC : SIMPLE_ENCODER_X264);
-	config_set_default_string(activeConfiguration, "SimpleOutput", "RecEncoder",
-				  useNV ? SIMPLE_ENCODER_NVENC : SIMPLE_ENCODER_X264);
+	/* Spectra always prefers a hardware encoder so recording doesn't cost
+	 * CPU time while gaming */
+	const char *encoder = SpectraDefaults::PreferredSimpleEncoder();
+	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamEncoder", encoder);
+	config_set_default_string(activeConfiguration, "SimpleOutput", "RecEncoder", encoder);
 
 	const char *aac_default = "ffmpeg_aac";
 	if (EncoderAvailable("CoreAudio_AAC")) {

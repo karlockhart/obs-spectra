@@ -35,4 +35,11 @@ bool ParseResolution(const QString &text, int &cx, int &cy);
 
 void FillQualityCombo(QComboBox *combo, const QString &quality);
 
+/* Best available hardware encoder as a Simple output mode encoder name
+ * (NVENC, then AMD, then Quick Sync, then Apple), or x264 if none. */
+const char *PreferredSimpleEncoder();
+
+/* Whether a Simple output mode encoder name is a software (x264) encoder */
+bool IsSoftwareSimpleEncoder(const char *encoder);
+
 } // namespace SpectraDefaults

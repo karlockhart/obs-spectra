@@ -23,6 +23,11 @@ static QString FormatClipLength(int seconds)
 
 void OBSBasic::InitSpectra()
 {
+	/* Existing profiles on x264 move to the hardware encoder at startup */
+	if (!Active() && PreferHardwareEncoder()) {
+		ResetOutputs();
+	}
+
 	loopRecorder = new LoopRecorder(this);
 
 	spectraMenu = new QMenu(QTStr("Spectra.Menu"), this);
@@ -95,6 +100,30 @@ void OBSBasic::InitSpectra()
 	UpdateLoopRecordingUI(false);
 }
 
+bool OBSBasic::PreferHardwareEncoder()
+{
+	const char *preferred = SpectraDefaults::PreferredSimpleEncoder();
+	if (SpectraDefaults::IsSoftwareSimpleEncoder(preferred)) {
+		return false;
+	}
+
+	config_t *config = Config();
+	bool changed = false;
+	for (const char *key : {"RecEncoder", "StreamEncoder"}) {
+		const char *current = config_get_string(config, "SimpleOutput", key);
+		if (SpectraDefaults::IsSoftwareSimpleEncoder(current)) {
+			config_set_string(config, "SimpleOutput", key, preferred);
+			changed = true;
+		}
+	}
+
+	if (changed) {
+		config_save_safe(config, "tmp", nullptr);
+		blog(LOG_INFO, "[Spectra] Using hardware encoder '%s'", preferred);
+	}
+	return changed;
+}
+
 bool OBSBasic::ApplySpectraVideo()
 {
 	if (Active()) {
@@ -112,6 +141,7 @@ bool OBSBasic::ApplySpectraVideo()
 	config_set_uint(config, "Video", "OutputCY", cy);
 	config_set_string(config, "SimpleOutput", "RecQuality", SpectraDefaults::QualityToRecQuality(quality));
 	config_save_safe(config, "tmp", nullptr);
+	PreferHardwareEncoder();
 
 	blog(LOG_INFO, "[Spectra] Video set to %dx%d, %s quality", cx, cy, QT_TO_UTF8(quality));
 
