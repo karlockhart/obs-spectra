@@ -1,5 +1,6 @@
 #include "OBSBasic.hpp"
 
+#include <dialogs/SpectraClipMaker.hpp>
 #include <dialogs/SpectraLoopSettings.hpp>
 #include <utility/SpectraDefaults.hpp>
 
@@ -49,6 +50,8 @@ void OBSBasic::InitSpectra()
 		clipMenu->addAction(FormatClipLength(seconds), this,
 				    [this, seconds]() { loopRecorder->ClipLast(seconds); });
 	}
+
+	spectraMenu->addAction(QTStr("Spectra.ClipMaker.Menu"), this, &OBSBasic::OpenClipMaker);
 
 	spectraMenu->addSeparator();
 	spectraMenu->addAction(QTStr("Spectra.Loop.OpenClips"), this, [this]() {
@@ -199,6 +202,16 @@ void OBSBasic::LoopClipActionTriggered()
 	}
 }
 
+void OBSBasic::OpenClipMaker()
+{
+	if (!clipMaker) {
+		clipMaker = new SpectraClipMaker(this, loopRecorder);
+	}
+	clipMaker->show();
+	clipMaker->raise();
+	clipMaker->activateWindow();
+}
+
 void OBSBasic::OpenLoopSettings()
 {
 	SpectraLoopSettings dialog(this, loopRecorder);
@@ -248,27 +261,39 @@ void OBSBasic::ResetSourcesToDefaults()
 	ShowStatusBarMessage(QTStr("Spectra.ResetSources.Done"));
 }
 
-bool OBSBasic::StartLoopRecording(const QString &directory, int segmentSeconds)
+bool OBSBasic::StartLoopRecording(const QString &directory, int segmentSeconds, QString *errorOut)
 {
+	auto fail = [errorOut](const QString &error) {
+		if (errorOut) {
+			*errorOut = error;
+		}
+		return false;
+	};
+
 	if (!outputHandler || !outputHandler->LoopRecordingAvailable()) {
 		ShowStatusBarMessage(QTStr("Spectra.Loop.Error.Unavailable"));
-		return false;
+		return fail(QTStr("Spectra.Loop.Error.Unavailable"));
 	}
 	if (outputHandler->LoopRecordingActive()) {
 		return true;
 	}
 	if (disableOutputsRef) {
-		return false;
+		return fail(QTStr("Spectra.Loop.Error.OutputsBusy"));
 	}
 	if (LowDiskSpace()) {
 		DiskSpaceMessage();
-		return false;
+		return fail(QTStr("Spectra.Loop.Error.DiskSpace"));
 	}
 
 	SaveProject();
 
+	outputHandler->lastError.clear();
 	if (!outputHandler->StartLoopRecording(QT_TO_UTF8(directory), segmentSeconds)) {
 		QString error = QString::fromStdString(outputHandler->lastError);
+		if (error.isEmpty()) {
+			error = QTStr("Output.StartFailedGeneric");
+		}
+		fail(error);
 		QString msg = QTStr("Spectra.Loop.Error.Start").arg(error);
 		ShowStatusBarMessage(msg);
 		SysTrayNotify(msg, QSystemTrayIcon::Warning);

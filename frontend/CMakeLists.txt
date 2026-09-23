@@ -9,7 +9,7 @@ else()
   target_enable_feature(obs "User Interface")
 endif()
 
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat)
+find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat swscale)
 find_package(CURL REQUIRED)
 
 if(NOT TARGET OBS::json11)
@@ -38,6 +38,7 @@ target_link_libraries(
     FFmpeg::avcodec
     FFmpeg::avutil
     FFmpeg::avformat
+    FFmpeg::swscale
     OBS::libobs
     OBS::frontend-api
     OBS::json11

@@ -61,6 +61,16 @@ public:
 	/* Current disk usage of the loop folder, in bytes. */
 	quint64 UsedBytes() const;
 
+	/* Segment being written right now (empty when not recording) */
+	QString CurrentSegment() const { return Active() ? currentSegment : QString(); }
+
+	/* Why the last start attempt failed (empty after a successful start) */
+	QString LastStartError() const { return lastStartError; }
+
+	/* Locked segments are never deleted by the disk quota */
+	void Lock(const QStringList &files);
+	void Unlock(const QStringList &files);
+
 	/* Re-reads settings, e.g. after the settings dialog was accepted. */
 	void SettingsChanged();
 
@@ -75,6 +85,8 @@ signals:
 	void clipStarted(int seconds);
 	void clipSaved(const QString &path);
 	void clipFailed(const QString &error);
+	/* A segment was finished or deleted */
+	void segmentsChanged();
 
 private:
 	struct PendingClip {
@@ -98,13 +110,13 @@ private:
 	bool autoStarted = false;
 	bool suppressAutoStart = false;
 	int missingPolls = 0;
+	QDateTime retryAutoStartAt;
+	QString lastStartError;
 
 	void CheckProcesses();
 	void UpdateCapture();
 	void EnforceQuota();
 	void ProcessPendingClips(bool segmentJustFinalized = true);
 	void ExportClip(int seconds, const QDateTime &requested, double lagSeconds);
-	void Lock(const QStringList &files);
-	void Unlock(const QStringList &files);
 	QString LabelForPattern(const QString &pattern) const;
 };

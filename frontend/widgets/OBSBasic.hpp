@@ -58,6 +58,7 @@ class OBSBasicTransform;
 class OBSLogViewer;
 class OBSMissingFiles;
 class OBSProjector;
+class SpectraClipMaker;
 class VolumeControl;
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
@@ -1055,14 +1056,16 @@ private:
 	QPointer<QAction> loopToggleAction;
 	QPointer<QAction> loopArmAction;
 	QPointer<QAction> captureStatusAction;
+	QPointer<SpectraClipMaker> clipMaker;
 
 	void InitSpectra();
 	void UpdateLoopRecordingUI(bool active);
 	void OpenLoopSettings();
+	void OpenClipMaker();
 	void ResetSourcesToDefaults();
 
 public:
-	bool StartLoopRecording(const QString &directory, int segmentSeconds);
+	bool StartLoopRecording(const QString &directory, int segmentSeconds, QString *error = nullptr);
 	void StopLoopRecording();
 	bool LoopRecordingActive() const;
 	bool SplitLoopRecording();
