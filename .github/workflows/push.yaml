@@ -55,6 +55,7 @@ jobs:
         if: fromJSON(steps.check.outputs.validTag)
         with:
           pattern: obs-studio-windows-x64-*
+          merge-multiple: true
 
       - name: Rename Files 🏷️
         if: fromJSON(steps.check.outputs.validTag)
@@ -62,8 +63,7 @@ jobs:
           : Rename Files 🏷️
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          windows_x64_artifact_name="obs-studio-windows-x64-${GITHUB_SHA:0:9}"
-          mv -v "${windows_x64_artifact_name}/"obs-studio-*-windows-x64.zip \
+          mv -v obs-studio-*-windows-x64.zip \
             "${{ github.workspace }}"/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
 
       - name: Generate Checksums 🪪
