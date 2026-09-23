@@ -87,6 +87,9 @@ public:
 
 	/* Wall clock used when the HUD clock is unreadable (tests override) */
 	Clock wallClock;
+	/* Where the loop recording was at a wall-clock time; lines are tagged
+	 * with it as they are added (unset: no video metadata) */
+	std::function<std::optional<VideoSpot>(double wallTs)> locateVideo;
 
 private:
 	RecorderConfig config;

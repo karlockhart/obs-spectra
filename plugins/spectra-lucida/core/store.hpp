@@ -1,10 +1,14 @@
 #pragma once
 
+#include "video.hpp"
+
 #include <spectra-vision/chat.hpp>
 
 #include <QString>
 #include <QStringList>
 
+#include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -38,8 +42,25 @@ struct LogLine {
 	int frames = 0;
 	std::optional<long long> frameId;
 	std::optional<spectra::Rect> rect;
+	/* Spectra additions */
+	QStringList labels;                           /* from the tag rules */
+	std::optional<std::array<double, 13>> colour; /* for Obscura's learner */
+	double firstSeen = 0.0;                       /* wall clock, s */
+	std::optional<VideoSpot> video;               /* loop segment when first seen */
 
 	QString When() const;
+};
+
+/* What the log browser asks for; empty fields match everything */
+struct Query {
+	QString text;
+	QString channel;
+	QString label;
+	std::optional<long long> from; /* sort_ts range */
+	std::optional<long long> to;
+	std::optional<long long> frameId;
+	bool withShot = false;
+	int limit = 500;
 };
 
 struct Frame {
@@ -48,6 +69,12 @@ struct Frame {
 	QString path;
 	int width = 0;
 	int height = 0;
+};
+
+struct FrameInfo {
+	Frame frame;
+	int lines = 0;
+	QStringList labels;
 };
 
 struct Stats {
@@ -101,6 +128,19 @@ public:
 	std::optional<LogLine> Line(long long id);
 	std::vector<LogLine> Since(long long startTs, std::optional<long long> endTs = {});
 	std::vector<LogLine> Search(const QString &query, int limit = 50, const QString &channel = QString());
+	/* The newest q.limit lines matching q, oldest first */
+	std::vector<LogLine> Find(const Query &q);
+	QStringList Channels();
+	QStringList Labels();
+	/* Kept screenshots, newest first */
+	std::vector<FrameInfo> Frames(int limit = 200, std::optional<long long> from = {},
+				      std::optional<long long> to = {});
+
+	/* Tags lines as they are added (and when a better reading replaces one) */
+	std::function<QStringList(const QString &body)> labeler;
+	/* Re-tags every line with labeler; returns how many changed */
+	int Relabel();
+	void SetVideo(const std::vector<long long> &lineIds, const VideoSpot &spot);
 	Stats GetStats();
 	/* Drops lines older than days. Returns how many; orphaned screenshot
 	 * files are added to orphanedFiles for the caller to delete. */

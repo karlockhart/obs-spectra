@@ -230,6 +230,11 @@ Tick Recorder::Step()
 	tick.ocrMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
 
 	std::vector<long long> ids = store.AddFrame(entries, frameTs, tsSource, sessionId);
+	if (!ids.empty() && locateVideo) {
+		if (std::optional<VideoSpot> spot = locateVideo(tick.at)) {
+			store.SetVideo(ids, *spot);
+		}
+	}
 	const int added = (int)ids.size();
 	const bool turnover = added >= kTurnoverMinLines && added == (int)entries.size();
 	Adapt(added, turnover);

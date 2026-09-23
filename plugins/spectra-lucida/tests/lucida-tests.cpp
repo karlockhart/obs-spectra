@@ -7,6 +7,8 @@
 
 #include "../core/recorder.hpp"
 #include "../core/store.hpp"
+#include "../core/tagger.hpp"
+#include "../core/video.hpp"
 
 #include <sqlite3.h>
 
@@ -567,6 +569,134 @@ int main(int argc, char **argv)
 		QStringList bodies = Bodies(r.store.Recent());
 		CHECK(!bodies.contains("A message with no timestamp"));
 		CHECK(bodies.size() == kUntimed.size() - 1);
+	});
+
+	/* ---- Spectra: tag rules ---- */
+
+	Test("tag_triggers_ignore_case_and_separators", [] {
+		Tagger t({{"bodycam-rp", {"bodycam"}}}, false);
+		CHECK(t.Tags("turning my Bodycam on") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("my body cam is on") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("body-cam footage") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("BODY_CAM, now!") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("nobody came to the party").isEmpty());
+		CHECK(t.Tags("bodycams everywhere").isEmpty());
+	});
+
+	Test("tag_triggers_support_wildcards_and_commands", [] {
+		Tagger t({{"admin duty", {"/aduty*"}}, {"bodycam-rp", {"body?am*"}}}, false);
+		CHECK(t.Tags("[Admin] Bob used /aduty") == QStringList{"admin duty"});
+		CHECK(t.Tags("/aduty2 on") == QStringList{"admin duty"});
+		CHECK(t.Tags("aduty").isEmpty());
+		CHECK(t.Tags("my bodycams are on") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("body camera rolling") == QStringList{"bodycam-rp"});
+	});
+
+	Test("tag_typo_tolerance_only_for_long_plain_triggers", [] {
+		Tagger t({{"bodycam-rp", {"bodycam"}}, {"cuff", {"cuffs"}}}, true);
+		CHECK(t.Tags("bodycan on") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("bodycams on") == QStringList{"bodycam-rp"});
+		CHECK(t.Tags("cufs").isEmpty());
+		CHECK(t.Tags("nobody came").isEmpty());
+	});
+
+	Test("tag_rules_round_trip_through_json", [] {
+		const QList<TagRule> rules = DefaultTagRules();
+		bool ok = false;
+		CHECK(TagRulesFromJson(TagRulesToJson(rules), &ok) == rules);
+		CHECK(ok);
+		TagRulesFromJson("not json", &ok);
+		CHECK(!ok);
+	});
+
+	Test("lines_are_labelled_searched_and_relabelled", [] {
+		Store s(NewDb());
+		CHECK(s.Open());
+		Tagger bodycam({{"bodycam-rp", {"bodycam"}}}, false);
+		s.labeler = [&](const QString &body) {
+			return bodycam.Tags(body);
+		};
+		const long long ts = NowSecs();
+		s.AddFrame({Entry("16:38:10", "turning my body cam on"), Entry("16:38:11", "hello there", "ooc")}, ts);
+		auto lines = s.Recent();
+		CHECK(lines.size() == 2 && lines[0].labels == QStringList{"bodycam-rp"} && lines[1].labels.isEmpty());
+		CHECK(s.Labels() == QStringList{"bodycam-rp"});
+
+		Query q;
+		q.label = "bodycam-rp";
+		CHECK(s.Find(q).size() == 1);
+		q = Query();
+		q.channel = "ooc";
+		CHECK(s.Find(q).size() == 1 && s.Find(q)[0].body == "hello there");
+		q = Query();
+		q.text = "hello";
+		CHECK(s.Find(q).size() == 1);
+		q.from = ts + 10;
+		CHECK(s.Find(q).empty());
+
+		Tagger greeting({{"greeting", {"hello"}}}, false);
+		s.labeler = [&](const QString &body) {
+			return greeting.Tags(body);
+		};
+		CHECK(s.Relabel() == 2);
+		CHECK(s.Labels() == QStringList{"greeting"});
+		CHECK(s.Relabel() == 0);
+	});
+
+	Test("lines_keep_colour_first_seen_and_video", [] {
+		Store s(NewDb());
+		CHECK(s.Open());
+		spectra::ChatEntry e = Entry("16:38:10", "Bob says: hi");
+		e.colour[0] = 0.5f;
+		auto ids = s.AddFrame({e}, NowSecs());
+		CHECK(ids.size() == 1);
+		s.SetVideo(ids, VideoSpot{"C:/loop/2026-09-23 14-05-00.mkv", 42.5});
+		std::optional<LogLine> l = s.Line(ids[0]);
+		CHECK(l && l->colour && std::fabs((*l->colour)[0] - 0.5) < 1e-6);
+		CHECK(l && l->firstSeen > 0);
+		CHECK(l && l->video && l->video->path.endsWith("14-05-00.mkv") && l->video->offset == 42.5);
+	});
+
+	Test("frames_list_their_lines_and_labels", [] {
+		Store s(NewDb());
+		CHECK(s.Open());
+		Tagger t({{"bodycam-rp", {"bodycam"}}}, false);
+		s.labeler = [&](const QString &body) {
+			return t.Tags(body);
+		};
+		auto ids = s.AddFrame({Entry("16:38:10", "bodycam on"), Entry("16:38:11", "hi")}, NowSecs());
+		long long frameId = s.AttachFrame(ids, "C:/frames/x.jpg", 1920, 1080, NowSecs());
+		auto frames = s.Frames();
+		CHECK(frames.size() == 1 && frames[0].lines == 2 && frames[0].labels == QStringList{"bodycam-rp"});
+		Query q;
+		q.frameId = frameId;
+		CHECK(s.Find(q).size() == 2);
+	});
+
+	/* ---- Spectra: loop recording lookup ---- */
+
+	Test("a_moment_is_found_in_its_loop_segment", [] {
+		QString dir = QDir(scratch).filePath("loop");
+		QDir(dir).removeRecursively();
+		QDir().mkpath(dir);
+		const QDateTime base = QDateTime::currentDateTime().addSecs(-600);
+		auto name = [&](int offset) {
+			return QDir(dir).filePath(base.addSecs(offset).toString("yyyy-MM-dd HH-mm-ss") + ".mkv");
+		};
+		for (int offset : {0, 120, 240}) {
+			QFile f(name(offset));
+			CHECK(f.open(QIODevice::WriteOnly));
+			f.write("x");
+		}
+		const double t0 = base.toSecsSinceEpoch();
+		auto spot = LocateVideo(dir, t0 + 130, false);
+		CHECK(spot && spot->path.endsWith(QFileInfo(name(120)).fileName()) &&
+		      std::fabs(spot->offset - 10) < 1.1);
+		CHECK(!LocateVideo(dir, t0 - 60, false));
+		/* the newest segment: open-ended while recording, else until last written */
+		CHECK(LocateVideo(dir, t0 + 900, true).has_value());
+		CHECK(!LocateVideo(dir, t0 + 3600, false));
+		CHECK(FormatOffset(83) == "1:23" && FormatOffset(3723) == "1:02:03");
 	});
 
 	printf("\n%d checks, %d failures\n", checks, failures);

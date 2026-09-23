@@ -25,6 +25,7 @@
 #include <oauth/Auth.hpp>
 #include <utility/BasicOutputHandler.hpp>
 #include <utility/LoopRecorder.hpp>
+#include <utility/SpectraGamepad.hpp>
 #include <utility/OBSCanvas.hpp>
 #include <utility/PreviewProgramSizeObserver.hpp>
 #include <utility/VCamConfig.hpp>
@@ -1052,6 +1053,7 @@ private:
 	std::string lastReplay;
 
 	QPointer<LoopRecorder> loopRecorder;
+	QPointer<SpectraGamepadPTT> gamepadPTT;
 	QPointer<QMenu> spectraMenu;
 	QPointer<QAction> loopToggleAction;
 	QPointer<QAction> loopArmAction;
@@ -1062,6 +1064,7 @@ private:
 	void UpdateLoopRecordingUI(bool active);
 	void OpenLoopSettings();
 	void OpenClipMaker();
+	void OpenAudioSetup();
 	void ResetSourcesToDefaults();
 
 public:
@@ -1070,6 +1073,7 @@ public:
 	bool LoopRecordingActive() const;
 	bool SplitLoopRecording();
 	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
+	SpectraGamepadPTT *GetGamepadPTT() const { return gamepadPTT; }
 	OBSScene GetProgramScene();
 
 	/* Applies Spectra's canvas/output resolution and recording quality

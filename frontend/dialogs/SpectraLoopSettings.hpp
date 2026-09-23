@@ -1,9 +1,12 @@
 #pragma once
 
 #include <QDialog>
+#include <QList>
 
 class LoopRecorder;
 class OBSBasic;
+class SpectraAppPicker;
+class SpectraHotkeyEdit;
 class QCheckBox;
 class QComboBox;
 class QLabel;
@@ -33,8 +36,9 @@ private:
 	QCheckBox *fitToCanvas;
 	QComboBox *resolution;
 	QComboBox *quality;
-	QLineEdit *processes;
+	SpectraAppPicker *processes;
 	QLabel *usage;
+	QList<SpectraHotkeyEdit *> shortcuts;
 
 	QWidget *PathRow(QLineEdit *edit);
 };

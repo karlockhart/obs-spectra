@@ -1,6 +1,7 @@
 #include "OBSBasic.hpp"
 
 #include <dialogs/SpectraClipMaker.hpp>
+#include <dialogs/SpectraAudioSetup.hpp>
 #include <dialogs/SpectraLoopSettings.hpp>
 #include <utility/SpectraDefaults.hpp>
 
@@ -30,6 +31,7 @@ void OBSBasic::InitSpectra()
 	}
 
 	loopRecorder = new LoopRecorder(this);
+	gamepadPTT = new SpectraGamepadPTT(this);
 
 	spectraMenu = new QMenu(QTStr("Spectra.Menu"), this);
 	menuBar()->insertMenu(ui->menuTools->menuAction(), spectraMenu);
@@ -66,6 +68,7 @@ void OBSBasic::InitSpectra()
 	});
 	spectraMenu->addSeparator();
 	spectraMenu->addAction(QTStr("Spectra.Loop.Settings"), this, &OBSBasic::OpenLoopSettings);
+	spectraMenu->addAction(QTStr("Spectra.Audio.Menu"), this, &OBSBasic::OpenAudioSetup);
 	spectraMenu->addAction(QTStr("Spectra.ResetSources"), this, &OBSBasic::ResetSourcesToDefaults);
 
 	connect(loopRecorder, &LoopRecorder::activeChanged, this, &OBSBasic::UpdateLoopRecordingUI);
@@ -218,6 +221,12 @@ void OBSBasic::OpenLoopSettings()
 	if (dialog.exec() == QDialog::Accepted) {
 		loopRecorder->SettingsChanged();
 	}
+}
+
+void OBSBasic::OpenAudioSetup()
+{
+	SpectraAudioSetup dialog(this);
+	dialog.exec();
 }
 
 static bool HasInputDevices()

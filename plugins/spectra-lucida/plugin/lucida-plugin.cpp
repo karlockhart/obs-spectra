@@ -6,9 +6,11 @@
 
 #include "lucida-controller.hpp"
 #include "lucida-dock.hpp"
+#include "lucida-host.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <util/config-file.h>
 
 #include <QAction>
 #include <QMainWindow>
@@ -20,6 +22,18 @@ OBS_MODULE_USE_DEFAULT_LOCALE("spectra-lucida", "en-US")
 MODULE_EXPORT const char *obs_module_description(void)
 {
 	return "Lucida chat logger for Spectra";
+}
+
+QString lucida::Text(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+
+QString lucida::ProfileString(const char *section, const char *name)
+{
+	config_t *c = obs_frontend_get_profile_config();
+	const char *value = c ? config_get_string(c, section, name) : nullptr;
+	return QString::fromUtf8(value ? value : "");
 }
 
 static QPointer<lucida::Controller> controller;
@@ -38,6 +52,13 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		QObject::connect(viewer, &QAction::triggered, [] {
 			if (dock) {
 				dock->OpenViewer();
+			}
+		});
+		auto *settings = static_cast<QAction *>(
+			obs_frontend_add_tools_menu_qaction(obs_module_text("Lucida.Menu.Settings")));
+		QObject::connect(settings, &QAction::triggered, [] {
+			if (dock) {
+				dock->OpenSettings();
 			}
 		});
 		QObject::connect(controller, &lucida::Controller::failed, [](const QString &message) {
