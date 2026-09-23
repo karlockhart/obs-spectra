@@ -18,6 +18,7 @@
 #endif
 #include <windows.h>
 #include <tlhelp32.h>
+#include <util/windows/window-helpers.h>
 #endif
 
 #define LOOP_SECTION "SpectraLoop"
@@ -49,6 +50,84 @@ static QStringList RunningProcessNames()
 	CloseHandle(snapshot);
 #endif
 	return names;
+}
+
+/* Apps that go fullscreen without being games, ignored by "any fullscreen
+ * application" (they can still be added to the list explicitly). */
+static const char *fullscreenIgnored[] = {
+	"explorer.exe",
+	"ApplicationFrameHost.exe",
+	"LockApp.exe",
+	"SearchHost.exe",
+	"ShellExperienceHost.exe",
+	"StartMenuExperienceHost.exe",
+	"TextInputHost.exe",
+	"chrome.exe",
+	"msedge.exe",
+	"firefox.exe",
+	"opera.exe",
+	"brave.exe",
+	"vivaldi.exe",
+	"vlc.exe",
+	"mpc-hc64.exe",
+	"mpc-be64.exe",
+	"PotPlayerMini64.exe",
+	"Netflix.exe",
+	"POWERPNT.EXE",
+	"obs64.exe",
+};
+
+/* The exe of the foreground window if it covers its whole monitor, e.g. a
+ * game in exclusive or borderless fullscreen. */
+static QString FullscreenAppExe()
+{
+#ifdef _WIN32
+	HWND hwnd = GetForegroundWindow();
+	if (!hwnd || !IsWindowVisible(hwnd) || IsIconic(hwnd) || hwnd == GetShellWindow() ||
+	    hwnd == GetDesktopWindow()) {
+		return QString();
+	}
+
+	DWORD pid = 0;
+	GetWindowThreadProcessId(hwnd, &pid);
+	if (pid == GetCurrentProcessId()) {
+		return QString();
+	}
+
+	/* A maximized window with a title bar also covers the monitor when
+	 * the taskbar auto-hides, but isn't fullscreen */
+	if (IsZoomed(hwnd) && (GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_CAPTION) == WS_CAPTION) {
+		return QString();
+	}
+
+	RECT rect;
+	MONITORINFO monitor = {};
+	monitor.cbSize = sizeof(monitor);
+	if (!GetWindowRect(hwnd, &rect) ||
+	    !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
+		return QString();
+	}
+	const RECT &m = monitor.rcMonitor;
+	if (rect.left > m.left || rect.top > m.top || rect.right < m.right || rect.bottom < m.bottom) {
+		return QString();
+	}
+
+	struct dstr exe = {0};
+	if (!ms_get_window_exe(&exe, hwnd)) {
+		return QString();
+	}
+	QString exeName = QString::fromUtf8(exe.array);
+	dstr_free(&exe);
+
+	for (const char *ignored : fullscreenIgnored) {
+		if (exeName.compare(QLatin1String(ignored), Qt::CaseInsensitive) == 0) {
+			return QString();
+		}
+	}
+	return exeName;
+#else
+	return QString();
+#endif
 }
 
 LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_), capture(new LoopCapture(main_))
@@ -133,10 +212,15 @@ bool LoopRecorder::FitToCanvasEnabled() const
 	return config_get_bool(main->Config(), LOOP_SECTION, "FitToCanvas");
 }
 
+bool LoopRecorder::AnyFullscreenEnabled() const
+{
+	return config_get_bool(main->Config(), LOOP_SECTION, "AnyFullscreen");
+}
+
 void LoopRecorder::FitGameToCanvas()
 {
 	if (FitToCanvasEnabled()) {
-		capture->FitGameToCanvas(ProcessPatterns());
+		capture->FitGameToCanvas(ActivePatterns());
 	}
 }
 
@@ -152,7 +236,7 @@ void LoopRecorder::UpdateCapture()
 {
 	capture->SetFitOnHook(FitToCanvasEnabled());
 	if (AutoCaptureEnabled()) {
-		capture->Update(ProcessPatterns());
+		capture->Update(ActivePatterns());
 	} else {
 		capture->Reset();
 	}
@@ -169,9 +253,22 @@ QStringList LoopRecorder::ProcessPatterns() const
 	return patterns;
 }
 
+QStringList LoopRecorder::ActivePatterns() const
+{
+	QStringList patterns = ProcessPatterns();
+	if (!fullscreenExe.isEmpty()) {
+		patterns << fullscreenExe;
+	}
+	return patterns;
+}
+
 void LoopRecorder::SettingsChanged()
 {
-	if (armed && !ProcessPatterns().isEmpty()) {
+	if (!AnyFullscreenEnabled()) {
+		fullscreenExe.clear();
+	}
+
+	if (armed && (!ProcessPatterns().isEmpty() || AnyFullscreenEnabled())) {
 		processTimer.start();
 		QTimer::singleShot(0, this, &LoopRecorder::CheckProcesses);
 	} else {
@@ -312,13 +409,29 @@ QString LoopRecorder::LabelForPattern(const QString &pattern) const
 
 void LoopRecorder::CheckProcesses()
 {
-	QStringList patterns = ProcessPatterns();
+	const QStringList running = RunningProcessNames();
+
+	if (AnyFullscreenEnabled()) {
+		/* Remember the fullscreen app until it exits, so alt-tabbing out of
+		 * it doesn't stop the recording. */
+		if (!fullscreenExe.isEmpty() && !running.contains(fullscreenExe, Qt::CaseInsensitive)) {
+			fullscreenExe.clear();
+		}
+		if (fullscreenExe.isEmpty() && !Active()) {
+			fullscreenExe = FullscreenAppExe();
+			if (!fullscreenExe.isEmpty()) {
+				blog(LOG_INFO, "[Spectra] Fullscreen application detected: %s",
+				     QT_TO_UTF8(fullscreenExe));
+			}
+		}
+	}
+
+	QStringList patterns = ActivePatterns();
 	if (patterns.isEmpty()) {
 		return;
 	}
 
 	QString matched;
-	const QStringList running = RunningProcessNames();
 	for (const QString &pattern : patterns) {
 		QRegularExpression re(QRegularExpression::wildcardToRegularExpression(pattern),
 				      QRegularExpression::CaseInsensitiveOption);

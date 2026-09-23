@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QWizardPage>
 
 class QCheckBox;
@@ -7,6 +8,8 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QSpinBox;
+class SpectraAppPicker;
+class SpectraHotkeyEdit;
 
 /* Spectra setup: one base folder holding the loop recording, clips,
  * screenshots and Lucida/Obscura data, plus the game to watch for. */
@@ -15,8 +18,10 @@ class AutoConfigSpectraPage : public QWizardPage {
 
 	QLineEdit *baseFolder;
 	QLabel *folderPreview;
-	QLineEdit *processes;
+	SpectraAppPicker *processes;
 	QSpinBox *quotaGB;
+	QSpinBox *clipSec;
+	QList<SpectraHotkeyEdit *> shortcuts;
 	QCheckBox *autoStart;
 	QCheckBox *autoCapture;
 	QComboBox *resolution;

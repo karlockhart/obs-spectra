@@ -1,5 +1,7 @@
 #include "SpectraLoopSettings.hpp"
 
+#include <components/SpectraAppPicker.hpp>
+#include <components/SpectraHotkeyEdit.hpp>
 #include <utility/LoopRecorder.hpp>
 #include <utility/SpectraDefaults.hpp>
 #include <widgets/OBSBasic.hpp>
@@ -11,6 +13,7 @@
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -51,6 +54,7 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	clipSec->setRange(5, 24 * 3600);
 	clipSec->setSuffix(" s");
 	clipSec->setValue(recorder->DefaultClipSeconds());
+	clipSec->setToolTip(QTStr("Spectra.Loop.Settings.ClipLengthTip"));
 
 	autoStart = new QCheckBox(QTStr("Spectra.Loop.Settings.AutoStart"));
 	autoStart->setChecked(recorder->AutoStartEnabled());
@@ -72,8 +76,9 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 					  QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Quality")));
 	quality->setToolTip(QTStr("Spectra.Video.QualityTip"));
 
-	processes = new QLineEdit(recorder->ProcessPatterns().join(", "));
-	processes->setToolTip(QTStr("Spectra.Loop.Settings.ProcessesTip"));
+	processes = new SpectraAppPicker();
+	processes->SetPatterns(recorder->ProcessPatterns().join(", "));
+	processes->SetAnyFullscreen(recorder->AnyFullscreenEnabled());
 
 	double usedGB = (double)recorder->UsedBytes() / (1024.0 * 1024.0 * 1024.0);
 	usage = new QLabel(QTStr("Spectra.Loop.Settings.Usage").arg(usedGB, 0, 'f', 1));
@@ -93,12 +98,20 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoCapture);
 	form->addRow(QString(), fitToCanvas);
 
+	QGroupBox *shortcutGroup = new QGroupBox(QTStr("Spectra.Hotkey.Shortcuts"));
+	auto *shortcutForm = new QFormLayout(shortcutGroup);
+	QLabel *shortcutNote = new QLabel(QTStr("Spectra.Hotkey.ShortcutsNote"));
+	shortcutNote->setWordWrap(true);
+	shortcutForm->addRow(shortcutNote);
+	shortcuts = SpectraHotkeyEdit::AddShortcutRows(shortcutForm);
+
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
 	connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
 	auto *layout = new QVBoxLayout(this);
 	layout->addLayout(form);
+	layout->addWidget(shortcutGroup);
 	layout->addWidget(buttons);
 
 	if (main->Active()) {
@@ -158,7 +171,11 @@ void SpectraLoopSettings::accept()
 	config_set_bool(config, LOOP_SECTION, "AutoStop", autoStop->isChecked());
 	config_set_bool(config, LOOP_SECTION, "AutoCapture", autoCapture->isChecked());
 	config_set_bool(config, LOOP_SECTION, "FitToCanvas", fitToCanvas->isChecked());
-	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->text().trimmed()));
+	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->Patterns()));
+	config_set_bool(config, LOOP_SECTION, "AnyFullscreen", processes->AnyFullscreen());
+	for (SpectraHotkeyEdit *shortcut : shortcuts) {
+		shortcut->Save(config);
+	}
 	config_save_safe(config, "tmp", nullptr);
 
 	if (videoChanged) {

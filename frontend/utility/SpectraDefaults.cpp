@@ -78,10 +78,13 @@ void FillQualityCombo(QComboBox *combo, const QString &quality)
 	combo->setCurrentIndex(index >= 0 ? index : 0);
 }
 
-void EnableDefaultPushToTalk(obs_source_t *source)
+std::vector<obs_key_combination_t> DefaultPushToTalkKeys()
 {
-	obs_source_enable_push_to_talk(source, true);
+	return {{0, OBS_KEY_N}, {0, OBS_KEY_M}, {0, OBS_KEY_O}, {0, OBS_KEY_P}};
+}
 
+obs_hotkey_id PushToTalkHotkey(obs_source_t *source)
+{
 	struct Context {
 		obs_source_t *source;
 		obs_hotkey_id id;
@@ -102,16 +105,90 @@ void EnableDefaultPushToTalk(obs_source_t *source)
 			return true;
 		},
 		&ctx);
+	return ctx.id;
+}
+
+std::vector<obs_key_combination_t> GetHotkeyKeys(obs_hotkey_id id)
+{
+	struct Context {
+		obs_hotkey_id id;
+		std::vector<obs_key_combination_t> keys;
+	} ctx = {id, {}};
 
 	if (ctx.id == OBS_INVALID_HOTKEY_ID) {
+		return {};
+	}
+
+	obs_enum_hotkey_bindings(
+		[](void *data, size_t, obs_hotkey_binding_t *binding) {
+			Context *c = static_cast<Context *>(data);
+			if (obs_hotkey_binding_get_hotkey_id(binding) == c->id) {
+				c->keys.push_back(obs_hotkey_binding_get_key_combination(binding));
+			}
+			return true;
+		},
+		&ctx);
+	return ctx.keys;
+}
+
+std::vector<obs_key_combination_t> GetPushToTalkKeys(obs_source_t *source)
+{
+	return GetHotkeyKeys(PushToTalkHotkey(source));
+}
+
+obs_hotkey_id FrontendHotkey(const char *name)
+{
+	struct Context {
+		const char *name;
+		obs_hotkey_id id;
+	} ctx = {name, OBS_INVALID_HOTKEY_ID};
+
+	obs_enum_hotkeys(
+		[](void *data, obs_hotkey_id id, obs_hotkey_t *key) {
+			Context *c = static_cast<Context *>(data);
+			if (obs_hotkey_get_registerer_type(key) == OBS_HOTKEY_REGISTERER_FRONTEND &&
+			    strcmp(obs_hotkey_get_name(key), c->name) == 0) {
+				c->id = id;
+				return false;
+			}
+			return true;
+		},
+		&ctx);
+	return ctx.id;
+}
+
+void SetFrontendHotkeyKeys(config_t *config, const char *name, const std::vector<obs_key_combination_t> &keys)
+{
+	obs_hotkey_id id = FrontendHotkey(name);
+	if (id == OBS_INVALID_HOTKEY_ID) {
+		blog(LOG_WARNING, "[Spectra] Could not find the '%s' hotkey", name);
+		return;
+	}
+	obs_hotkey_load_bindings(id, const_cast<obs_key_combination_t *>(keys.data()), keys.size());
+
+	/* Stored the same way as Settings > Hotkeys stores it */
+	OBSDataArrayAutoRelease array = obs_hotkey_save(id);
+	OBSDataAutoRelease data = obs_data_create();
+	obs_data_set_array(data, "bindings", array);
+	config_set_string(config, "Hotkeys", name, obs_data_get_json(data));
+}
+
+void SetPushToTalkKeys(obs_source_t *source, const std::vector<obs_key_combination_t> &keys)
+{
+	obs_hotkey_id id = PushToTalkHotkey(source);
+	if (id == OBS_INVALID_HOTKEY_ID) {
 		blog(LOG_WARNING, "[Spectra] Could not find the push-to-talk hotkey of '%s'",
 		     obs_source_get_name(source));
 		return;
 	}
+	obs_hotkey_load_bindings(id, const_cast<obs_key_combination_t *>(keys.data()), keys.size());
+}
 
-	obs_key_combination_t keys[] = {{0, OBS_KEY_N}, {0, OBS_KEY_M}, {0, OBS_KEY_P}};
-	obs_hotkey_load_bindings(ctx.id, keys, sizeof(keys) / sizeof(keys[0]));
-	blog(LOG_INFO, "[Spectra] Push-to-talk enabled for '%s' (N, M, P)", obs_source_get_name(source));
+void EnableDefaultPushToTalk(obs_source_t *source)
+{
+	obs_source_enable_push_to_talk(source, true);
+	SetPushToTalkKeys(source, DefaultPushToTalkKeys());
+	blog(LOG_INFO, "[Spectra] Push-to-talk enabled for '%s' (N, M, O, P)", obs_source_get_name(source));
 }
 
 QString FindTeamSpeakExecutable()

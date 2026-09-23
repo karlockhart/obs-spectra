@@ -1,8 +1,11 @@
 #pragma once
 
 #include <obs.h>
+#include <util/config-file.h>
 
 #include <QString>
+
+#include <vector>
 
 class QComboBox;
 
@@ -10,8 +13,24 @@ class QComboBox;
  * "Reset Sources to Defaults". */
 namespace SpectraDefaults {
 
-/* Enables push-to-talk on `source`, bound to N, M and P. */
+/* Enables push-to-talk on `source`, bound to the default keys. */
 void EnableDefaultPushToTalk(obs_source_t *source);
+
+/* N, M, O and P */
+std::vector<obs_key_combination_t> DefaultPushToTalkKeys();
+
+/* The push-to-talk hotkey of an audio source */
+obs_hotkey_id PushToTalkHotkey(obs_source_t *source);
+std::vector<obs_key_combination_t> GetPushToTalkKeys(obs_source_t *source);
+void SetPushToTalkKeys(obs_source_t *source, const std::vector<obs_key_combination_t> &keys);
+
+/* Key combinations bound to a hotkey */
+std::vector<obs_key_combination_t> GetHotkeyKeys(obs_hotkey_id id);
+/* A hotkey registered with obs_hotkey_register_frontend (Spectra, OBS or a
+ * plugin such as Obscura), or OBS_INVALID_HOTKEY_ID if it is not registered */
+obs_hotkey_id FrontendHotkey(const char *name);
+/* Rebinds a frontend hotkey and stores it in the profile like Settings > Hotkeys */
+void SetFrontendHotkeyKeys(config_t *config, const char *name, const std::vector<obs_key_combination_t> &keys);
 
 /* Executable of an installed TeamSpeak client, or empty if none is found. */
 QString FindTeamSpeakExecutable();

@@ -17,7 +17,7 @@ class OBSBasic;
  * folder of short Matroska segments, deletes the oldest segments to stay
  * under a disk quota, and turns the last N seconds into a single portable
  * clip on request. Optionally starts and stops itself when a matching game
- * process (e.g. "FiveM*") starts and exits.
+ * process (e.g. "FiveM*") or any fullscreen application starts and exits.
  */
 class LoopRecorder : public QObject {
 	Q_OBJECT
@@ -35,7 +35,10 @@ public:
 	bool AutoStopEnabled() const;
 	bool AutoCaptureEnabled() const;
 	bool FitToCanvasEnabled() const;
+	bool AnyFullscreenEnabled() const;
 	QStringList ProcessPatterns() const;
+	/* The configured patterns plus the detected fullscreen application */
+	QStringList ActivePatterns() const;
 
 	LoopCapture *Capture() const { return capture; }
 
@@ -101,6 +104,7 @@ private:
 	LoopCapture *capture;
 
 	QString label;
+	QString fullscreenExe;
 	QString currentSegment;
 	QStringList sessionSegments;
 	std::vector<PendingClip> pendingClips;

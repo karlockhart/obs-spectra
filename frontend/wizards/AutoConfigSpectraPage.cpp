@@ -1,6 +1,8 @@
 #include "AutoConfigSpectraPage.hpp"
 #include "AutoConfig.hpp"
 
+#include <components/SpectraAppPicker.hpp>
+#include <components/SpectraHotkeyEdit.hpp>
 #include <utility/LoopRecorder.hpp>
 #include <utility/SpectraDefaults.hpp>
 #include <widgets/OBSBasic.hpp>
@@ -12,6 +14,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -19,6 +22,8 @@
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include "moc_AutoConfigSpectraPage.cpp"
 
@@ -58,13 +63,20 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	folderPreview = new QLabel();
 	folderPreview->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-	processes = new QLineEdit(QString::fromUtf8(config_get_string(config, "SpectraLoop", "Processes")));
-	processes->setToolTip(QTStr("Spectra.Loop.Settings.ProcessesTip"));
+	processes = new SpectraAppPicker();
+	processes->SetPatterns(QString::fromUtf8(config_get_string(config, "SpectraLoop", "Processes")));
+	processes->SetAnyFullscreen(config_get_bool(config, "SpectraLoop", "AnyFullscreen"));
 
 	quotaGB = new QSpinBox();
 	quotaGB->setRange(1, 100000);
 	quotaGB->setSuffix(" GB");
 	quotaGB->setValue((int)config_get_uint(config, "SpectraLoop", "QuotaGB"));
+
+	clipSec = new QSpinBox();
+	clipSec->setRange(5, 24 * 3600);
+	clipSec->setSuffix(" s");
+	clipSec->setValue(std::max((int)config_get_int(config, "SpectraLoop", "ClipSec"), 5));
+	clipSec->setToolTip(QTStr("Spectra.Loop.Settings.ClipLengthTip"));
 
 	resolution = new QComboBox();
 	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, "SpectraLoop", "CanvasCX"),
@@ -86,13 +98,22 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	form->addRow(QString(), folderPreview);
 	form->addRow(QTStr("Spectra.Loop.Settings.Processes"), processes);
 	form->addRow(QTStr("Spectra.Loop.Settings.Quota"), quotaGB);
+	form->addRow(QTStr("Spectra.Loop.Settings.ClipLength"), clipSec);
 	form->addRow(QTStr("Spectra.Video.Resolution"), resolution);
 	form->addRow(QTStr("Spectra.Video.Quality"), quality);
 	form->addRow(QString(), autoStart);
 	form->addRow(QString(), autoCapture);
 
+	QGroupBox *shortcutGroup = new QGroupBox(QTStr("Spectra.Hotkey.Shortcuts"));
+	auto *shortcutForm = new QFormLayout(shortcutGroup);
+	QLabel *shortcutNote = new QLabel(QTStr("Spectra.Hotkey.ShortcutsNote"));
+	shortcutNote->setWordWrap(true);
+	shortcutForm->addRow(shortcutNote);
+	shortcuts = SpectraHotkeyEdit::AddShortcutRows(shortcutForm);
+
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->addLayout(form);
+	layout->addWidget(shortcutGroup);
 	layout->addStretch();
 
 	UpdatePreview();
@@ -150,8 +171,13 @@ void AutoConfigSpectraPage::Save()
 
 	config_set_string(config, "SpectraLoop", "Path", QT_TO_UTF8(folder("Loop")));
 	config_set_string(config, "SpectraLoop", "ClipsPath", QT_TO_UTF8(folder("Clips")));
-	config_set_string(config, "SpectraLoop", "Processes", QT_TO_UTF8(processes->text().trimmed()));
+	config_set_string(config, "SpectraLoop", "Processes", QT_TO_UTF8(processes->Patterns()));
+	config_set_bool(config, "SpectraLoop", "AnyFullscreen", processes->AnyFullscreen());
 	config_set_uint(config, "SpectraLoop", "QuotaGB", (uint64_t)quotaGB->value());
+	config_set_int(config, "SpectraLoop", "ClipSec", clipSec->value());
+	for (SpectraHotkeyEdit *shortcut : shortcuts) {
+		shortcut->Save(config);
+	}
 	config_set_bool(config, "SpectraLoop", "AutoStart", autoStart->isChecked());
 	config_set_bool(config, "SpectraLoop", "AutoCapture", autoCapture->isChecked());
 

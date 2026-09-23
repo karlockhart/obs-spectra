@@ -81,6 +81,10 @@ target_sources(
     components/SourceTreeItem.hpp
     components/SourceTreeModel.cpp
     components/SourceTreeModel.hpp
+    components/SpectraAppPicker.cpp
+    components/SpectraAppPicker.hpp
+    components/SpectraHotkeyEdit.cpp
+    components/SpectraHotkeyEdit.hpp
     components/TextSourceToolbar.cpp
     components/TextSourceToolbar.hpp
     components/UIValidation.cpp

@@ -111,6 +111,15 @@ void OBSBasic::CreateHotkeys()
 		obs_hotkey_load(id, array);
 	};
 
+	/* Spectra hotkeys get a default key until the user changes or clears it */
+	auto LoadHotkeyOrDefault = [&](obs_hotkey_id id, const char *name, obs_key_combination_t key) {
+		if (config_get_string(activeConfiguration, "Hotkeys", name)) {
+			LoadHotkey(id, name);
+		} else {
+			obs_hotkey_load_bindings(id, &key, 1);
+		}
+	};
+
 	auto LoadHotkeyPair = [&](obs_hotkey_pair_id id, const char *name0, const char *name1,
 				  const char *oldName = NULL) {
 		if (oldName) {
@@ -253,7 +262,7 @@ void OBSBasic::CreateHotkeys()
 	};
 	clipLastHotkey = obs_hotkey_register_frontend("Spectra.ClipLast", Str("Spectra.Loop.ClipLastHotkey"),
 						      clipLastCallback, this);
-	LoadHotkey(clipLastHotkey, "Spectra.ClipLast");
+	LoadHotkeyOrDefault(clipLastHotkey, "Spectra.ClipLast", {INTERACT_CONTROL_KEY, OBS_KEY_F10});
 
 	if (vcamEnabled) {
 		vcamHotkeys = obs_hotkey_pair_register_frontend(
@@ -321,7 +330,7 @@ void OBSBasic::CreateHotkeys()
 	};
 
 	screenshotHotkey = obs_hotkey_register_frontend("OBSBasic.Screenshot", Str("Screenshot"), screenshot, this);
-	LoadHotkey(screenshotHotkey, "OBSBasic.Screenshot");
+	LoadHotkeyOrDefault(screenshotHotkey, "OBSBasic.Screenshot", {INTERACT_CONTROL_KEY, OBS_KEY_F11});
 
 	auto screenshotSource = [](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 		if (pressed) {

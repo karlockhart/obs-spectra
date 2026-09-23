@@ -67,6 +67,8 @@ target_sources(
     utility/SimpleOutput.hpp
     utility/SpectraDefaults.cpp
     utility/SpectraDefaults.hpp
+    utility/SpectraGamepad.cpp
+    utility/SpectraGamepad.hpp
     utility/SpectraSplash.cpp
     utility/SpectraSplash.hpp
     utility/SpectraUpdateCheck.cpp
