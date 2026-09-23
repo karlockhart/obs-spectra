@@ -20,6 +20,7 @@ public:
 	SpectraLoopSettings(OBSBasic *main, LoopRecorder *recorder);
 
 	void accept() override;
+	void reject() override;
 
 private:
 	OBSBasic *main;
@@ -35,6 +36,10 @@ private:
 	QCheckBox *autoCapture;
 	QCheckBox *fitToCanvas;
 	QCheckBox *starlingVoice;
+	QCheckBox *overlayEnabled;
+	QComboBox *overlayCorner;
+	QSpinBox *overlayDuration;
+	QList<QCheckBox *> overlayEvents;
 	QComboBox *resolution;
 	QComboBox *quality;
 	SpectraAppPicker *processes;

@@ -23,6 +23,8 @@
 
 #include <qt-wrappers.hpp>
 
+#include <QFileInfo>
+
 #ifdef _WIN32
 #include <wincodec.h>
 #include <wincodecsdk.h>
@@ -363,6 +365,8 @@ void ScreenshotObj::onFinished()
 			main->ShowStatusBarMessage(
 				QTStr("Basic.StatusBar.ScreenshotSavedTo").arg(QT_UTF8(path.c_str())));
 			main->lastScreenshot = path;
+			main->SpectraToast(SpectraOverlay::Kind::Screenshot, QTStr("Spectra.Overlay.Screenshot"),
+					   QFileInfo(QT_UTF8(path.c_str())).fileName());
 			main->OnEvent(OBS_FRONTEND_EVENT_SCREENSHOT_TAKEN);
 		}
 

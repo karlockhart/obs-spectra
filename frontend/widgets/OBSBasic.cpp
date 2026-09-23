@@ -777,6 +777,12 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "StarlingVoice", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AnyFullscreen", false);
+	config_set_default_bool(activeConfiguration, "SpectraOverlay", "Enabled", true);
+	config_set_default_int(activeConfiguration, "SpectraOverlay", "Corner", 0);
+	config_set_default_int(activeConfiguration, "SpectraOverlay", "DurationSec", 5);
+	for (const SpectraOverlay::Category &category : SpectraOverlay::Categories()) {
+		config_set_default_bool(activeConfiguration, "SpectraOverlay", category.configKey, true);
+	}
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
 	config_set_default_string(activeConfiguration, "SpectraLoop", "ClipsPath", "");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
