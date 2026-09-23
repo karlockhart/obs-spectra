@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <set>
 
 namespace lucida {
@@ -61,7 +62,15 @@ CREATE INDEX IF NOT EXISTS frames_order ON frames(sort_ts);
 )SQL";
 
 /* Columns added after Lucida 0.1.0; older databases are migrated on open */
-const std::pair<const char *, const char *> kLaterColumns[] = {{"frame_id", "INTEGER"}, {"rect", "TEXT"}};
+const std::pair<const char *, const char *> kLaterColumns[] = {
+	{"frame_id", "INTEGER"},
+	{"rect", "TEXT"},
+	/* Spectra: chat colour for Obscura's learner, tag-rule labels, and the
+	 * loop recording segment the line was first seen in */
+	{"colour", "TEXT"},
+	{"labels", "TEXT"},
+	{"video", "TEXT"},
+	{"video_offset", "REAL"}};
 
 constexpr double kFuzzyRatio = 0.9; /* below this, two readings are different lines */
 constexpr int kPrefixMin = 12;      /* shorter than this, a shared opening proves nothing */
@@ -205,6 +214,22 @@ LogLine RowToLine(const Stmt &s)
 		l.frameId = s.Int(fid);
 	}
 	l.rect = ParseRect(s.Text(s.ColumnIndex("rect")));
+	for (const QJsonValue &v : QJsonDocument::fromJson(s.Text(s.ColumnIndex("labels")).toUtf8()).array()) {
+		l.labels << v.toString();
+	}
+	QJsonArray colour = QJsonDocument::fromJson(s.Text(s.ColumnIndex("colour")).toUtf8()).array();
+	if (colour.size() == 13) {
+		std::array<double, 13> c{};
+		for (int i = 0; i < 13; i++) {
+			c[i] = colour[i].toDouble();
+		}
+		l.colour = c;
+	}
+	l.firstSeen = s.Real(s.ColumnIndex("first_seen"));
+	const QString video = s.Text(s.ColumnIndex("video"));
+	if (!video.isEmpty()) {
+		l.video = VideoSpot{video, s.Real(s.ColumnIndex("video_offset"))};
+	}
 	return l;
 }
 
@@ -267,6 +292,15 @@ double EntryScore(const spectra::ChatEntry &e)
 		}
 	}
 	return n ? sum / n : 0.0;
+}
+
+QString ColourJson(const std::array<float, 13> &colour)
+{
+	QJsonArray arr;
+	for (float v : colour) {
+		arr.append(std::round(v * 10000.0) / 10000.0);
+	}
+	return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
 }
 
 QString TagsJson(const QStringList &tags)
@@ -465,8 +499,8 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 			double now)
 {
 	Stmt s(db, "INSERT INTO lines(session_id, sort_ts, seq, ts_source, clock, channel, tags, body,"
-		   " dedup_key, score, frames, first_seen, last_seen, rect)"
-		   " VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?)");
+		   " dedup_key, score, frames, first_seen, last_seen, rect, colour, labels)"
+		   " VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)");
 	s.Bind(1, sessionId)
 		.Bind(2, frameTs)
 		.Bind(3, seq)
@@ -480,6 +514,8 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 		.Bind(11, now)
 		.Bind(12, now)
 		.Bind(13, RectText(entry))
+		.Bind(14, ColourJson(entry.colour))
+		.Bind(15, TagsJson(labeler ? labeler(body) : QStringList()))
 		.Run();
 	long long rowId = sqlite3_last_insert_rowid(db);
 	if (fts) {
@@ -495,6 +531,10 @@ void Store::Touch(WindowLine &hit, const QString &body, double score, long long 
 	if (score > hit.score + 0.01 && body != hit.body) {
 		Stmt s(db, "UPDATE lines SET body=?, score=?, frames=frames+1, last_seen=? WHERE id=?");
 		s.Bind(1, body).Bind(2, score).Bind(3, now).Bind(4, hit.rowId).Run();
+		if (labeler) {
+			Stmt l(db, "UPDATE lines SET labels=? WHERE id=?");
+			l.Bind(1, TagsJson(labeler(body))).Bind(2, hit.rowId).Run();
+		}
 		if (fts) {
 			Stmt del(db, "INSERT INTO lines_fts(lines_fts, rowid, body) VALUES ('delete', ?, ?)");
 			del.Bind(1, hit.rowId).Bind(2, hit.body).Run();
@@ -716,6 +756,186 @@ std::vector<LogLine> Store::Search(const QString &query, int limit, const QStrin
 	}
 	std::reverse(out.begin(), out.end());
 	return out;
+}
+
+std::vector<LogLine> Store::Find(const Query &q)
+{
+	if (!db) {
+		return {};
+	}
+	/* Filters other than the text, as SQL on "lines" */
+	std::string filters;
+	auto add = [&](const char *clause) {
+		filters += " AND ";
+		filters += clause;
+	};
+	if (!q.channel.isEmpty()) {
+		add("lines.channel = ?");
+	}
+	if (!q.label.isEmpty()) {
+		add("lines.labels LIKE ?");
+	}
+	if (q.from) {
+		add("lines.sort_ts >= ?");
+	}
+	if (q.to) {
+		add("lines.sort_ts <= ?");
+	}
+	if (q.frameId) {
+		add("lines.frame_id = ?");
+	}
+	if (q.withShot) {
+		add("lines.frame_id IS NOT NULL");
+	}
+	const std::string order = q.frameId ? " ORDER BY lines.seq, lines.id LIMIT ?"
+					    : " ORDER BY lines.sort_ts DESC, lines.seq DESC, lines.id DESC LIMIT ?";
+	const QString text = q.text.trimmed();
+
+	auto run = [&](const std::string &sql, const std::optional<QString> &textArg, int *rc) {
+		std::vector<LogLine> out;
+		Stmt s(db, sql.c_str());
+		if (!s) {
+			*rc = SQLITE_ERROR;
+			return out;
+		}
+		int i = 1;
+		if (textArg) {
+			s.Bind(i++, *textArg);
+		}
+		if (!q.channel.isEmpty()) {
+			s.Bind(i++, q.channel);
+		}
+		if (!q.label.isEmpty()) {
+			/* labels is a JSON array of strings: match the quoted label */
+			const QString quoted =
+				QString::fromUtf8(QJsonDocument(QJsonArray{q.label}).toJson(QJsonDocument::Compact));
+			s.Bind(i++, QStringLiteral("%") + quoted.mid(1, quoted.size() - 2) + QStringLiteral("%"));
+		}
+		if (q.from) {
+			s.Bind(i++, *q.from);
+		}
+		if (q.to) {
+			s.Bind(i++, *q.to);
+		}
+		if (q.frameId) {
+			s.Bind(i++, *q.frameId);
+		}
+		s.Bind(i, q.limit);
+		while ((*rc = s.Step()) == SQLITE_ROW) {
+			out.push_back(RowToLine(s));
+		}
+		if (!q.frameId) {
+			std::reverse(out.begin(), out.end());
+		}
+		return out;
+	};
+
+	int rc = SQLITE_DONE;
+	if (text.isEmpty()) {
+		return run("SELECT * FROM lines WHERE 1" + filters + order, std::nullopt, &rc);
+	}
+	if (fts) {
+		std::vector<LogLine> out = run("SELECT lines.* FROM lines_fts JOIN lines ON lines.id = lines_fts.rowid"
+					       " WHERE lines_fts MATCH ?" +
+						       filters + order,
+					       text, &rc);
+		if (rc == SQLITE_DONE) {
+			return out;
+		}
+		/* a malformed FTS query (e.g. a bare quote): plain matching instead */
+	}
+	return run("SELECT * FROM lines WHERE body LIKE ?" + filters + order, QStringLiteral("%%1%").arg(text), &rc);
+}
+
+QStringList Store::Channels()
+{
+	QStringList out;
+	Stmt s(db, "SELECT channel, COUNT(*) n FROM lines WHERE channel IS NOT NULL AND channel != ''"
+		   " GROUP BY channel ORDER BY n DESC");
+	while (s.Step() == SQLITE_ROW) {
+		out << s.Text(0);
+	}
+	return out;
+}
+
+QStringList Store::Labels()
+{
+	QStringList out;
+	Stmt s(db, "SELECT DISTINCT labels FROM lines WHERE labels IS NOT NULL AND labels != '[]'");
+	while (s.Step() == SQLITE_ROW) {
+		for (const QJsonValue &v : QJsonDocument::fromJson(s.Text(0).toUtf8()).array()) {
+			if (!out.contains(v.toString())) {
+				out << v.toString();
+			}
+		}
+	}
+	out.sort(Qt::CaseInsensitive);
+	return out;
+}
+
+std::vector<FrameInfo> Store::Frames(int limit, std::optional<long long> from, std::optional<long long> to)
+{
+	std::vector<FrameInfo> out;
+	Stmt s(db, "SELECT frames.id, frames.sort_ts, frames.path, frames.width, frames.height,"
+		   " COUNT(lines.id), group_concat(NULLIF(lines.labels, '[]'), ',') FROM frames"
+		   " LEFT JOIN lines ON lines.frame_id = frames.id"
+		   " WHERE frames.sort_ts BETWEEN ? AND ?"
+		   " GROUP BY frames.id ORDER BY frames.sort_ts DESC, frames.id DESC LIMIT ?");
+	s.Bind(1, from.value_or(0)).Bind(2, to.value_or(std::numeric_limits<long long>::max())).Bind(3, limit);
+	while (s.Step() == SQLITE_ROW) {
+		FrameInfo f{{s.Int(0), s.Int(1), s.Text(2), (int)s.Int(3), (int)s.Int(4)}, (int)s.Int(5), {}};
+		/* the JSON arrays of the frame's lines, joined by commas */
+		const QByteArray all = "[" + s.Text(6).toUtf8() + "]";
+		for (const QJsonValue &line : QJsonDocument::fromJson(all).array()) {
+			for (const QJsonValue &v : line.toArray()) {
+				if (!f.labels.contains(v.toString())) {
+					f.labels << v.toString();
+				}
+			}
+		}
+		out.push_back(std::move(f));
+	}
+	return out;
+}
+
+int Store::Relabel()
+{
+	if (!db || !labeler) {
+		return 0;
+	}
+	std::vector<std::pair<long long, QString>> changes;
+	{
+		Stmt s(db, "SELECT id, body, labels FROM lines");
+		while (s.Step() == SQLITE_ROW) {
+			const QString labels = TagsJson(labeler(s.Text(1)));
+			const QString old = s.Text(2);
+			if (labels != (old.isEmpty() ? QStringLiteral("[]") : old)) {
+				changes.emplace_back(s.Int(0), labels);
+			}
+		}
+	}
+	Exec("BEGIN");
+	Stmt u(db, "UPDATE lines SET labels=? WHERE id=?");
+	for (const auto &[id, labels] : changes) {
+		u.Reset();
+		u.Bind(1, labels).Bind(2, id).Run();
+	}
+	Exec("COMMIT");
+	return (int)changes.size();
+}
+
+void Store::SetVideo(const std::vector<long long> &lineIds, const VideoSpot &spot)
+{
+	if (!db || lineIds.empty()) {
+		return;
+	}
+	Exec("BEGIN");
+	Stmt u(db, "UPDATE lines SET video=?, video_offset=? WHERE id=?");
+	for (long long id : lineIds) {
+		u.Reset();
+		u.Bind(1, spot.path).Bind(2, spot.offset).Bind(3, id).Run();
+	}
+	Exec("COMMIT");
 }
 
 Stats Store::GetStats()

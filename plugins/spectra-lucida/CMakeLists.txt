@@ -29,7 +29,18 @@ find_package(Qt6 REQUIRED Core Gui Widgets)
 
 # Lucida's logic (store, sampling loop), shared by the plugin and the tests
 add_library(lucida-core STATIC)
-target_sources(lucida-core PRIVATE core/recorder.cpp core/recorder.hpp core/store.cpp core/store.hpp)
+target_sources(
+  lucida-core
+  PRIVATE
+    core/recorder.cpp
+    core/recorder.hpp
+    core/store.cpp
+    core/store.hpp
+    core/tagger.cpp
+    core/tagger.hpp
+    core/video.cpp
+    core/video.hpp
+)
 target_include_directories(lucida-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/core")
 target_link_libraries(lucida-core PUBLIC spectra-vision spectra-sqlite Qt::Core Qt::Gui)
 target_compile_features(lucida-core PUBLIC cxx_std_20)
@@ -41,7 +52,8 @@ target_link_libraries(lucida-tests PRIVATE lucida-core)
 set_target_properties(lucida-tests PROPERTIES FOLDER spectra)
 set_target_properties_obs(lucida-tests)
 
-# The plugin: sampling loop inside Spectra and the "Chat Log" dock
+# The plugin: sampling loop inside Spectra, the "Chat Log" dock, the log browser and settings.
+# Censoring uses Obscura's learner and naming (obscura-core).
 add_library(spectra-lucida MODULE)
 add_library(OBS::spectra-lucida ALIAS spectra-lucida)
 target_sources(
@@ -52,12 +64,14 @@ target_sources(
     plugin/lucida-dock.cpp
     plugin/lucida-dock.hpp
     plugin/lucida-plugin.cpp
+    plugin/lucida-settings.cpp
+    plugin/lucida-settings.hpp
     plugin/lucida-viewer.cpp
     plugin/lucida-viewer.hpp
 )
 target_link_libraries(
   spectra-lucida
-  PRIVATE lucida-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets
+  PRIVATE lucida-core obscura-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets
 )
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")

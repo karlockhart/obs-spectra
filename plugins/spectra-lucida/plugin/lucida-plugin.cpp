@@ -40,6 +40,13 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 				dock->OpenViewer();
 			}
 		});
+		auto *settings = static_cast<QAction *>(
+			obs_frontend_add_tools_menu_qaction(obs_module_text("Lucida.Menu.Settings")));
+		QObject::connect(settings, &QAction::triggered, [] {
+			if (dock) {
+				dock->OpenSettings();
+			}
+		});
 		QObject::connect(controller, &lucida::Controller::failed, [](const QString &message) {
 			blog(LOG_WARNING, "[Lucida] %s", message.toUtf8().constData());
 		});

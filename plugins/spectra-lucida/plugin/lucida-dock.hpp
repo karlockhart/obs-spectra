@@ -23,6 +23,7 @@ public:
 	void Reload();
 	/* Opens the viewer, optionally at a line */
 	void OpenViewer(long long lineId = 0);
+	void OpenSettings();
 
 private:
 	QPointer<Controller> controller;

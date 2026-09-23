@@ -5,8 +5,11 @@
 #include <util/config-file.h>
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
+#include <QPointer>
 #include <QStandardPaths>
 
 #include <chrono>
@@ -26,6 +29,7 @@ namespace lucida {
 namespace {
 
 constexpr auto kPruneEvery = std::chrono::hours(1);
+constexpr int kLoopPollMs = 2000;
 
 QString ConfigString(config_t *config, const char *section, const char *name)
 {
@@ -67,7 +71,7 @@ void SetDefaults(config_t *c)
 	config_set_default_double(c, SECTION, "GateThreshold", r.gateThreshold);
 	config_set_default_string(c, SECTION, "DbPath", QDir(folder).filePath("chatlog.db").toUtf8().constData());
 	config_set_default_int(c, SECTION, "RetentionDays", d.retentionDays);
-	config_set_default_bool(c, SECTION, "KeepFrames", r.keepFrames);
+	config_set_default_bool(c, SECTION, "KeepFrames", true);
 	config_set_default_string(c, SECTION, "FramesDir", QDir(folder).filePath("frames").toUtf8().constData());
 	config_set_default_int(c, SECTION, "FrameQuality", r.frameQuality);
 	config_set_default_int(c, SECTION, "FrameRetentionDays", r.frameRetentionDays);
@@ -76,6 +80,9 @@ void SetDefaults(config_t *c)
 	config_set_default_int(c, SECTION, "CropQuality", r.cropQuality);
 	config_set_default_int(c, SECTION, "CropRetentionDays", r.cropRetentionDays);
 	config_set_default_string(c, SECTION, "TargetProcess", d.targetProcess.toUtf8().constData());
+	config_set_default_bool(c, SECTION, "FollowLoop", d.followLoop);
+	config_set_default_string(c, SECTION, "TagRules", TagRulesToJson(d.tagRules).toUtf8().constData());
+	config_set_default_bool(c, SECTION, "TolerateTypos", d.tolerateTypos);
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -137,6 +144,9 @@ Settings Settings::Load()
 	r.cropQuality = (int)config_get_int(c, SECTION, "CropQuality");
 	r.cropRetentionDays = (int)config_get_int(c, SECTION, "CropRetentionDays");
 	s.targetProcess = ConfigString(c, SECTION, "TargetProcess");
+	s.followLoop = config_get_bool(c, SECTION, "FollowLoop");
+	s.tagRules = TagRulesFromJson(ConfigString(c, SECTION, "TagRules"));
+	s.tolerateTypos = config_get_bool(c, SECTION, "TolerateTypos");
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -169,6 +179,9 @@ void Settings::Save() const
 	config_set_int(c, SECTION, "CropQuality", r.cropQuality);
 	config_set_int(c, SECTION, "CropRetentionDays", r.cropRetentionDays);
 	config_set_string(c, SECTION, "TargetProcess", targetProcess.toUtf8().constData());
+	config_set_bool(c, SECTION, "FollowLoop", followLoop);
+	config_set_string(c, SECTION, "TagRules", TagRulesToJson(tagRules).toUtf8().constData());
+	config_set_bool(c, SECTION, "TolerateTypos", tolerateTypos);
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
@@ -176,7 +189,34 @@ void Settings::Save() const
 
 /* ------------------------------------------------------------------------- */
 
-Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Load()) {}
+QString LoopDirectory()
+{
+	/* as the frontend's LoopRecorder::LoopDirectory */
+	config_t *c = obs_frontend_get_profile_config();
+	QString dir = c ? ConfigString(c, "SpectraLoop", "Path") : QString();
+	if (dir.isEmpty()) {
+		char *output = obs_frontend_get_current_record_output_path();
+		dir = QDir(QString::fromUtf8(output ? output : "")).filePath(QStringLiteral("Spectra Loop"));
+		bfree(output);
+	}
+	return QDir::cleanPath(dir);
+}
+
+bool LoopRecordingActive()
+{
+	obs_output_t *output = obs_get_output_by_name("spectra_loop_output");
+	const bool active = output && obs_output_active(output);
+	obs_output_release(output);
+	return active;
+}
+
+Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Load())
+{
+	loopDir = LoopDirectory();
+	loopPoll.setInterval(kLoopPollMs);
+	connect(&loopPoll, &QTimer::timeout, this, &Controller::PollLoop);
+	loopPoll.start();
+}
 
 Controller::~Controller()
 {
@@ -194,16 +234,52 @@ void Controller::SetStatus(const QString &text)
 		Qt::QueuedConnection);
 }
 
-void Controller::Start()
+bool Controller::OpenReader()
 {
-	if (running || !settings.enabled) {
-		return;
+	if (reader && reader->IsOpen() && reader->Path() == settings.dbPath) {
+		return true;
 	}
 	reader = std::make_unique<Store>(settings.dbPath);
 	QString error;
 	if (!reader->Open(&error) || !reader->IsOpen()) {
 		emit failed(QStringLiteral("Could not open the chat log %1: %2").arg(settings.dbPath, error));
 		reader.reset();
+		return false;
+	}
+	return true;
+}
+
+void Controller::PollLoop()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		loopDir = LoopDirectory();
+	}
+	if (!settings.followLoop || !settings.enabled || paused) {
+		return;
+	}
+	const bool loop = LoopRecordingActive();
+	if (loop && !running) {
+		Start();
+	} else if (!loop && running) {
+		Stop();
+		status = obs_module_text("Lucida.Status.WaitingForLoop");
+		emit statusChanged(status);
+	}
+}
+
+void Controller::Start()
+{
+	if (running || !settings.enabled) {
+		return;
+	}
+	/* the log stays browsable while sampling waits for the loop recording */
+	if (!OpenReader()) {
+		return;
+	}
+	if (settings.followLoop && !LoopRecordingActive()) {
+		status = obs_module_text("Lucida.Status.WaitingForLoop");
+		emit statusChanged(status);
 		return;
 	}
 	{
@@ -293,6 +369,11 @@ void Controller::Run(Settings s)
 		return;
 	}
 
+	Tagger tagger(s.tagRules, s.tolerateTypos);
+	store.labeler = [&tagger](const QString &body) {
+		return tagger.Tags(body);
+	};
+
 	spectra::FrameGrabber grabber;
 	grabber.SetTargetProcess(s.targetProcess);
 	/* Troubleshooting: SPECTRA_LUCIDA_DUMP=<folder> saves every grabbed frame */
@@ -320,6 +401,15 @@ void Controller::Run(Settings s)
 		}
 		return frame;
 	});
+
+	recorder.locateVideo = [this](double wallTs) -> std::optional<VideoSpot> {
+		QString dir;
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			dir = loopDir;
+		}
+		return LocateVideo(dir, wallTs, LoopRecordingActive());
+	};
 
 	recorder.PruneImages();
 	auto lastPrune = std::chrono::steady_clock::now() - kPruneEvery;
@@ -372,6 +462,50 @@ void Controller::Run(Settings s)
 		wakeRequested = false;
 	}
 	recorder.Close();
+}
+
+std::optional<VideoSpot> Controller::VideoFor(const LogLine &line) const
+{
+	if (line.video && QFileInfo::exists(line.video->path)) {
+		return line.video;
+	}
+	QString dir;
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		dir = loopDir;
+	}
+	if (line.firstSeen <= 0) {
+		return std::nullopt;
+	}
+	return LocateVideo(dir, line.firstSeen, LoopRecordingActive());
+}
+
+void Controller::Relabel()
+{
+	const QString path = settings.dbPath;
+	const QList<TagRule> rules = settings.tagRules;
+	const bool typos = settings.tolerateTypos;
+	QPointer<Controller> self(this);
+	std::thread([self, path, rules, typos] {
+		Tagger tagger(rules, typos);
+		Store store(path);
+		int changed = -1;
+		if (store.Open() && store.IsOpen()) {
+			store.labeler = [&tagger](const QString &body) {
+				return tagger.Tags(body);
+			};
+			changed = store.Relabel();
+		}
+		blog(LOG_INFO, "[Lucida] Re-tagged the log: %d line(s) changed", changed);
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, changed] {
+				if (self) {
+					emit self->relabelled(changed);
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
 }
 
 } // namespace lucida

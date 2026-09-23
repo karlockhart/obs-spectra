@@ -1,5 +1,6 @@
 #include "lucida-dock.hpp"
 #include "lucida-controller.hpp"
+#include "lucida-settings.hpp"
 #include "lucida-viewer.hpp"
 
 #include <obs-module.h>
@@ -22,8 +23,13 @@ constexpr int kShownLines = 300;
 QString LineLabel(const LogLine &l)
 {
 	QString time = QDateTime::fromSecsSinceEpoch(l.sortTs).toString(QStringLiteral("HH:mm:ss"));
-	return QStringLiteral("%1  [%2] %3  %4")
-		.arg(time, l.clock.value_or(QStringLiteral("--:--:--")), l.channel.leftJustified(18, ' '), l.body);
+	QString text = QStringLiteral("%1  [%2] %3  %4")
+			       .arg(time, l.clock.value_or(QStringLiteral("--:--:--")),
+				    l.channel.leftJustified(18, ' '), l.body);
+	for (const QString &tag : l.labels) {
+		text += QStringLiteral("  #") + tag;
+	}
+	return text;
 }
 } // namespace
 
@@ -39,6 +45,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	QPushButton *sample = new QPushButton(obs_module_text("Lucida.Dock.SampleNow"));
 	QPushButton *open = new QPushButton(obs_module_text("Lucida.Dock.OpenViewer"));
 	open->setToolTip(obs_module_text("Lucida.Dock.OpenViewer.Tip"));
+	QPushButton *settings = new QPushButton(obs_module_text("Lucida.Dock.Settings"));
 	pause = new QCheckBox(obs_module_text("Lucida.Dock.Pause"));
 	pause->setChecked(controller->Paused());
 
@@ -55,6 +62,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	row->addWidget(search, 1);
 	row->addWidget(sample);
 	row->addWidget(open);
+	row->addWidget(settings);
 	row->addWidget(pause);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
@@ -71,6 +79,8 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	});
 	connect(sample, &QPushButton::clicked, controller, &Controller::SampleNow);
 	connect(open, &QPushButton::clicked, this, [this] { OpenViewer(); });
+	connect(settings, &QPushButton::clicked, this, &Dock::OpenSettings);
+	connect(controller, &Controller::relabelled, this, &Dock::Reload);
 	connect(list, &QListWidget::itemDoubleClicked, this,
 		[this](QListWidgetItem *item) { OpenViewer(item->data(Qt::UserRole).toLongLong()); });
 	connect(pause, &QCheckBox::toggled, controller, &Controller::SetPaused);
@@ -95,6 +105,17 @@ void Dock::OpenViewer(long long lineId)
 	viewer->activateWindow();
 	if (lineId) {
 		viewer->ShowLine(lineId);
+	}
+}
+
+void Dock::OpenSettings()
+{
+	if (!controller) {
+		return;
+	}
+	SettingsDialog dialog(controller, window());
+	if (dialog.exec() == QDialog::Accepted) {
+		Reload();
 	}
 }
 
