@@ -75,3 +75,19 @@ target_link_libraries(
 )
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")
+
+# The log browser on its own, next to obs-spectra.exe: lucida-viewer [--portable] [chatlog.db]
+add_executable(lucida-viewer WIN32)
+target_sources(
+  lucida-viewer
+  PRIVATE plugin/lucida-host.hpp plugin/lucida-viewer.cpp plugin/lucida-viewer.hpp viewer/lucida-viewer-main.cpp
+)
+if(OS_WINDOWS)
+  set(LUCIDA_VIEWER_ICON "${CMAKE_SOURCE_DIR}/frontend/cmake/windows/obs-studio.ico")
+  configure_file(viewer/lucida-viewer.rc.in lucida-viewer.rc)
+  target_sources(lucida-viewer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/lucida-viewer.rc")
+endif()
+target_include_directories(lucida-viewer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/plugin")
+target_link_libraries(lucida-viewer PRIVATE lucida-core obscura-core spectra-censor OBS::libobs Qt::Widgets)
+set_target_properties(lucida-viewer PROPERTIES AUTOMOC ON FOLDER spectra)
+set_target_properties_obs(lucida-viewer)

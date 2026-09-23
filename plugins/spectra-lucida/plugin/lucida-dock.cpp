@@ -97,7 +97,12 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 void Dock::OpenViewer(long long lineId)
 {
 	if (!viewer) {
-		viewer = new Viewer(controller, window());
+		QPointer<Controller> c = controller;
+		ViewerSource source{[c]() { return c ? c->Reader() : nullptr; },
+				    [c](const LogLine &line) {
+					    return c ? c->VideoFor(line) : std::optional<VideoSpot>();
+				    }};
+		viewer = new Viewer(std::move(source), window());
 		viewer->setWindowFlag(Qt::Window);
 	}
 	viewer->show();
