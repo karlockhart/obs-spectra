@@ -88,7 +88,13 @@ install(
 
 target_add_resource(spectra-vision "${SPECTRA_OCR_DET_MODEL_PATH}" "${OBS_DATA_DESTINATION}/spectra-vision/models")
 target_add_resource(spectra-vision "${SPECTRA_OCR_REC_MODEL_PATH}" "${OBS_DATA_DESTINATION}/spectra-vision/models")
-target_add_resource(spectra-vision "${onnxruntime_root}/LICENSE" "${OBS_DATA_DESTINATION}/spectra-vision/licenses/onnxruntime")
+# Licenses of the bundled third-party code and models. The OCR models are
+# RapidOCR's ONNX conversions of PaddleOCR's models, so both licenses apply.
+set(spectra_licenses "${OBS_DATA_DESTINATION}/spectra-vision/licenses")
+target_add_resource(spectra-vision "${onnxruntime_root}/LICENSE" "${spectra_licenses}/onnxruntime")
+target_add_resource(spectra-vision "${onnxruntime_root}/ThirdPartyNotices.txt" "${spectra_licenses}/onnxruntime")
+target_add_resource(spectra-vision "${CMAKE_CURRENT_SOURCE_DIR}/licenses/rapidocr/LICENSE" "${spectra_licenses}/rapidocr")
+target_add_resource(spectra-vision "${CMAKE_CURRENT_SOURCE_DIR}/licenses/paddleocr/LICENSE" "${spectra_licenses}/paddleocr")
 
 # Command-line OCR tool, used to compare results with RapidOCR
 add_executable(spectra-ocr tools/spectra-ocr.cpp)
