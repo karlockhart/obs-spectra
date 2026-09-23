@@ -8,6 +8,8 @@ target_sources(
     utility/BasicOutputHandler.hpp
     utility/ClipExport.cpp
     utility/ClipExport.hpp
+    utility/ClipRender.cpp
+    utility/ClipRender.hpp
     utility/CrashHandler.cpp
     utility/CrashHandler.hpp
     utility/FFmpegCodec.cpp

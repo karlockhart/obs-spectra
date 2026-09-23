@@ -27,6 +27,8 @@ static constexpr int PROCESS_POLL_MS = 3000;
  * so launcher/game process hand-offs don't cut the recording. */
 static constexpr int AUTO_STOP_POLLS = 4;
 static constexpr int SPLIT_TIMEOUT_MS = 5000;
+/* Wait before trying again after an automatic start failed */
+static constexpr int AUTO_START_RETRY_SEC = 30;
 
 static QStringList RunningProcessNames()
 {
@@ -210,7 +212,9 @@ bool LoopRecorder::Start(const QString &label_)
 
 	QString dir = LoopDirectory();
 	if (!QDir().mkpath(dir)) {
-		emit clipFailed(QTStr("Spectra.Loop.Error.Folder").arg(dir));
+		lastStartError = QTStr("Spectra.Loop.Error.Folder").arg(dir);
+		blog(LOG_WARNING, "[Spectra] Loop recording not started: %s", QT_TO_UTF8(lastStartError));
+		emit clipFailed(lastStartError);
 		return false;
 	}
 
@@ -222,7 +226,13 @@ bool LoopRecorder::Start(const QString &label_)
 	/* Put the game on screen before the first frame is recorded */
 	UpdateCapture();
 
-	return main->StartLoopRecording(dir, SegmentSeconds());
+	QString error;
+	if (!main->StartLoopRecording(dir, SegmentSeconds(), &error)) {
+		lastStartError = error;
+		blog(LOG_WARNING, "[Spectra] Loop recording not started: %s", QT_TO_UTF8(error));
+		return false;
+	}
+	return true;
 }
 
 void LoopRecorder::Stop()
@@ -243,6 +253,7 @@ void LoopRecorder::OnStarted()
 {
 	blog(LOG_INFO, "[Spectra] Loop recording started in '%s' (quota %llu GB, %d s segments)",
 	     QT_TO_UTF8(LoopDirectory()), QuotaBytes() / (1024ull * 1024ull * 1024ull), SegmentSeconds());
+	lastStartError.clear();
 	EnforceQuota();
 	FitGameToCanvas();
 	captureTimer.start();
@@ -267,6 +278,7 @@ void LoopRecorder::OnStopped(int code, const QString &error)
 	capture->Reset();
 	ProcessPendingClips();
 	emit activeChanged(false);
+	emit segmentsChanged();
 }
 
 void LoopRecorder::OnFileChanged(const QString &nextFile)
@@ -282,6 +294,8 @@ void LoopRecorder::OnFileChanged(const QString &nextFile)
 		splitTimeout.stop();
 		ProcessPendingClips();
 	}
+
+	emit segmentsChanged();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -321,19 +335,26 @@ void LoopRecorder::CheckProcesses()
 
 	if (!matched.isEmpty()) {
 		missingPolls = 0;
-		if (!Active() && armed && !suppressAutoStart) {
+		bool waiting = retryAutoStartAt.isValid() && QDateTime::currentDateTime() < retryAutoStartAt;
+		if (!Active() && armed && !suppressAutoStart && !waiting) {
 			blog(LOG_INFO, "[Spectra] Detected process matching '%s', starting loop recording",
 			     QT_TO_UTF8(matched));
 			if (Start(LabelForPattern(matched))) {
 				autoStarted = true;
+				retryAutoStartAt = QDateTime();
 			} else {
-				suppressAutoStart = true;
+				/* Keep trying while the game runs instead of giving
+				 * up until it exits; the cause may be temporary (e.g.
+				 * a settings dialog holding the outputs). */
+				retryAutoStartAt = QDateTime::currentDateTime().addSecs(AUTO_START_RETRY_SEC);
+				blog(LOG_WARNING, "[Spectra] Retrying loop recording in %d s", AUTO_START_RETRY_SEC);
 			}
 		}
 		return;
 	}
 
 	suppressAutoStart = false;
+	retryAutoStartAt = QDateTime();
 	if (autoStarted && Active() && AutoStopEnabled()) {
 		if (++missingPolls >= AUTO_STOP_POLLS) {
 			blog(LOG_INFO, "[Spectra] Game process exited, stopping loop recording");
@@ -368,6 +389,7 @@ void LoopRecorder::EnforceQuota()
 
 	const quint64 quota = QuotaBytes();
 	const QString current = QDir::cleanPath(currentSegment);
+	bool removed = false;
 
 	for (const QFileInfo &fi : files) {
 		if (total <= quota) {
@@ -379,11 +401,16 @@ void LoopRecorder::EnforceQuota()
 		}
 		quint64 size = (quint64)fi.size();
 		if (QFile::remove(path)) {
+			removed = true;
 			total -= size;
 			sessionSegments.removeIf([&](const QString &s) {
 				return QDir::cleanPath(s).compare(path, Qt::CaseInsensitive) == 0;
 			});
 		}
+	}
+
+	if (removed) {
+		emit segmentsChanged();
 	}
 }
 
