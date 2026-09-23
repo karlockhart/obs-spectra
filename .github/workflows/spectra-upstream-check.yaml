@@ -1,7 +1,8 @@
 name: Spectra Upstream Check
 run-name: Check for new upstream OBS Studio releases
-# Disabled for Spectra CI: runs only when started by hand.
 on:
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
 permissions:
   contents: read

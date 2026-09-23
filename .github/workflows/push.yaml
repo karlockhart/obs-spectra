@@ -12,10 +12,79 @@ on:
 permissions:
   contents: read
 jobs:
-  # Spectra CI only builds Windows x64; the other upstream jobs are removed.
+  # Spectra CI only builds Windows x64 and releases it for version tags.
   build-project:
     name: Build 🧱
     uses: ./.github/workflows/build-project.yaml
     secrets: inherit
     permissions:
       contents: read
+
+  create-release:
+    name: Create Release 🛫
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-26.04
+    needs: build-project
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check Release Tag ☑️
+        id: check
+        run: |
+          : Check Release Tag ☑️
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          # 32.2.1, 32.2.1-spectra.1, 32.2.1-spectra.1-rc.1, 32.2.1-beta2, ...
+          if [[ "${GITHUB_REF_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-spectra\.[0-9]+)?(-(beta|rc)\.?[0-9]+)?$ ]]; then
+            echo 'validTag=true' >> $GITHUB_OUTPUT
+            if [[ -n "${BASH_REMATCH[2]}" ]]; then
+              echo 'prerelease=true' >> $GITHUB_OUTPUT
+            else
+              echo 'prerelease=false' >> $GITHUB_OUTPUT
+            fi
+            echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo 'validTag=false' >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download Build Artifacts 📥
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: fromJSON(steps.check.outputs.validTag)
+        with:
+          pattern: obs-studio-windows-x64-*
+
+      - name: Rename Files 🏷️
+        if: fromJSON(steps.check.outputs.validTag)
+        run: |
+          : Rename Files 🏷️
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          windows_x64_artifact_name="obs-studio-windows-x64-${GITHUB_SHA:0:9}"
+          mv -v "${windows_x64_artifact_name}/"obs-studio-*-windows-x64.zip \
+            "${{ github.workspace }}"/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
+
+      - name: Generate Checksums 🪪
+        if: fromJSON(steps.check.outputs.validTag)
+        run: |
+          : Generate Checksums 🪪
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          echo "### Checksums" > ${{ github.workspace }}/CHECKSUMS.txt
+          for file in ${{ github.workspace }}/*.zip; do
+            echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
+          done
+
+      - name: Create Release 🛫
+        if: fromJSON(steps.check.outputs.validTag)
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          draft: true
+          prerelease: ${{ fromJSON(steps.check.outputs.prerelease) }}
+          tag_name: ${{ steps.check.outputs.version }}
+          name: OBS-Spectra ${{ steps.check.outputs.version }}
+          body_path: ${{ github.workspace }}/CHECKSUMS.txt
+          files: |
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
