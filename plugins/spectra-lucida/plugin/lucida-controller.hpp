@@ -1,6 +1,6 @@
 #pragma once
 
-#include "frame-grabber.hpp"
+#include <spectra-grab/frame-grabber.hpp>
 #include "recorder.hpp"
 #include "store.hpp"
 

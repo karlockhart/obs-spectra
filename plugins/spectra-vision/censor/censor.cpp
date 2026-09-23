@@ -328,6 +328,84 @@ ObscuraPrefs LoadObscuraPrefs()
 #ifdef _WIN32
 static const wchar_t *kCredentialTarget = L"Obscura:imgbb";
 
+std::optional<QByteArray> HttpGet(const QString &url, QString *error, int timeoutMs)
+{
+	auto fail = [&](const QString &msg) -> std::optional<QByteArray> {
+		if (error) {
+			*error = msg;
+		}
+		return std::nullopt;
+	};
+	std::wstring wurl = url.toStdWString();
+	URL_COMPONENTS parts = {};
+	parts.dwStructSize = sizeof(parts);
+	wchar_t host[256] = {}, path[2048] = {};
+	parts.lpszHostName = host;
+	parts.dwHostNameLength = 256;
+	parts.lpszUrlPath = path;
+	parts.dwUrlPathLength = 2048;
+	if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &parts) || parts.nScheme != INTERNET_SCHEME_HTTPS) {
+		return fail(QStringLiteral("Not an https URL: %1").arg(url));
+	}
+	std::wstring object = path;
+	if (parts.dwExtraInfoLength) {
+		object += std::wstring(parts.lpszExtraInfo, parts.dwExtraInfoLength);
+	}
+
+	/* follows redirects (GitHub release assets redirect to a CDN) */
+	HINTERNET session = WinHttpOpen(L"OBS-Spectra", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+					WINHTTP_NO_PROXY_BYPASS, 0);
+	HINTERNET connect = session ? WinHttpConnect(session, host, parts.nPort, 0) : nullptr;
+	HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", object.c_str(), nullptr, WINHTTP_NO_REFERER,
+							 WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)
+				    : nullptr;
+	QByteArray body;
+	DWORD status = 0;
+	bool ok = false;
+	if (request) {
+		WinHttpSetTimeouts(request, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+		const wchar_t *headers = L"Accept: application/vnd.github+json, */*\r\n";
+		ok = WinHttpSendRequest(request, headers, (DWORD)-1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+		     WinHttpReceiveResponse(request, nullptr);
+		if (ok) {
+			DWORD size = sizeof(status);
+			WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+					    WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
+			DWORD available = 0;
+			while (WinHttpQueryDataAvailable(request, &available) && available) {
+				QByteArray chunk(available, Qt::Uninitialized);
+				DWORD read = 0;
+				if (!WinHttpReadData(request, chunk.data(), available, &read) || !read) {
+					break;
+				}
+				body.append(chunk.constData(), read);
+				if (body.size() > 64 * 1024 * 1024) {
+					break;
+				}
+			}
+		}
+	}
+	const DWORD lastError = GetLastError();
+	if (request) {
+		WinHttpCloseHandle(request);
+	}
+	if (connect) {
+		WinHttpCloseHandle(connect);
+	}
+	if (session) {
+		WinHttpCloseHandle(session);
+	}
+	if (!ok) {
+		return fail(QStringLiteral("Could not reach %1 (error %2)")
+				    .arg(QString::fromWCharArray(host))
+				    .arg(lastError));
+	}
+	if (status != 200) {
+		return fail(QStringLiteral("HTTP %1 from %2").arg(status).arg(QString::fromWCharArray(host)));
+	}
+	return body;
+}
+
 std::optional<QString> LoadImgbbKey()
 {
 	PCREDENTIALW cred = nullptr;

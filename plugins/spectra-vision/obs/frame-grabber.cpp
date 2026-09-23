@@ -1,16 +1,17 @@
-#include "frame-grabber.hpp"
+#include <spectra-grab/frame-grabber.hpp>
 
 #include <obs.hpp>
 #include <graphics/graphics.h>
 #include <graphics/vec4.h>
 
-namespace lucida {
+namespace spectra {
 
 namespace {
 
 struct Candidate {
 	OBSSource source;
 	QString name;
+	QString exe;
 };
 
 bool HookedExecutable(obs_source_t *source, QString &exe)
@@ -58,7 +59,7 @@ void FrameGrabber::FreeGraphics()
 	stageWidth = stageHeight = 0;
 }
 
-std::optional<GrabbedFrame> FrameGrabber::Grab()
+std::optional<SourceFrame> FrameGrabber::Grab()
 {
 	/* Find a capture showing the game */
 	struct Context {
@@ -84,7 +85,7 @@ std::optional<GrabbedFrame> FrameGrabber::Grab()
 			    !c->target->match(exe).hasMatch()) {
 				return true;
 			}
-			c->found = {OBSSource(source), QString::fromUtf8(obs_source_get_name(source))};
+			c->found = {OBSSource(source), QString::fromUtf8(obs_source_get_name(source)), exe};
 			return false;
 		},
 		&ctx);
@@ -131,15 +132,15 @@ std::optional<GrabbedFrame> FrameGrabber::Grab()
 		rendered = true;
 	}
 
-	std::optional<GrabbedFrame> frame;
+	std::optional<SourceFrame> frame;
 	uint8_t *data = nullptr;
 	uint32_t linesize = 0;
 	if (rendered && gs_stagesurface_map(stage, &data, &linesize)) {
-		frame = GrabbedFrame{spectra::FromBGRA(data, (int)cx, (int)cy, (int)linesize), ctx.found.name};
+		frame = SourceFrame{FromBGRA(data, (int)cx, (int)cy, (int)linesize), ctx.found.name, ctx.found.exe};
 		gs_stagesurface_unmap(stage);
 	}
 	obs_leave_graphics();
 	return frame;
 }
 
-} // namespace lucida
+} // namespace spectra

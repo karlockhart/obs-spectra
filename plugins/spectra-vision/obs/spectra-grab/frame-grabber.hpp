@@ -1,6 +1,6 @@
 #pragma once
 
-#include "recorder.hpp"
+#include <spectra-vision/image.hpp>
 
 #include <QRegularExpression>
 #include <QString>
@@ -10,9 +10,15 @@
 struct gs_texture_render;
 struct gs_stage_surface;
 
-namespace lucida {
+namespace spectra {
 
-/* Reads frames of the game from OBS: the first visible game/window capture
+struct SourceFrame {
+	Image image;        /* BGR */
+	QString source;     /* OBS source name */
+	QString executable; /* hooked process */
+};
+
+/* Reads frames of the game from OBS (shared by Lucida and Obscura): the first visible game/window capture
  * source that is hooked onto a process matching the target pattern, rendered
  * at its native size (independent of the canvas or scene layout). */
 class FrameGrabber {
@@ -22,8 +28,8 @@ public:
 
 	void SetTargetProcess(const QString &regex);
 
-	/* Called from the sampling thread */
-	std::optional<GrabbedFrame> Grab();
+	/* Call from a worker thread (not the graphics thread) */
+	std::optional<SourceFrame> Grab();
 
 private:
 	QRegularExpression target;
@@ -35,4 +41,4 @@ private:
 	void FreeGraphics();
 };
 
-} // namespace lucida
+} // namespace spectra

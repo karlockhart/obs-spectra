@@ -111,3 +111,9 @@ target_compile_definitions(spectra-censor PRIVATE SPECTRA_CENSOR_BUILD)
 target_link_libraries(spectra-censor PUBLIC spectra-vision Qt::Widgets PRIVATE winhttp advapi32)
 set_target_properties(spectra-censor PROPERTIES AUTOMOC ON FOLDER spectra)
 set_target_properties_obs(spectra-censor)
+
+# Frame grabbing from OBS's game/window capture, shared by Lucida and Obscura
+add_library(spectra-grab STATIC obs/frame-grabber.cpp obs/spectra-grab/frame-grabber.hpp)
+target_include_directories(spectra-grab PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/obs")
+target_link_libraries(spectra-grab PUBLIC spectra-vision OBS::libobs)
+set_target_properties(spectra-grab PROPERTIES FOLDER spectra)

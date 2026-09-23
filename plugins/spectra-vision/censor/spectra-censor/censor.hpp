@@ -130,6 +130,10 @@ struct ObscuraPrefs {
 SPECTRA_CENSOR_API QString ObscuraConfigPath();
 SPECTRA_CENSOR_API ObscuraPrefs LoadObscuraPrefs();
 
+/* Blocking HTTPS GET (WinHTTP): the body on HTTP 200, else nullopt and error */
+SPECTRA_CENSOR_API std::optional<QByteArray> HttpGet(const QString &url, QString *error = nullptr,
+						     int timeoutMs = 30000);
+
 /* --- imgbb (API key in Windows Credential Manager "Obscura:imgbb") ------- */
 
 SPECTRA_CENSOR_API std::optional<QString> LoadImgbbKey();

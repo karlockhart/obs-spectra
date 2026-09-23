@@ -44,8 +44,6 @@ add_library(OBS::spectra-lucida ALIAS spectra-lucida)
 target_sources(
   spectra-lucida
   PRIVATE
-    plugin/frame-grabber.cpp
-    plugin/frame-grabber.hpp
     plugin/lucida-controller.cpp
     plugin/lucida-controller.hpp
     plugin/lucida-dock.cpp
@@ -54,6 +52,6 @@ target_sources(
     plugin/lucida-viewer.cpp
     plugin/lucida-viewer.hpp
 )
-target_link_libraries(spectra-lucida PRIVATE lucida-core spectra-censor OBS::libobs OBS::frontend-api Qt::Widgets)
+target_link_libraries(spectra-lucida PRIVATE lucida-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets)
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")

@@ -293,13 +293,16 @@ void Controller::Run(Settings s)
 		return;
 	}
 
-	FrameGrabber grabber;
+	spectra::FrameGrabber grabber;
 	grabber.SetTargetProcess(s.targetProcess);
 	/* Troubleshooting: SPECTRA_LUCIDA_DUMP=<folder> saves every grabbed frame */
 	const QString dumpDir = qEnvironmentVariable("SPECTRA_LUCIDA_DUMP");
 	int dumped = 0;
 	Recorder recorder(s.recorder, store, *ocr, [&grabber, &dumpDir, &dumped]() {
-		std::optional<GrabbedFrame> frame = grabber.Grab();
+		std::optional<GrabbedFrame> frame;
+		if (std::optional<spectra::SourceFrame> f = grabber.Grab()) {
+			frame = GrabbedFrame{std::move(f->image), f->source};
+		}
 		if (frame && !dumpDir.isEmpty()) {
 			QDir().mkpath(dumpDir);
 			const spectra::Image &img = frame->image;
