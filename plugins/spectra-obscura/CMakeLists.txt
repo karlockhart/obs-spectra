@@ -84,3 +84,8 @@ target_link_libraries(
 )
 set_target_properties(spectra-obscura PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-obscura PROPERTIES FOLDER spectra PREFIX "")
+target_add_resource(
+  spectra-obscura
+  "${SPECTRA_MONOCYPHER_PATH}/monocypher-4.0.2/LICENCE.md"
+  "${OBS_DATA_DESTINATION}/spectra-vision/licenses/monocypher"
+)
