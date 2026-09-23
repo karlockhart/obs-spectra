@@ -73,6 +73,8 @@ target_sources(
     utility/SpectraSplash.hpp
     utility/SpectraUpdateCheck.cpp
     utility/SpectraUpdateCheck.hpp
+    utility/StarlingLink.cpp
+    utility/StarlingLink.hpp
     utility/StartMultiTrackVideoStreamingGuard.hpp
     utility/SurfaceEventFilter.hpp
     utility/ThumbnailItem.cpp

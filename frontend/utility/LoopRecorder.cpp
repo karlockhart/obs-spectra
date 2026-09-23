@@ -130,7 +130,11 @@ static QString FullscreenAppExe()
 #endif
 }
 
-LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_), capture(new LoopCapture(main_))
+LoopRecorder::LoopRecorder(OBSBasic *main_)
+	: QObject(main_),
+	  main(main_),
+	  capture(new LoopCapture(main_)),
+	  starling(new StarlingLink(main_))
 {
 	captureTimer.setInterval(PROCESS_POLL_MS);
 	connect(&captureTimer, &QTimer::timeout, this, &LoopRecorder::UpdateCapture);
@@ -212,6 +216,11 @@ bool LoopRecorder::FitToCanvasEnabled() const
 	return config_get_bool(main->Config(), LOOP_SECTION, "FitToCanvas");
 }
 
+bool LoopRecorder::StarlingVoiceEnabled() const
+{
+	return config_get_bool(main->Config(), LOOP_SECTION, "StarlingVoice");
+}
+
 bool LoopRecorder::AnyFullscreenEnabled() const
 {
 	return config_get_bool(main->Config(), LOOP_SECTION, "AnyFullscreen");
@@ -264,6 +273,8 @@ QStringList LoopRecorder::ActivePatterns() const
 
 void LoopRecorder::SettingsChanged()
 {
+	starling->SetEnabled(StarlingVoiceEnabled());
+
 	if (!AnyFullscreenEnabled()) {
 		fullscreenExe.clear();
 	}

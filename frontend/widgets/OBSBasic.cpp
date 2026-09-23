@@ -774,6 +774,7 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCY", SpectraDefaults::DefaultCanvasCY);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Quality", SpectraDefaults::DefaultQuality);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "FitToCanvas", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "StarlingVoice", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AnyFullscreen", false);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");

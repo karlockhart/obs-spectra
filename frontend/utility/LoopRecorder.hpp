@@ -7,6 +7,7 @@
 #include <QTimer>
 
 #include "LoopCapture.hpp"
+#include "StarlingLink.hpp"
 
 #include <vector>
 
@@ -36,11 +37,14 @@ public:
 	bool AutoCaptureEnabled() const;
 	bool FitToCanvasEnabled() const;
 	bool AnyFullscreenEnabled() const;
+	/* Record Starling's converted voice instead of the mic while it runs */
+	bool StarlingVoiceEnabled() const;
 	QStringList ProcessPatterns() const;
 	/* The configured patterns plus the detected fullscreen application */
 	QStringList ActivePatterns() const;
 
 	LoopCapture *Capture() const { return capture; }
+	StarlingLink *Starling() const { return starling; }
 
 	/* Recreates Spectra's capture sources with default settings */
 	void ResetCapture();
@@ -102,6 +106,7 @@ private:
 	QTimer splitTimeout;
 	QTimer captureTimer;
 	LoopCapture *capture;
+	StarlingLink *starling;
 
 	QString label;
 	QString fullscreenExe;

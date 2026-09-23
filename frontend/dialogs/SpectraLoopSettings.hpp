@@ -34,6 +34,7 @@ private:
 	QCheckBox *autoStop;
 	QCheckBox *autoCapture;
 	QCheckBox *fitToCanvas;
+	QCheckBox *starlingVoice;
 	QComboBox *resolution;
 	QComboBox *quality;
 	SpectraAppPicker *processes;

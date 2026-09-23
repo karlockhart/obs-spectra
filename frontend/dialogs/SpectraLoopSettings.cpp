@@ -66,6 +66,9 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	fitToCanvas = new QCheckBox(QTStr("Spectra.Loop.Settings.FitToCanvas"));
 	fitToCanvas->setChecked(recorder->FitToCanvasEnabled());
 	fitToCanvas->setToolTip(QTStr("Spectra.Loop.Settings.FitToCanvasTip"));
+	starlingVoice = new QCheckBox(QTStr("Spectra.Loop.Settings.StarlingVoice"));
+	starlingVoice->setChecked(recorder->StarlingVoiceEnabled());
+	starlingVoice->setToolTip(QTStr("Spectra.Loop.Settings.StarlingVoiceTip"));
 
 	resolution = new QComboBox();
 	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, LOOP_SECTION, "CanvasCX"),
@@ -97,6 +100,7 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoStop);
 	form->addRow(QString(), autoCapture);
 	form->addRow(QString(), fitToCanvas);
+	form->addRow(QString(), starlingVoice);
 
 	QGroupBox *shortcutGroup = new QGroupBox(QTStr("Spectra.Hotkey.Shortcuts"));
 	auto *shortcutForm = new QFormLayout(shortcutGroup);
@@ -171,6 +175,7 @@ void SpectraLoopSettings::accept()
 	config_set_bool(config, LOOP_SECTION, "AutoStop", autoStop->isChecked());
 	config_set_bool(config, LOOP_SECTION, "AutoCapture", autoCapture->isChecked());
 	config_set_bool(config, LOOP_SECTION, "FitToCanvas", fitToCanvas->isChecked());
+	config_set_bool(config, LOOP_SECTION, "StarlingVoice", starlingVoice->isChecked());
 	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->Patterns()));
 	config_set_bool(config, LOOP_SECTION, "AnyFullscreen", processes->AnyFullscreen());
 	for (SpectraHotkeyEdit *shortcut : shortcuts) {
