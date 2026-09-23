@@ -55,16 +55,28 @@ jobs:
         if: fromJSON(steps.check.outputs.validTag)
         with:
           pattern: obs-studio-windows-x64-*
+          merge-multiple: true
 
-      - name: Rename Files 🏷️
+      - name: Package Release 📦
         if: fromJSON(steps.check.outputs.validTag)
         run: |
-          : Rename Files 🏷️
+          : Package Release 📦
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          windows_x64_artifact_name="obs-studio-windows-x64-${GITHUB_SHA:0:9}"
-          mv -v "${windows_x64_artifact_name}/"obs-studio-*-windows-x64.zip \
-            "${{ github.workspace }}"/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
+          # Every release ships an installed-style zip and a portable one. Both
+          # leave out debug symbols and Spectra's own test programs; the obs-*-test
+          # encoder probes stay because OBS runs them at startup.
+          version='${{ steps.check.outputs.version }}'
+          mkdir package
+          unzip -q obs-studio-*-windows-x64.zip -d package
+          rm -f obs-studio-*-windows-x64.zip
+          find package -name '*.pdb' -delete
+          find package -name '*-tests.exe' -delete
+          rm -rf package/data/*-tests
+
+          (cd package && zip -qr9 "${{ github.workspace }}/OBS-Spectra-${version}-Windows-x64.zip" .)
+          touch package/portable_mode.txt
+          (cd package && zip -qr9 "${{ github.workspace }}/OBS-Spectra-${version}-Windows-x64-Portable.zip" .)
 
       - name: Generate Checksums 🪪
         if: fromJSON(steps.check.outputs.validTag)
@@ -72,19 +84,24 @@ jobs:
           : Generate Checksums 🪪
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          echo "### Checksums" > ${{ github.workspace }}/CHECKSUMS.txt
-          for file in ${{ github.workspace }}/*.zip; do
-            echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
+          cd ${{ github.workspace }}
+          echo "### Checksums" > CHECKSUMS.txt
+          for file in *.zip; do
+            sha256sum "${file}" > "${file}.sha256"
+            echo "    ${file}: $(cut -d " " -f 1 "${file}.sha256")" >> CHECKSUMS.txt
           done
 
       - name: Create Release 🛫
         if: fromJSON(steps.check.outputs.validTag)
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
-          draft: true
+          draft: false
           prerelease: ${{ fromJSON(steps.check.outputs.prerelease) }}
           tag_name: ${{ steps.check.outputs.version }}
           name: OBS-Spectra ${{ steps.check.outputs.version }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
           files: |
             ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip.sha256
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Portable.zip
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Portable.zip.sha256
