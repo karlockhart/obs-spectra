@@ -27,10 +27,11 @@ public:
 
 private:
 	Controller *c;
-	QLineEdit *process, *title, *outputDir, *originalsDir, *prefix, *fill, *seeds, *imgbbKey, *distRepo;
+	QLineEdit *process, *title, *outputDir, *originalsDir, *prefix, *fill, *seeds, *imgbbKey, *imgbbAlbum,
+		*distRepo;
 	QComboBox *cropReview, *tz, *imgbbExpiry;
 	QCheckBox *watchEnabled, *moveWatched, *openedSrc, *keepOriginals, *autoApply, *useInstalled, *imgbbCopy,
-		*imgbbOpen, *autoDefs, *prereleaseDefs;
+		*imgbbOpen, *imgbbAuto, *imgbbObsShots, *autoDefs, *prereleaseDefs;
 	QListWidget *watchList;
 	QDoubleSpinBox *region[2][4];
 	QSpinBox *minScreens;

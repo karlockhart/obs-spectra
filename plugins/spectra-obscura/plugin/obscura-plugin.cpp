@@ -140,6 +140,13 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		}
 		break;
 	}
+	case OBS_FRONTEND_EVENT_SCREENSHOT_TAKEN:
+		if (controller) {
+			char *path = obs_frontend_get_last_screenshot();
+			controller->OnObsScreenshot(QString::fromUtf8(path ? path : ""));
+			bfree(path);
+		}
+		break;
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
 		SaveHotkeys();
 		break;

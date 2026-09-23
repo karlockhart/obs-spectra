@@ -291,8 +291,17 @@ QWidget *SettingsDialog::UploadTab()
 	imgbbExpiry->setCurrentIndex(std::max(0, imgbbExpiry->findData(cfg.imgbbExpiration)));
 	imgbbCopy = Check("Obscura.Settings.CopyLink", cfg.imgbbCopyLink);
 	imgbbOpen = Check("Obscura.Settings.OpenLink", cfg.imgbbOpenLink);
+	imgbbAlbum = new QLineEdit(cfg.imgbbAlbum);
+	imgbbAlbum->setPlaceholderText(T("Obscura.Settings.Album.Placeholder"));
+	imgbbAlbum->setToolTip(T("Obscura.Settings.Album.Tip"));
+	imgbbAuto = Check("Obscura.Settings.AutoUpload", cfg.imgbbAutoUpload);
+	imgbbObsShots = Check("Obscura.Settings.UploadObsShots", cfg.imgbbUploadObsShots);
+	imgbbObsShots->setToolTip(T("Obscura.Settings.UploadObsShots.Tip"));
 	form->addRow(T("Obscura.Settings.ImgbbKey"), imgbbKey);
 	form->addRow(T("Obscura.Settings.Expiry"), imgbbExpiry);
+	form->addRow(T("Obscura.Settings.Album"), imgbbAlbum);
+	form->addRow(imgbbAuto);
+	form->addRow(imgbbObsShots);
 	form->addRow(imgbbCopy);
 	form->addRow(imgbbOpen);
 	form->addRow(Note(T("Obscura.Settings.UploadNote")));
@@ -366,6 +375,9 @@ void SettingsDialog::accept()
 	cfg.imgbbExpiration = imgbbExpiry->currentData().toInt();
 	cfg.imgbbCopyLink = imgbbCopy->isChecked();
 	cfg.imgbbOpenLink = imgbbOpen->isChecked();
+	cfg.imgbbAlbum = imgbbAlbum->text().trimmed();
+	cfg.imgbbAutoUpload = imgbbAuto->isChecked();
+	cfg.imgbbUploadObsShots = imgbbObsShots->isChecked();
 	const QString key = imgbbKey->text().trimmed();
 	if (key != imgbbKeyInitial && !spectra::censor::SaveImgbbKey(key)) {
 		QMessageBox::warning(this, T("Obscura.Title"), T("Obscura.Settings.KeyStoreFailed"));

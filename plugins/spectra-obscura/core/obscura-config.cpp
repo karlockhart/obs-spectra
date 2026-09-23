@@ -121,6 +121,9 @@ Config Config::FromJson(const QJsonObject &o)
 	c.imgbbExpiration = o["imgbb_expiration"].toInt(c.imgbbExpiration);
 	boolean("imgbb_copy_link", c.imgbbCopyLink);
 	boolean("imgbb_open_link", c.imgbbOpenLink);
+	str("imgbb_album", c.imgbbAlbum);
+	boolean("spectra_imgbb_auto_upload", c.imgbbAutoUpload);
+	boolean("spectra_imgbb_upload_obs_screenshots", c.imgbbUploadObsShots);
 	str("crop_review", c.cropReview);
 
 	c.unknown = o;
@@ -158,6 +161,9 @@ QJsonObject Config::ToJson() const
 	o["imgbb_expiration"] = imgbbExpiration;
 	o["imgbb_copy_link"] = imgbbCopyLink;
 	o["imgbb_open_link"] = imgbbOpenLink;
+	o["imgbb_album"] = imgbbAlbum;
+	o["spectra_imgbb_auto_upload"] = imgbbAutoUpload;
+	o["spectra_imgbb_upload_obs_screenshots"] = imgbbUploadObsShots;
 	o["crop_review"] = cropReview;
 	return o;
 }

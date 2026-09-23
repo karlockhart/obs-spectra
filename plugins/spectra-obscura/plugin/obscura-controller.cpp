@@ -107,6 +107,26 @@ QString Job::Label() const
 	return QStringLiteral("%1 %2").arg(kind, capturedAt.toLocalTime().toString(QStringLiteral("HH:mm:ss")));
 }
 
+/* Spectra's in-game notification overlay (the frontend's spectra_notify proc);
+ * kind: obscura, upload, screenshot, error, ... */
+static void Toast(const char *kind, const QString &title, const QString &text, const QString &key)
+{
+	const QByteArray t = title.toUtf8(), x = text.toUtf8(), k = key.toUtf8();
+	calldata_t cd = {0};
+	calldata_set_string(&cd, "kind", kind);
+	calldata_set_string(&cd, "title", t.constData());
+	calldata_set_string(&cd, "text", x.constData());
+	calldata_set_string(&cd, "key", k.constData());
+	proc_handler_call(obs_get_proc_handler(), "spectra_notify", &cd);
+	calldata_free(&cd);
+}
+
+static bool OverlayEnabled()
+{
+	config_t *profile = obs_frontend_get_profile_config();
+	return profile && config_get_bool(profile, "SpectraOverlay", "Enabled");
+}
+
 Controller::Controller(QObject *parent) : QObject(parent)
 {
 	cfg = LoadConfig();
@@ -344,7 +364,8 @@ void Controller::Capture()
 	if (paused) {
 		return;
 	}
-	Notify(T("Obscura.Status.Capturing"));
+	Toast("obscura", T("Obscura.Toast.Capturing"), QString(), "obscura");
+	Notify(T("Obscura.Status.Capturing"), false, true);
 	Post([this, c = cfg] {
 		auto job = std::make_shared<Job>();
 		job->source = QStringLiteral("hotkey");
@@ -616,9 +637,11 @@ void Controller::Finalise(const JobPtr &job, const std::vector<bool> &flags, con
 		}
 	}
 	const QString name = QFileInfo(saved).fileName();
-	Notify((learn ? T("Obscura.Status.Saved") : T("Obscura.Status.AutoCensored")).arg(name) + detail);
+	Toast("obscura", T("Obscura.Toast.Saved"),
+	      censored ? T("Obscura.Toast.Censored").arg(censored).arg(flags.size()) : name, "obscura");
+	Notify((learn ? T("Obscura.Status.Saved") : T("Obscura.Status.AutoCensored")).arg(name) + detail, false, true);
 	blog(LOG_INFO, "[Obscura] %s %s", learn ? "Saved" : "Auto-censored", saved.toUtf8().constData());
-	if (uploadAfter) {
+	if (uploadAfter || cfg.imgbbAutoUpload) {
 		UploadFile(saved);
 	}
 	if (review && review->CurrentJob() == job) {
@@ -655,13 +678,15 @@ void Controller::UploadFile(const QString &path)
 		Notify(T("Obscura.Error.NoKey"), true);
 		return;
 	}
-	Notify(T("Obscura.Status.Uploading").arg(QFileInfo(path).fileName()));
+	Toast("upload", T("Obscura.Toast.Uploading"), QFileInfo(path).fileName(), path);
+	Notify(T("Obscura.Status.Uploading").arg(QFileInfo(path).fileName()), false, true);
 	const int expiration = cfg.imgbbExpiration;
 	Post([this, path, expiration] {
 		spectra::censor::UploadResult r = spectra::censor::UploadToImgbb(path, expiration);
-		OnUi([this, r] {
+		OnUi([this, path, r] {
 			if (!r.ok) {
-				Notify(T("Obscura.Error.UploadFailed").arg(r.error), true);
+				Toast("error", T("Obscura.Toast.UploadFailed"), r.error, path);
+				Notify(T("Obscura.Error.UploadFailed").arg(r.error), true, true);
 				return;
 			}
 			const QString url = r.displayUrl.isEmpty() ? r.url : r.displayUrl;
@@ -671,10 +696,29 @@ void Controller::UploadFile(const QString &path)
 			if (cfg.imgbbOpenLink) {
 				QDesktopServices::openUrl(QUrl(url));
 			}
+			Toast("upload",
+			      T(cfg.imgbbCopyLink ? "Obscura.Toast.UploadedCopied" : "Obscura.Toast.Uploaded"), url,
+			      path);
 			Notify(T(cfg.imgbbCopyLink ? "Obscura.Status.UploadedCopied" : "Obscura.Status.Uploaded")
-				       .arg(url));
+				       .arg(url),
+			       false, true);
 		});
 	});
+}
+
+void Controller::OnObsScreenshot(const QString &path)
+{
+	if (!cfg.imgbbUploadObsShots || path.isEmpty()) {
+		return;
+	}
+	static const QStringList uploadable = {"png", "jpg", "jpeg", "bmp", "gif", "webp"};
+	if (!uploadable.contains(QFileInfo(path).suffix().toLower())) {
+		/* HDR screenshots are JPEG XR, which imgbb does not take */
+		blog(LOG_INFO, "[Obscura] Not uploading %s: imgbb does not accept this format",
+		     path.toUtf8().constData());
+		return;
+	}
+	UploadFile(path);
 }
 
 /* --- definitions ------------------------------------------------------------- */
@@ -773,15 +817,19 @@ void Controller::OpenFolder(const QString &folder)
 	QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
 }
 
-void Controller::Notify(const QString &message, bool error)
+void Controller::Notify(const QString &message, bool error, bool toasted)
 {
+	if (error && !toasted) {
+		Toast("error", T("Obscura.Title"), message, "obscura");
+		toasted = true;
+	}
 	status = message;
 	emit statusChanged(message);
 	blog(error ? LOG_WARNING : LOG_INFO, "[Obscura] %s", message.toUtf8().constData());
 	/* a balloon from Spectra's tray icon, when it has one */
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	QSystemTrayIcon *tray = main ? main->findChild<QSystemTrayIcon *>() : nullptr;
-	if (tray && tray->isVisible() && (error || !main->isActiveWindow())) {
+	if (tray && tray->isVisible() && (error || !main->isActiveWindow()) && !(toasted && OverlayEnabled())) {
 		tray->showMessage(T("Obscura.Title"), message,
 				  error ? QSystemTrayIcon::Warning : QSystemTrayIcon::Information, 4000);
 	}
