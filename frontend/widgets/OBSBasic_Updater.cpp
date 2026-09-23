@@ -21,9 +21,9 @@
 
 #include <dialogs/OBSWhatsNew.hpp>
 
+#include <utility/SpectraUpdateCheck.hpp>
 #ifdef _WIN32
 #include <utility/AutoUpdateThread.hpp>
-#include <utility/SpectraUpdateCheck.hpp>
 #endif
 #ifdef ENABLE_SPARKLE_UPDATER
 #include <utility/MacUpdateThread.hpp>
@@ -39,9 +39,7 @@
 #endif
 #include <qt-wrappers.hpp>
 
-#ifdef _WIN32
 #define SPECTRA_UPDATE_CHECK_INTERVAL (60 * 60 * 24) /* 1 day */
-#endif
 
 struct QCef;
 struct QCefCookieManager;
