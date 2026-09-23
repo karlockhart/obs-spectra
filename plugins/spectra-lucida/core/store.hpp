@@ -51,6 +51,14 @@ struct LogLine {
 	QString When() const;
 };
 
+/* A line as it appeared in one frame: a line already in the log is on
+ * screen again in later frames, higher up as chat scrolls */
+struct Sighting {
+	long long lineId = 0;
+	int seq = 0;                       /* position in the frame's chat */
+	std::optional<spectra::Rect> rect; /* where it is in the frame */
+};
+
 /* What the log browser asks for; empty fields match everything */
 struct Query {
 	QString text;
@@ -113,13 +121,18 @@ public:
 	long long StartSession(const QString &target, int width, int height);
 	void EndSession(long long sessionId);
 
-	/* Records a frame's entries; returns the ids of the new lines */
+	/* Records a frame's entries; returns the ids of the new lines. seen gets
+	 * every line in the frame, new or already logged. */
 	std::vector<long long> AddFrame(const std::vector<spectra::ChatEntry> &entries, long long frameTs,
-					const QString &tsSource = "wall", std::optional<long long> sessionId = {});
+					const QString &tsSource = "wall", std::optional<long long> sessionId = {},
+					std::vector<Sighting> *seen = nullptr);
 
-	long long AttachFrame(const std::vector<long long> &lineIds, const QString &path, int width, int height,
+	/* Keeps a screenshot showing the sighted lines; a line's frameId is the
+	 * first screenshot it is in */
+	long long AttachFrame(const std::vector<Sighting> &lines, const QString &path, int width, int height,
 			      long long sortTs, std::optional<long long> sessionId = {});
 	std::optional<Frame> GetFrame(long long frameId);
+	/* Every line in the screenshot, with its place in that screenshot */
 	std::vector<LogLine> FrameLines(long long frameId);
 	/* Forgets screenshots older than days; returns the files to delete */
 	QStringList PruneFrames(int days);

@@ -105,7 +105,7 @@ private:
 
 	std::pair<long long, QString> FrameTimestamp(const spectra::Image &img);
 	void Adapt(int added, bool turnover);
-	void KeepFrame(const spectra::Image &img, long long frameTs, const std::vector<long long> &ids);
+	void KeepFrame(const spectra::Image &img, long long frameTs, const std::vector<Sighting> &lines);
 	void SaveCrop(const spectra::Image &crop, long long frameTs);
 };
 

@@ -15,6 +15,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QPainter>
@@ -22,6 +23,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <map>
 
 using namespace lucida;
 
@@ -155,9 +157,11 @@ struct Rig {
 	RecorderConfig cfg;
 	std::unique_ptr<Recorder> recorder;
 
-	explicit Rig(const std::vector<QStringList> &script) : store(NewDb()), ocr(script)
+	explicit Rig(const std::vector<QStringList> &script, bool keepFrames = false) : store(NewDb()), ocr(script)
 	{
 		store.Open();
+		cfg.keepFrames = keepFrames;
+		cfg.framesDir = QFileInfo(store.Path()).absoluteDir().filePath("frames");
 		for (const QStringList &lines : script) {
 			frames.push_back(DrawFrame(lines));
 		}
@@ -175,6 +179,22 @@ struct Rig {
 		});
 	}
 };
+
+/* Sightings of lines without positions, for tests that only need the links */
+static std::vector<Sighting> Seen(const std::vector<long long> &ids)
+{
+	std::vector<Sighting> out;
+	for (long long id : ids) {
+		out.push_back({id, 0, std::nullopt});
+	}
+	return out;
+}
+
+static spectra::ChatEntry At(spectra::ChatEntry e, int y)
+{
+	e.rects = {{10, y, 300, y + 20}};
+	return e;
+}
 
 static const QStringList kChat{"[16:38:10] [Admin Chat] Bob: come to the docks", "[16:38:12] Harry says: on my way",
 			       "[16:38:14] ((Sally)): brb one sec"};
@@ -291,7 +311,7 @@ int main(int argc, char **argv)
 		Store s(NewDb());
 		s.Open();
 		auto ids = s.AddFrame({Entry("16:38:10", "first"), Entry("16:38:11", "second")}, 1789231300);
-		long long fid = s.AttachFrame(ids, "shot.jpg", 1920, 1080, 1789231300);
+		long long fid = s.AttachFrame(Seen(ids), "shot.jpg", 1920, 1080, 1789231300);
 		auto f = s.GetFrame(fid);
 		CHECK(f && f->width == 1920 && f->path == "shot.jpg");
 		CHECK((Bodies(s.FrameLines(fid)) == QStringList{"first", "second"}));
@@ -302,6 +322,64 @@ int main(int argc, char **argv)
 		CHECK(allLinked);
 		CHECK(s.AddFrame({Entry("16:38:10", "first")}, 1789231305).empty());
 		CHECK(s.FrameLines(fid)[0].frameId == fid);
+	});
+
+	Test("a_screenshot_lists_every_line_on_it_where_it_is_there", [] {
+		Store s(NewDb());
+		s.Open();
+		std::vector<Sighting> seen1;
+		s.AddFrame({At(Entry("16:38:10", "first"), 100), At(Entry("16:38:11", "second"), 120)}, 1789231300,
+			   "wall", {}, &seen1);
+		long long f1 = s.AttachFrame(seen1, "one.jpg", 1920, 1080, 1789231300);
+		/* chat scrolled: the old lines moved up and one arrived below them */
+		std::vector<Sighting> seen2;
+		auto added = s.AddFrame({At(Entry("16:38:10", "first"), 60), At(Entry("16:38:11", "second"), 80),
+					 At(Entry("16:38:20", "third"), 100)},
+					1789231320, "wall", {}, &seen2);
+		CHECK(added.size() == 1 && seen2.size() == 3);
+		long long f2 = s.AttachFrame(seen2, "two.jpg", 1920, 1080, 1789231320);
+		auto lines = s.FrameLines(f2);
+		CHECK((Bodies(lines) == QStringList{"first", "second", "third"}));
+		CHECK((lines[0].rect == spectra::Rect{10, 60, 300, 80}));
+		CHECK((s.FrameLines(f1)[0].rect == spectra::Rect{10, 100, 300, 120}));
+		/* a line's own screenshot stays the first one it was in */
+		CHECK(lines[0].frameId == f1 && lines[2].frameId == f2);
+		Query q;
+		q.frameId = f2;
+		CHECK((Bodies(s.Find(q)) == QStringList{"first", "second", "third"}));
+		auto frames = s.Frames();
+		CHECK(frames.size() == 2 && frames[0].frame.id == f2 && frames[0].lines == 3);
+	});
+
+	Test("pruning_a_screenshot_moves_its_lines_to_the_next_one", [] {
+		Store s(NewDb());
+		s.Open();
+		long long oldTs = NowSecs() - 40 * 86400, newTs = NowSecs();
+		std::vector<Sighting> seen1, seen2;
+		s.AddFrame({Entry("16:38:10", "still here")}, oldTs, "wall", {}, &seen1);
+		s.AttachFrame(seen1, "old.jpg", 1920, 1080, oldTs);
+		s.AddFrame({Entry("16:38:10", "still here")}, oldTs + 5, "wall", {}, &seen2);
+		long long kept = s.AttachFrame(seen2, "new.jpg", 1920, 1080, newTs);
+		CHECK((s.PruneFrames(30) == QStringList{"old.jpg"}));
+		CHECK(s.Recent()[0].frameId == kept);
+		CHECK(s.FrameLines(kept).size() == 1);
+	});
+
+	Test("screenshots_from_before_frame_lines_keep_their_lines", [] {
+		QString path = NewDb();
+		long long fid;
+		{
+			Store s(path);
+			s.Open();
+			auto e = Entry("16:38:10", "from an older log");
+			e.rects = {{10, 20, 300, 40}};
+			fid = s.AttachFrame(Seen(s.AddFrame({e}, 1789231300)), "shot.jpg", 1920, 1080, 1789231300);
+			sqlite3_exec(s.Db(), "DELETE FROM frame_lines", nullptr, nullptr, nullptr);
+		}
+		Store s(path);
+		CHECK(s.Open());
+		auto lines = s.FrameLines(fid);
+		CHECK(lines.size() == 1 && lines[0].rect == (spectra::Rect{10, 20, 300, 40}));
 	});
 
 	Test("entry_rects_are_kept_for_the_viewer", [] {
@@ -319,8 +397,8 @@ int main(int argc, char **argv)
 		long long oldTs = NowSecs() - 40 * 86400, newTs = NowSecs();
 		auto oldIds = s.AddFrame({Entry("16:38:10", "ancient")}, oldTs);
 		auto newIds = s.AddFrame({Entry("16:38:11", "recent")}, newTs);
-		s.AttachFrame(oldIds, "old.jpg", 1920, 1080, oldTs);
-		long long kept = s.AttachFrame(newIds, "new.jpg", 1920, 1080, newTs);
+		s.AttachFrame(Seen(oldIds), "old.jpg", 1920, 1080, oldTs);
+		long long kept = s.AttachFrame(Seen(newIds), "new.jpg", 1920, 1080, newTs);
 		CHECK((s.PruneFrames(30) == QStringList{"old.jpg"}));
 		CHECK(s.GetFrame(kept).has_value());
 		for (const LogLine &l : s.Recent()) {
@@ -350,7 +428,7 @@ int main(int argc, char **argv)
 		auto l = s.Recent()[0];
 		CHECK(l.body == "from the old version" && !l.frameId && !l.rect);
 		auto ids = s.AddFrame({Entry("16:39:00", "from the new one")}, 1789231400);
-		CHECK(s.AttachFrame(ids, "shot.jpg", 1920, 1080, 1789231400) > 0);
+		CHECK(s.AttachFrame(Seen(ids), "shot.jpg", 1920, 1080, 1789231400) > 0);
 	});
 
 	Test("the_database_is_in_wal_mode_before_any_schema_is_written", [] {
@@ -389,7 +467,7 @@ int main(int argc, char **argv)
 			Store s(path);
 			s.Open();
 			auto ids = s.AddFrame({Entry("16:38:10", "keep me"), Entry("16:38:12", "and me")}, 1789231300);
-			s.AttachFrame(ids, "shot.jpg", 1920, 1080, 1789231300);
+			s.AttachFrame(Seen(ids), "shot.jpg", 1920, 1080, 1789231300);
 		}
 		QString error;
 		auto result = Store::Repair(path, &error);
@@ -469,7 +547,7 @@ int main(int argc, char **argv)
 		s.Open();
 		long long oldTs = NowSecs() - 40 * 86400;
 		auto ids = s.AddFrame({Entry("16:38:10", "ancient")}, oldTs);
-		s.AttachFrame(ids, "orphan.jpg", 1920, 1080, oldTs);
+		s.AttachFrame(Seen(ids), "orphan.jpg", 1920, 1080, oldTs);
 		QStringList orphans;
 		CHECK(s.Prune(30, &orphans) == 1);
 		CHECK((orphans == QStringList{"orphan.jpg"}));
@@ -571,6 +649,68 @@ int main(int argc, char **argv)
 		CHECK(bodies.size() == kUntimed.size() - 1);
 	});
 
+	Test("each_kept_screenshot_boxes_the_lines_drawn_on_it", [] {
+		/* chat scrolls: the first line leaves the top, two arrive below */
+		const QStringList second{kChat[1], kChat[2], "[16:38:20] Bob says: here now",
+					 "[16:38:22] Harry says: see you"};
+		const std::vector<QStringList> script{kChat, second};
+		Rig r(script, true);
+		r.recorder->Step();
+		r.recorder->Step();
+		auto frames = r.store.Frames(); /* newest first */
+		CHECK(frames.size() == 2);
+		if (frames.size() != 2) {
+			return;
+		}
+		std::map<QString, QImage> crops[2]; /* body -> its box cut from the kept screenshot */
+		for (int n = 0; n < 2; n++) {
+			const Frame &frame = frames[1 - n].frame;
+			QImage shot(frame.path);
+			CHECK(!shot.isNull() && shot.width() == kWidth);
+			auto lines = r.store.FrameLines(frame.id);
+			CHECK(lines.size() == (size_t)script[n].size());
+			for (size_t i = 0; i < lines.size() && i < (size_t)script[n].size(); i++) {
+				/* the line drawn in row i, boxed around row i and no other */
+				CHECK(script[n][(int)i].endsWith(lines[i].body));
+				const int centre = 17 + (int)i * kPitch;
+				CHECK(lines[i].rect && lines[i].rect->y0 <= centre && centre <= lines[i].rect->y1);
+				CHECK(lines[i].rect && lines[i].rect->y1 < centre + kPitch &&
+				      lines[i].rect->y0 > centre - kPitch);
+				if (lines[i].rect) {
+					const spectra::Rect &b = *lines[i].rect;
+					crops[n][lines[i].body] = shot.copy(0, b.y0, kWidth, b.y1 - b.y0)
+									  .convertToFormat(QImage::Format_Grayscale8);
+				}
+			}
+		}
+		/* the same line looks the same in both screenshots, and unlike its neighbours */
+		auto diff = [](const QImage &a, const QImage &b) {
+			const int h = std::min(a.height(), b.height());
+			double sum = 0.0;
+			for (int y = 0; y < h; y++) {
+				for (int x = 0; x < a.width(); x++) {
+					sum += std::abs(a.constScanLine(y)[x] - b.constScanLine(y)[x]);
+				}
+			}
+			return sum / std::max(1, h * a.width());
+		};
+		int compared = 0;
+		for (const auto &[body, crop] : crops[1]) {
+			auto same = crops[0].find(body);
+			if (same == crops[0].end()) {
+				continue;
+			}
+			compared++;
+			const double match = diff(crop, same->second);
+			for (const auto &[other, otherCrop] : crops[0]) {
+				if (other != body) {
+					CHECK(match < diff(crop, otherCrop));
+				}
+			}
+		}
+		CHECK(compared == 2);
+	});
+
 	/* ---- Spectra: tag rules ---- */
 
 	Test("tag_triggers_ignore_case_and_separators", [] {
@@ -665,7 +805,7 @@ int main(int argc, char **argv)
 			return t.Tags(body);
 		};
 		auto ids = s.AddFrame({Entry("16:38:10", "bodycam on"), Entry("16:38:11", "hi")}, NowSecs());
-		long long frameId = s.AttachFrame(ids, "C:/frames/x.jpg", 1920, 1080, NowSecs());
+		long long frameId = s.AttachFrame(Seen(ids), "C:/frames/x.jpg", 1920, 1080, NowSecs());
 		auto frames = s.Frames();
 		CHECK(frames.size() == 1 && frames[0].lines == 2 && frames[0].labels == QStringList{"bodycam-rp"});
 		Query q;

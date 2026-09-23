@@ -229,7 +229,8 @@ Tick Recorder::Step()
 	auto [frameTs, tsSource] = FrameTimestamp(img);
 	tick.ocrMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
 
-	std::vector<long long> ids = store.AddFrame(entries, frameTs, tsSource, sessionId);
+	std::vector<Sighting> seen;
+	std::vector<long long> ids = store.AddFrame(entries, frameTs, tsSource, sessionId, &seen);
 	if (!ids.empty() && locateVideo) {
 		if (std::optional<VideoSpot> spot = locateVideo(tick.at)) {
 			store.SetVideo(ids, *spot);
@@ -239,7 +240,7 @@ Tick Recorder::Step()
 	const bool turnover = added >= kTurnoverMinLines && added == (int)entries.size();
 	Adapt(added, turnover);
 	if (added && config.keepFrames) {
-		KeepFrame(img, frameTs, ids);
+		KeepFrame(img, frameTs, seen);
 	}
 	if (added && config.keepCrops) {
 		SaveCrop(crop, frameTs);
@@ -278,14 +279,14 @@ void Recorder::Adapt(int added, bool turnover)
 	}
 }
 
-void Recorder::KeepFrame(const spectra::Image &img, long long frameTs, const std::vector<long long> &ids)
+void Recorder::KeepFrame(const spectra::Image &img, long long frameTs, const std::vector<Sighting> &lines)
 {
 	if (config.framesDir.isEmpty()) {
 		return;
 	}
 	QString path = DatedPath(config.framesDir, frameTs, QStringLiteral(".jpg"));
 	if (ToQImage(img).save(path, "JPG", config.frameQuality)) {
-		store.AttachFrame(ids, path, img.width, img.height, frameTs, sessionId);
+		store.AttachFrame(lines, path, img.width, img.height, frameTs, sessionId);
 	}
 }
 

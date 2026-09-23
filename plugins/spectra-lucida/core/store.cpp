@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS frames (
     created     REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS frames_order ON frames(sort_ts);
+-- Spectra: every line on screen in a kept frame, where it is in that frame
+CREATE TABLE IF NOT EXISTS frame_lines (
+    frame_id    INTEGER NOT NULL,
+    line_id     INTEGER NOT NULL,
+    seq         INTEGER NOT NULL DEFAULT 0,
+    rect        TEXT,
+    PRIMARY KEY (frame_id, line_id)
+);
+CREATE INDEX IF NOT EXISTS frame_lines_line ON frame_lines(line_id);
 )SQL";
 
 /* Columns added after Lucida 0.1.0; older databases are migrated on open */
@@ -266,19 +275,27 @@ bool SameLine(const QString &a, const QString &b, bool timed)
 	return spectra::SequenceRatio(shortS, prefix) >= kFuzzyRatio;
 }
 
-std::optional<QString> RectText(const spectra::ChatEntry &e)
+std::optional<spectra::Rect> EntryRect(const spectra::ChatEntry &e)
 {
 	if (e.rects.empty()) {
 		return std::nullopt;
 	}
-	int x0 = e.rects[0].x0, y0 = e.rects[0].y0, x1 = e.rects[0].x1, y1 = e.rects[0].y1;
+	spectra::Rect out = e.rects[0];
 	for (const spectra::Rect &r : e.rects) {
-		x0 = std::min(x0, r.x0);
-		y0 = std::min(y0, r.y0);
-		x1 = std::max(x1, r.x1);
-		y1 = std::max(y1, r.y1);
+		out.x0 = std::min(out.x0, r.x0);
+		out.y0 = std::min(out.y0, r.y0);
+		out.x1 = std::max(out.x1, r.x1);
+		out.y1 = std::max(out.y1, r.y1);
 	}
-	return QStringLiteral("%1,%2,%3,%4").arg(x0).arg(y0).arg(x1).arg(y1);
+	return out;
+}
+
+std::optional<QString> RectText(const std::optional<spectra::Rect> &r)
+{
+	if (!r) {
+		return std::nullopt;
+	}
+	return QStringLiteral("%1,%2,%3,%4").arg(r->x0).arg(r->y0).arg(r->x1).arg(r->y1);
 }
 
 double EntryScore(const spectra::ChatEntry &e)
@@ -419,6 +436,12 @@ void Store::Migrate()
 			Exec(sql.c_str());
 		}
 	}
+	/* Logs from before frame_lines: each screenshot had only its new lines */
+	Stmt any(db, "SELECT 1 FROM frame_lines LIMIT 1");
+	if (any.Step() != SQLITE_ROW) {
+		Exec("INSERT OR IGNORE INTO frame_lines(frame_id, line_id, seq, rect)"
+		     " SELECT frame_id, id, seq, rect FROM lines WHERE frame_id IS NOT NULL");
+	}
 }
 
 bool Store::TryFts()
@@ -465,7 +488,8 @@ void Store::EndSession(long long sessionId)
 }
 
 std::vector<long long> Store::AddFrame(const std::vector<spectra::ChatEntry> &entries, long long frameTs,
-				       const QString &tsSource, std::optional<long long> sessionId)
+				       const QString &tsSource, std::optional<long long> sessionId,
+				       std::vector<Sighting> *seen)
 {
 	std::vector<long long> added;
 	if (!db) {
@@ -482,13 +506,19 @@ std::vector<long long> Store::AddFrame(const std::vector<spectra::ChatEntry> &en
 		}
 		double score = EntryScore(entry);
 		QString key = DedupKey(entry.time, body);
+		long long rowId;
 		if (WindowLine *hit = Match(key, entry.time, body)) {
 			Touch(*hit, body, score, frameTs, now);
-			continue;
+			rowId = hit->rowId;
+		} else {
+			rowId = Insert(entry, body, key, score, frameTs, (int)seq, tsSource, sessionId, now);
+			Remember({rowId, key, entry.time, body, score, frameTs, frameTs});
+			added.push_back(rowId);
 		}
-		long long rowId = Insert(entry, body, key, score, frameTs, (int)seq, tsSource, sessionId, now);
-		Remember({rowId, key, entry.time, body, score, frameTs, frameTs});
-		added.push_back(rowId);
+		if (seen && std::none_of(seen->begin(), seen->end(),
+					 [rowId](const Sighting &x) { return x.lineId == rowId; })) {
+			seen->push_back({rowId, (int)seq, EntryRect(entry)});
+		}
 	}
 	Exec("COMMIT");
 	return added;
@@ -513,7 +543,7 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 		.Bind(10, score)
 		.Bind(11, now)
 		.Bind(12, now)
-		.Bind(13, RectText(entry))
+		.Bind(13, RectText(EntryRect(entry)))
 		.Bind(14, ColourJson(entry.colour))
 		.Bind(15, TagsJson(labeler ? labeler(body) : QStringList()))
 		.Run();
@@ -610,17 +640,20 @@ void Store::PruneWindow(long long nowTs)
 /* ------------------------------------------------------------------------- */
 /* Screenshots */
 
-long long Store::AttachFrame(const std::vector<long long> &lineIds, const QString &framePath, int width, int height,
+long long Store::AttachFrame(const std::vector<Sighting> &lines, const QString &framePath, int width, int height,
 			     long long sortTs, std::optional<long long> sessionId)
 {
 	Exec("BEGIN");
 	Stmt s(db, "INSERT INTO frames(session_id, sort_ts, path, width, height, created) VALUES (?,?,?,?,?,?)");
 	s.Bind(1, sessionId).Bind(2, sortTs).Bind(3, framePath).Bind(4, width).Bind(5, height).Bind(6, Now()).Run();
 	long long frameId = sqlite3_last_insert_rowid(db);
-	Stmt u(db, "UPDATE lines SET frame_id=? WHERE id=?");
-	for (long long id : lineIds) {
+	Stmt f(db, "INSERT OR IGNORE INTO frame_lines(frame_id, line_id, seq, rect) VALUES (?,?,?,?)");
+	Stmt u(db, "UPDATE lines SET frame_id=? WHERE id=? AND frame_id IS NULL");
+	for (const Sighting &line : lines) {
+		f.Reset();
+		f.Bind(1, frameId).Bind(2, line.lineId).Bind(3, line.seq).Bind(4, RectText(line.rect)).Run();
 		u.Reset();
-		u.Bind(1, frameId).Bind(2, id).Run();
+		u.Bind(1, frameId).Bind(2, line.lineId).Run();
 	}
 	Exec("COMMIT");
 	return frameId;
@@ -638,9 +671,18 @@ std::optional<Frame> Store::GetFrame(long long frameId)
 
 std::vector<LogLine> Store::FrameLines(long long frameId)
 {
-	Stmt s(db, "SELECT * FROM lines WHERE frame_id=? ORDER BY seq, id");
+	Stmt s(db, "SELECT lines.*, frame_lines.rect AS frame_rect FROM frame_lines"
+		   " JOIN lines ON lines.id = frame_lines.line_id"
+		   " WHERE frame_lines.frame_id=? ORDER BY frame_lines.seq, lines.id");
 	s.Bind(1, frameId);
-	return Collect(s);
+	std::vector<LogLine> out;
+	const int rect = s.ColumnIndex("frame_rect");
+	while (s.Step() == SQLITE_ROW) {
+		LogLine l = RowToLine(s);
+		l.rect = ParseRect(s.Text(rect));
+		out.push_back(std::move(l));
+	}
+	return out;
 }
 
 QStringList Store::PruneFrames(int days)
@@ -663,9 +705,14 @@ QStringList Store::PruneFrames(int days)
 		return paths;
 	}
 	Exec("BEGIN");
-	Stmt u(db, "UPDATE lines SET frame_id=NULL WHERE frame_id=?");
+	Stmt fl(db, "DELETE FROM frame_lines WHERE frame_id=?");
+	/* a line's screenshot becomes the next one it is in, if any */
+	Stmt u(db, "UPDATE lines SET frame_id=(SELECT MIN(frame_id) FROM frame_lines WHERE line_id=lines.id)"
+		   " WHERE frame_id=?");
 	Stmt d(db, "DELETE FROM frames WHERE id=?");
 	for (long long id : ids) {
+		fl.Reset();
+		fl.Bind(1, id).Run();
 		u.Reset();
 		u.Bind(1, id).Run();
 		d.Reset();
@@ -782,12 +829,12 @@ std::vector<LogLine> Store::Find(const Query &q)
 		add("lines.sort_ts <= ?");
 	}
 	if (q.frameId) {
-		add("lines.frame_id = ?");
+		add("lines.id IN (SELECT line_id FROM frame_lines WHERE frame_id = ?)");
 	}
 	if (q.withShot) {
 		add("lines.frame_id IS NOT NULL");
 	}
-	const std::string order = q.frameId ? " ORDER BY lines.seq, lines.id LIMIT ?"
+	const std::string order = q.frameId ? " ORDER BY lines.sort_ts, lines.seq, lines.id LIMIT ?"
 					    : " ORDER BY lines.sort_ts DESC, lines.seq DESC, lines.id DESC LIMIT ?";
 	const QString text = q.text.trimmed();
 
@@ -878,7 +925,8 @@ std::vector<FrameInfo> Store::Frames(int limit, std::optional<long long> from, s
 	std::vector<FrameInfo> out;
 	Stmt s(db, "SELECT frames.id, frames.sort_ts, frames.path, frames.width, frames.height,"
 		   " COUNT(lines.id), group_concat(NULLIF(lines.labels, '[]'), ',') FROM frames"
-		   " LEFT JOIN lines ON lines.frame_id = frames.id"
+		   " LEFT JOIN frame_lines ON frame_lines.frame_id = frames.id"
+		   " LEFT JOIN lines ON lines.id = frame_lines.line_id"
 		   " WHERE frames.sort_ts BETWEEN ? AND ?"
 		   " GROUP BY frames.id ORDER BY frames.sort_ts DESC, frames.id DESC LIMIT ?");
 	s.Bind(1, from.value_or(0)).Bind(2, to.value_or(std::numeric_limits<long long>::max())).Bind(3, limit);
@@ -987,22 +1035,26 @@ int Store::Prune(int days, QStringList *orphanedFiles)
 	}
 	Exec("BEGIN");
 	Stmt d(db, "DELETE FROM lines WHERE id=?");
+	Stmt fl(db, "DELETE FROM frame_lines WHERE line_id=?");
 	for (const auto &r : rows) {
 		d.Reset();
 		d.Bind(1, r.first).Run();
+		fl.Reset();
+		fl.Bind(1, r.first).Run();
 	}
 	/* Screenshots nothing points at any more: delete the rows and hand the
 	 * files to the caller (Lucida left the files behind) */
 	{
 		Stmt s(db, "SELECT path FROM frames WHERE id NOT IN (SELECT DISTINCT frame_id FROM lines"
-			   " WHERE frame_id IS NOT NULL)");
+			   " WHERE frame_id IS NOT NULL) AND id NOT IN (SELECT frame_id FROM frame_lines)");
 		while (s.Step() == SQLITE_ROW) {
 			if (orphanedFiles) {
 				*orphanedFiles << s.Text(0);
 			}
 		}
 	}
-	Exec("DELETE FROM frames WHERE id NOT IN (SELECT DISTINCT frame_id FROM lines WHERE frame_id IS NOT NULL)");
+	Exec("DELETE FROM frames WHERE id NOT IN (SELECT DISTINCT frame_id FROM lines WHERE frame_id IS NOT NULL)"
+	     " AND id NOT IN (SELECT frame_id FROM frame_lines)");
 	if (fts) {
 		/* A contentless FTS5 table is told what to forget */
 		Stmt f(db, "INSERT INTO lines_fts(lines_fts, rowid, body) VALUES ('delete', ?, ?)");
@@ -1069,7 +1121,7 @@ std::optional<RepairResult> Store::Repair(const QString &filePath, QString *erro
 			sqlite3_close(source);
 			return std::nullopt;
 		}
-		for (const char *table : {"sessions", "frames", "lines"}) {
+		for (const char *table : {"sessions", "frames", "lines", "frame_lines"}) {
 			std::set<std::string> targetColumns;
 			{
 				Stmt ti(target.db, (std::string("PRAGMA table_info(") + table + ")").c_str());
