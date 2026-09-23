@@ -1,6 +1,6 @@
 #pragma once
 
-#include "store.hpp"
+#include "lucida-host.hpp"
 
 #include <spectra-censor/censor.hpp>
 
@@ -30,8 +30,6 @@ class Learner;
 
 namespace lucida {
 
-class Controller;
-
 /* Lucida's log browser (port and extension of lucida/gui/viewer.py).
  *
  * "Log": search the log by text, channel, tag and time; each line shows its
@@ -47,7 +45,7 @@ class Viewer : public QMainWindow {
 	Q_OBJECT
 
 public:
-	explicit Viewer(Controller *controller, QWidget *parent = nullptr);
+	explicit Viewer(ViewerSource source, QWidget *parent = nullptr);
 	~Viewer() override;
 
 	void Reload();
@@ -57,7 +55,7 @@ public:
 	void ShowFrame(long long frameId);
 
 private:
-	QPointer<Controller> controller;
+	ViewerSource source;
 	QTabWidget *tabs;
 
 	/* Log tab: filters and results */

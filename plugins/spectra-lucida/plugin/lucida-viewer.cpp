@@ -1,14 +1,12 @@
 #include "lucida-viewer.hpp"
-#include "lucida-controller.hpp"
+#include "lucida-host.hpp"
 
 #include <definitions.hpp>
 #include <learner.hpp>
 #include <naming.hpp>
 #include <obscura-config.hpp>
 
-#include <obs-frontend-api.h>
-#include <obs-module.h>
-#include <util/config-file.h>
+#include <util/base.h>
 
 #include <spectra-vision/imaging.hpp>
 
@@ -60,7 +58,7 @@ enum Column { kTime, kClock, kChannel, kTags, kText, kVideo, kColumns };
 
 QString T(const char *key)
 {
-	return QString::fromUtf8(obs_module_text(key));
+	return Text(key);
 }
 
 const std::pair<const char *, long long> kPeriods[] = {
@@ -113,10 +111,9 @@ QString ObscuraOutputFolder(const obscura::Config &cfg)
 	if (!cfg.outputDir.isEmpty()) {
 		return cfg.outputDir;
 	}
-	config_t *c = obs_frontend_get_profile_config();
-	const char *path = c ? config_get_string(c, "Spectra", "ObscuraPath") : nullptr;
-	if (path && *path) {
-		return QDir::cleanPath(QString::fromUtf8(path));
+	const QString path = ProfileString("Spectra", "ObscuraPath");
+	if (!path.isEmpty()) {
+		return QDir::cleanPath(path);
 	}
 	return QDir(QStandardPaths::writableLocation(QStandardPaths::MoviesLocation)).filePath("Spectra/Obscura");
 }
@@ -155,7 +152,7 @@ std::optional<std::pair<QString, QStringList>> PlayerCommand(const QString &file
 
 } // namespace
 
-Viewer::Viewer(Controller *controller_, QWidget *parent) : QMainWindow(parent), controller(controller_)
+Viewer::Viewer(ViewerSource source_, QWidget *parent) : QMainWindow(parent), source(std::move(source_))
 {
 	setWindowTitle(T("Lucida.Viewer.Title"));
 	setAttribute(Qt::WA_DeleteOnClose);
@@ -207,7 +204,7 @@ Viewer::~Viewer()
 
 Store *Viewer::store() const
 {
-	return controller ? controller->Reader() : nullptr;
+	return source.reader ? source.reader() : nullptr;
 }
 
 /* --- building ------------------------------------------------------------------ */
@@ -531,7 +528,7 @@ void Viewer::CurrentChanged()
 
 void Viewer::ShowVideo(const std::optional<LogLine> &line)
 {
-	video = line && controller ? controller->VideoFor(*line) : std::nullopt;
+	video = line && source.videoFor ? source.videoFor(*line) : std::nullopt;
 	if (video) {
 		videoLabel->setText(
 			T("Lucida.Viewer.Video").arg(QFileInfo(video->path).fileName(), FormatOffset(video->offset)));
