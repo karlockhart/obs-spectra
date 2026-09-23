@@ -17,7 +17,10 @@ target_compile_definitions(
   spectra-sqlite
   PRIVATE SQLITE_ENABLE_FTS5 SQLITE_THREADSAFE=1 SQLITE_DQS=0 SQLITE_OMIT_LOAD_EXTENSION SQLITE_DEFAULT_FOREIGN_KEYS=0
 )
-set_target_properties(spectra-sqlite PROPERTIES FOLDER spectra COMPILE_WARNING_AS_ERROR OFF POSITION_INDEPENDENT_CODE ON)
+set_target_properties(
+  spectra-sqlite
+  PROPERTIES FOLDER spectra COMPILE_WARNING_AS_ERROR OFF POSITION_INDEPENDENT_CODE ON
+)
 if(MSVC)
   target_compile_options(spectra-sqlite PRIVATE /W0)
 endif()
@@ -52,6 +55,9 @@ target_sources(
     plugin/lucida-viewer.cpp
     plugin/lucida-viewer.hpp
 )
-target_link_libraries(spectra-lucida PRIVATE lucida-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets)
+target_link_libraries(
+  spectra-lucida
+  PRIVATE lucida-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets
+)
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")

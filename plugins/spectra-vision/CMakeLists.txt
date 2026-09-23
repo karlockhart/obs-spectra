@@ -75,7 +75,8 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${OBS_OUTPUT_DIR}/$<CONFIG>/${OBS_EXECUTABLE_DESTINATION}"
   COMMAND
     "${CMAKE_COMMAND}" -E copy_if_different "${onnxruntime_root}/lib/onnxruntime.dll"
-    "${onnxruntime_root}/lib/onnxruntime_providers_shared.dll" "${OBS_OUTPUT_DIR}/$<CONFIG>/${OBS_EXECUTABLE_DESTINATION}/"
+    "${onnxruntime_root}/lib/onnxruntime_providers_shared.dll"
+    "${OBS_OUTPUT_DIR}/$<CONFIG>/${OBS_EXECUTABLE_DESTINATION}/"
   COMMENT "Copy onnxruntime to the executable directory"
   VERBATIM
 )

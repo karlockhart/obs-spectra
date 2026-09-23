@@ -32,7 +32,8 @@ function(spectra_fetch name)
   if(NOT EXISTS "${file_path}")
     message(STATUS "Downloading ${_SF_URL}")
     file(
-      DOWNLOAD "${_SF_URL}" "${file_path}.tmp"
+      DOWNLOAD "${_SF_URL}"
+      "${file_path}.tmp"
       STATUS download_status
       EXPECTED_HASH SHA256=${_SF_SHA256}
       TLS_VERIFY ON

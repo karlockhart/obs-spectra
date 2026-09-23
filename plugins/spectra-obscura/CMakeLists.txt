@@ -15,9 +15,17 @@ spectra_fetch(
   EXTRACT
 )
 set(monocypher_root "${SPECTRA_MONOCYPHER_PATH}/monocypher-4.0.2/src")
-add_library(spectra-monocypher STATIC "${monocypher_root}/monocypher.c" "${monocypher_root}/optional/monocypher-ed25519.c")
+add_library(
+  spectra-monocypher
+  STATIC
+  "${monocypher_root}/monocypher.c"
+  "${monocypher_root}/optional/monocypher-ed25519.c"
+)
 target_include_directories(spectra-monocypher PUBLIC "${monocypher_root}" "${monocypher_root}/optional")
-set_target_properties(spectra-monocypher PROPERTIES FOLDER spectra COMPILE_WARNING_AS_ERROR OFF LINKER_LANGUAGE C)
+set_target_properties(
+  spectra-monocypher
+  PROPERTIES FOLDER spectra COMPILE_WARNING_AS_ERROR OFF LINKER_LANGUAGE C
+)
 if(MSVC)
   target_compile_options(spectra-monocypher PRIVATE /W0)
 endif()
