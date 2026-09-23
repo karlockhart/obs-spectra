@@ -80,9 +80,11 @@ If you want to support OBS Studio itself, see [obsproject.com/contribute](https:
 
 CMake downloads these while configuring (`cmake/spectra/SpectraDeps.cmake`) and checks each download against a pinned SHA-256. None of them is stored in this repository.
 
+Their license files come with every build, in `data/spectra-vision/licenses/`. That includes ONNX Runtime's third-party notices, and the RapidOCR and PaddleOCR licenses for the models.
+
 | Component | Version | License | Used for |
 | --- | --- | --- | --- |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). Its license ships in `data/spectra-vision/licenses/onnxruntime`. |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) ONNX models by RapidAI: PP-OCRv6 small detection and recognition models | 3.9.2 | Apache-2.0 | Reading text on screen. The models are [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s (PaddlePaddle, Apache-2.0), converted to ONNX by RapidAI and downloaded from [ModelScope](https://www.modelscope.cn/models/RapidAI/RapidOCR). |
 | [SQLite](https://www.sqlite.org) | 3.53.4 | Public domain | Lucida's chat log, with full-text search (FTS5). |
 | [Monocypher](https://monocypher.org) by Loup Vaillant and contributors | 4.0.2 | CC0-1.0 or BSD-2-Clause | Checking the Ed25519 signatures on Obscura's definitions. |
