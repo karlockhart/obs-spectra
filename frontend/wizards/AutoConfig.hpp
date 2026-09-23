@@ -11,6 +11,7 @@ class AutoConfig : public QWizard {
 	friend class AutoConfigVideoPage;
 	friend class AutoConfigStreamPage;
 	friend class AutoConfigTestPage;
+	friend class AutoConfigSpectraPage;
 
 	enum class Type {
 		Invalid,
@@ -120,5 +121,6 @@ public:
 		VideoPage,
 		StreamPage,
 		TestPage,
+		SpectraPage,
 	};
 };

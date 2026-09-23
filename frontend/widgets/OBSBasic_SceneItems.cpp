@@ -18,6 +18,8 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+
+#include <utility/SpectraDefaults.hpp>
 #include "ColorSelect.hpp"
 #include "OBSProjector.hpp"
 
@@ -101,11 +103,22 @@ void OBSBasic::CreateFirstRunSources()
 	}
 #endif
 
+#ifdef _WIN32
+	/* Spectra captures game audio per application (game/window capture and
+	 * TeamSpeak), so all desktop audio is not recorded by default. */
+	hasDesktopAudio = false;
+#endif
+
 	if (hasDesktopAudio) {
 		ResetAudioDevice(App()->OutputAudioSource(), "default", Str("Basic.DesktopDevice1"), 1);
 	}
 	if (hasInputAudio) {
 		ResetAudioDevice(App()->InputAudioSource(), "default", Str("Basic.AuxDevice1"), 3);
+
+		OBSSourceAutoRelease mic = obs_get_output_source(3);
+		if (mic) {
+			SpectraDefaults::EnableDefaultPushToTalk(mic);
+		}
 	}
 }
 

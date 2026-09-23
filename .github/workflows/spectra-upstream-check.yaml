@@ -1,0 +1,63 @@
+name: Spectra Upstream Check
+run-name: Check for new upstream OBS Studio releases
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  check:
+    name: Compare with the latest OBS Studio release
+    runs-on: ubuntu-24.04
+    if: github.repository_owner != 'obsproject'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Check whether the latest release is merged
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tag=$(gh api repos/obsproject/obs-studio/releases/latest --jq .tag_name)
+          echo "Latest upstream OBS Studio release: ${tag}"
+
+          git fetch --no-tags https://github.com/obsproject/obs-studio.git "refs/tags/${tag}:refs/tags/upstream-${tag}"
+
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          git fetch --no-tags origin "${default_branch}"
+
+          if git merge-base --is-ancestor "upstream-${tag}" "origin/${default_branch}"; then
+            echo "OBS Studio ${tag} is already merged into ${default_branch}."
+            exit 0
+          fi
+
+          title="Upstream OBS Studio ${tag} released"
+          existing=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            echo "Issue #${existing} already tracks ${tag}."
+            exit 0
+          fi
+
+          url=$(gh api repos/obsproject/obs-studio/releases/latest --jq .html_url)
+          body=$(cat <<EOF
+          OBS Studio [${tag}](${url}) has been released upstream and is not merged into \`${default_branch}\` yet.
+
+          To ship a Spectra update based on it:
+
+          \`\`\`bash
+          git fetch upstream --tags
+          git merge ${tag}
+          \`\`\`
+
+          Resolve any conflicts, rebuild and test, then tag the release as \`${tag}-spectra.1\`.
+          EOF
+          )
+
+          gh label create upstream --repo "${GITHUB_REPOSITORY}" --color 5319E7 --description "Upstream OBS Studio updates" 2>/dev/null || true
+          gh issue create --repo "${GITHUB_REPOSITORY}" --title "${title}" --label upstream --body "${body}"

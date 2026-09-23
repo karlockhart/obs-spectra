@@ -1,0 +1,4705 @@
+{
+ "train": [
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "help radio you",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "stolen weapon",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "you see please please",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "please you mdt weapon the report radio radio weapon",
+   "colour": [
+    0.5771,
+    0.3967,
+    0.9763,
+    0.0466,
+    0.8585,
+    0.2896,
+    0.1443,
+    0.1178,
+    0.3085,
+    0.8161,
+    0.1807,
+    0.5816,
+    0.6389
+   ],
+   "label": 1
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "kick unit",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "staff dispatch kick please",
+   "colour": [
+    0.4656,
+    0.9234,
+    0.3616,
+    0.2484,
+    0.1798,
+    0.7798,
+    0.0819,
+    0.3002,
+    0.4951,
+    0.3435,
+    0.4488,
+    0.609,
+    0.0732
+   ],
+   "label": 1
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "copy café car fire staff please you",
+   "colour": [
+    0.0776,
+    0.5581,
+    0.7891,
+    0.8184,
+    0.3401,
+    0.3502,
+    0.4967,
+    0.7969,
+    0.0688,
+    0.0936,
+    0.2699,
+    0.697,
+    0.065
+   ],
+   "label": 1
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "player unit help dispatch stolen can ticket stolen",
+   "colour": [
+    0.1171,
+    0.059,
+    0.7682,
+    0.1293,
+    0.2476,
+    0.3909,
+    0.8714,
+    0.0806,
+    0.4492,
+    0.5494,
+    0.8834,
+    0.8193,
+    0.864
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "stolen dispatch help report fire see copy",
+   "colour": [
+    0.6585,
+    0.0121,
+    0.8311,
+    0.1823,
+    0.2819,
+    0.1457,
+    0.5346,
+    0.6098,
+    0.3186,
+    0.1255,
+    0.8592,
+    0.9502,
+    0.655
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "café dispatch 10-4 kick help help help help",
+   "colour": [
+    0.6343,
+    0.0622,
+    0.0673,
+    0.2088,
+    0.1623,
+    0.3401,
+    0.0526,
+    0.0002,
+    0.1513,
+    0.1015,
+    0.3636,
+    0.0255,
+    0.8743
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "fire radio accepted stolen pistol stolen staff",
+   "colour": [
+    0.8489,
+    0.9931,
+    0.466,
+    0.4838,
+    0.0859,
+    0.1022,
+    0.3426,
+    0.2648,
+    0.8289,
+    0.1614,
+    0.0231,
+    0.951,
+    0.5283
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "can café ban player radio see unit accepted ban",
+   "colour": [
+    0.167,
+    0.7719,
+    0.5326,
+    0.7791,
+    0.3297,
+    0.223,
+    0.8115,
+    0.9849,
+    0.8526,
+    0.8061,
+    0.8183,
+    0.7399,
+    0.2267
+   ],
+   "label": 1
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "stolen Émile can can 10-4 accepted staff accepted",
+   "colour": [
+    0.6051,
+    0.3443,
+    0.8086,
+    0.7231,
+    0.3495,
+    0.9745,
+    0.0805,
+    0.1022,
+    0.4701,
+    0.3377,
+    0.4827,
+    0.9852,
+    0.6103
+   ],
+   "label": 1
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "radio stolen 10-4 radio see mdt dispatch the",
+   "colour": [
+    0.7823,
+    0.7501,
+    0.478,
+    0.1785,
+    0.7891,
+    0.3325,
+    0.8008,
+    0.9717,
+    0.3958,
+    0.4014,
+    0.9468,
+    0.7248,
+    0.17
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "fire",
+   "colour": [
+    0.4654,
+    0.6559,
+    0.6116,
+    0.5959,
+    0.4744,
+    0.9375,
+    0.1559,
+    0.5483,
+    0.0214,
+    0.7994,
+    0.7264,
+    0.1028,
+    0.7495
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "that mdt that can accepted that player",
+   "colour": [
+    0.7637,
+    0.326,
+    0.5444,
+    0.8342,
+    0.0609,
+    0.7399,
+    0.8977,
+    0.6625,
+    0.815,
+    0.5168,
+    0.8271,
+    0.8782,
+    0.1308
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "ban can ticket café copy pistol can café 10-4",
+   "colour": [
+    0.1416,
+    0.6191,
+    0.1203,
+    0.0618,
+    0.6823,
+    0.5307,
+    0.4825,
+    0.7765,
+    0.8832,
+    0.0568,
+    0.1913,
+    0.0422,
+    0.0977
+   ],
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "can café see ticket car pistol ban pistol ban",
+   "colour": [
+    0.2772,
+    0.5082,
+    0.8074,
+    0.5078,
+    0.2477,
+    0.5232,
+    0.876,
+    0.9278,
+    0.9228,
+    0.8928,
+    0.2026,
+    0.4475,
+    0.4166
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "car see dispatch report please see that dispatch",
+   "colour": [
+    0.1223,
+    0.7769,
+    0.9395,
+    0.6435,
+    0.3662,
+    0.2531,
+    0.1373,
+    0.4677,
+    0.7467,
+    0.0941,
+    0.8849,
+    0.1628,
+    0.6678
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "unit please ban",
+   "colour": [
+    0.4213,
+    0.3566,
+    0.0922,
+    0.366,
+    0.338,
+    0.4587,
+    0.7032,
+    0.3843,
+    0.5174,
+    0.2955,
+    0.9608,
+    0.1128,
+    0.9185
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "see accepted",
+   "colour": [
+    0.9059,
+    0.1816,
+    0.7558,
+    0.8198,
+    0.8496,
+    0.676,
+    0.946,
+    0.4059,
+    0.5366,
+    0.5148,
+    0.4946,
+    0.327,
+    0.2791
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "see accepted can radio see 10-4 accepted",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "accepted the",
+   "colour": [
+    0.3392,
+    0.5531,
+    0.9267,
+    0.2679,
+    0.1292,
+    0.5269,
+    0.2384,
+    0.1095,
+    0.1614,
+    0.0504,
+    0.2018,
+    0.312,
+    0.305
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "ticket ban dispatch copy accepted",
+   "colour": [
+    0.0182,
+    0.2504,
+    0.0153,
+    0.7331,
+    0.551,
+    0.1895,
+    0.4748,
+    0.9346,
+    0.1063,
+    0.8189,
+    0.4322,
+    0.495,
+    0.8346
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "player unit that report car that mdt unit Émile",
+   "colour": [
+    0.4047,
+    0.3476,
+    0.0544,
+    0.1298,
+    0.0707,
+    0.7409,
+    0.2556,
+    0.1632,
+    0.0845,
+    0.8413,
+    0.8705,
+    0.6705,
+    0.2819
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "you ticket copy copy accepted",
+   "colour": [
+    0.2632,
+    0.9618,
+    0.9726,
+    0.5471,
+    0.2444,
+    0.9657,
+    0.3095,
+    0.3566,
+    0.0011,
+    0.3816,
+    0.4746,
+    0.5028,
+    0.201
+   ],
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "see",
+   "colour": [
+    0.0898,
+    0.3995,
+    0.0417,
+    0.0225,
+    0.3042,
+    0.2328,
+    0.5856,
+    0.5292,
+    0.7505,
+    0.6575,
+    0.716,
+    0.8791,
+    0.3895
+   ],
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "fire player Émile pistol radio fire you mdt",
+   "colour": [
+    0.8919,
+    0.6273,
+    0.7339,
+    0.8122,
+    0.1393,
+    0.5238,
+    0.5044,
+    0.8349,
+    0.8047,
+    0.8264,
+    0.5841,
+    0.8928,
+    0.6829
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "can you",
+   "colour": [
+    0.3607,
+    0.1049,
+    0.8358,
+    0.5585,
+    0.6278,
+    0.6262,
+    0.6807,
+    0.4893,
+    0.0033,
+    0.7977,
+    0.7483,
+    0.503,
+    0.5352
+   ],
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "Émile Émile",
+   "colour": [
+    0.8092,
+    0.8461,
+    0.2348,
+    0.7564,
+    0.2307,
+    0.6499,
+    0.4603,
+    0.8455,
+    0.0767,
+    0.9105,
+    0.2873,
+    0.0467,
+    0.6328
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "pistol fire",
+   "colour": [
+    0.6515,
+    0.6929,
+    0.6212,
+    0.1334,
+    0.4824,
+    0.4858,
+    0.9725,
+    0.0995,
+    0.2177,
+    0.4896,
+    0.7089,
+    0.2855,
+    0.4659
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "that player see staff can player ticket see mdt",
+   "colour": [
+    0.9946,
+    0.994,
+    0.3868,
+    0.9166,
+    0.9305,
+    0.0746,
+    0.0903,
+    0.7475,
+    0.2618,
+    0.3596,
+    0.6034,
+    0.6317,
+    0.2796
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "report staff staff help can copy",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "help player Émile fire please stolen help car",
+   "colour": [
+    0.3313,
+    0.3245,
+    0.3383,
+    0.3983,
+    0.9399,
+    0.1957,
+    0.0117,
+    0.7399,
+    0.2532,
+    0.065,
+    0.3902,
+    0.87,
+    0.0764
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "you accepted the you mdt",
+   "colour": [
+    0.635,
+    0.1489,
+    0.971,
+    0.4362,
+    0.3156,
+    0.7732,
+    0.7851,
+    0.4277,
+    0.029,
+    0.7617,
+    0.4,
+    0.8757,
+    0.5542
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "you Émile",
+   "colour": [
+    0.6149,
+    0.1386,
+    0.8695,
+    0.4856,
+    0.9119,
+    0.5501,
+    0.1708,
+    0.4149,
+    0.2817,
+    0.2557,
+    0.7387,
+    0.6528,
+    0.4062
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "staff kick dispatch help the",
+   "colour": [
+    0.1617,
+    0.2079,
+    0.906,
+    0.4971,
+    0.22,
+    0.9063,
+    0.9965,
+    0.45,
+    0.1396,
+    0.1924,
+    0.0907,
+    0.342,
+    0.0911
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "accepted 10-4 weapon that can Émile",
+   "colour": [
+    0.3828,
+    0.7458,
+    0.21,
+    0.2702,
+    0.7521,
+    0.4981,
+    0.5743,
+    0.3601,
+    0.6868,
+    0.5292,
+    0.7903,
+    0.8486,
+    0.0926
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "help radio ticket please player mdt can",
+   "colour": [
+    0.4252,
+    0.7637,
+    0.8042,
+    0.9683,
+    0.4898,
+    0.0731,
+    0.9302,
+    0.9282,
+    0.5279,
+    0.4682,
+    0.449,
+    0.7831,
+    0.2238
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "dispatch the mdt Émile unit radio café ticket see",
+   "colour": [
+    0.0395,
+    0.7823,
+    0.2326,
+    0.9199,
+    0.6455,
+    0.3038,
+    0.128,
+    0.2518,
+    0.6363,
+    0.6986,
+    0.1121,
+    0.0704,
+    0.5244
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "help accepted report 10-4",
+   "colour": [
+    0.0105,
+    0.3015,
+    0.4607,
+    0.9589,
+    0.6446,
+    0.8838,
+    0.4753,
+    0.2348,
+    0.2471,
+    0.9606,
+    0.7047,
+    0.3074,
+    0.0218
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "see accepted report dispatch please stolen report",
+   "colour": [
+    0.6958,
+    0.7183,
+    0.3623,
+    0.3964,
+    0.0068,
+    0.2921,
+    0.8451,
+    0.0674,
+    0.4957,
+    0.2004,
+    0.7659,
+    0.1939,
+    0.4651
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "the pistol staff pistol copy",
+   "colour": [
+    0.4851,
+    0.9104,
+    0.0564,
+    0.5948,
+    0.9219,
+    0.0544,
+    0.0236,
+    0.5961,
+    0.4154,
+    0.7099,
+    0.1841,
+    0.4496,
+    0.712
+   ],
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "see copy",
+   "colour": [
+    0.1855,
+    0.9359,
+    0.7463,
+    0.0319,
+    0.6644,
+    0.3786,
+    0.3739,
+    0.3317,
+    0.1693,
+    0.0029,
+    0.2798,
+    0.3515,
+    0.9555
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "café that help stolen café mdt player mdt 10-4",
+   "colour": [
+    0.0493,
+    0.4735,
+    0.3727,
+    0.9195,
+    0.193,
+    0.3642,
+    0.897,
+    0.0303,
+    0.4108,
+    0.8118,
+    0.7667,
+    0.0406,
+    0.0349
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "accepted",
+   "colour": [
+    0.0629,
+    0.6056,
+    0.363,
+    0.335,
+    0.9538,
+    0.0436,
+    0.7464,
+    0.6896,
+    0.9242,
+    0.2974,
+    0.7216,
+    0.5956,
+    0.8057
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "mdt",
+   "colour": [
+    0.4752,
+    0.9568,
+    0.9539,
+    0.3865,
+    0.251,
+    0.4299,
+    0.4935,
+    0.9281,
+    0.1829,
+    0.8026,
+    0.7385,
+    0.8228,
+    0.7728
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "car car ticket stolen",
+   "colour": [
+    0.5957,
+    0.5119,
+    0.3917,
+    0.1599,
+    0.4078,
+    0.6495,
+    0.4817,
+    0.5446,
+    0.1607,
+    0.4266,
+    0.1052,
+    0.0722,
+    0.6246
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "please staff",
+   "colour": [
+    0.9721,
+    0.1732,
+    0.1329,
+    0.4609,
+    0.8913,
+    0.2349,
+    0.5386,
+    0.7739,
+    0.7596,
+    0.7798,
+    0.2939,
+    0.2794,
+    0.2677
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "that ticket report copy report",
+   "colour": [
+    0.2814,
+    0.9076,
+    0.1883,
+    0.0648,
+    0.2517,
+    0.2459,
+    0.5263,
+    0.6496,
+    0.1005,
+    0.4639,
+    0.037,
+    0.0045,
+    0.8828
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "stolen you player report the you that pistol",
+   "colour": [
+    0.5832,
+    0.9302,
+    0.3722,
+    0.8661,
+    0.4491,
+    0.2599,
+    0.7778,
+    0.9457,
+    0.1058,
+    0.5961,
+    0.6199,
+    0.2176,
+    0.3687
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "that",
+   "colour": [
+    0.0382,
+    0.7322,
+    0.914,
+    0.8147,
+    0.8188,
+    0.409,
+    0.3718,
+    0.621,
+    0.0779,
+    0.0315,
+    0.4956,
+    0.4835,
+    0.4082
+   ],
+   "label": 1
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "fire radio kick see radio copy help unit accepted",
+   "colour": [
+    0.2833,
+    0.3076,
+    0.9532,
+    0.3124,
+    0.5665,
+    0.3572,
+    0.4164,
+    0.8642,
+    0.9966,
+    0.3638,
+    0.1972,
+    0.728,
+    0.2037
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "copy please the mdt see help weapon",
+   "colour": [
+    0.4609,
+    0.1625,
+    0.0148,
+    0.5515,
+    0.6407,
+    0.9098,
+    0.089,
+    0.6222,
+    0.3708,
+    0.5045,
+    0.1459,
+    0.2833,
+    0.5212
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "help staff",
+   "colour": [
+    0.7921,
+    0.8047,
+    0.3016,
+    0.8373,
+    0.0435,
+    0.9128,
+    0.3145,
+    0.6076,
+    0.6364,
+    0.0863,
+    0.7123,
+    0.6882,
+    0.8911
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "pistol that mdt staff copy weapon that",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "help stolen the",
+   "colour": [
+    0.9707,
+    0.8156,
+    0.1926,
+    0.8839,
+    0.8425,
+    0.6723,
+    0.6679,
+    0.3242,
+    0.3898,
+    0.4557,
+    0.849,
+    0.7781,
+    0.649
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "please help dispatch stolen",
+   "colour": [
+    0.4384,
+    0.0234,
+    0.6189,
+    0.4895,
+    0.2353,
+    0.7636,
+    0.78,
+    0.4583,
+    0.1796,
+    0.4732,
+    0.1071,
+    0.1285,
+    0.4306
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "ban ban dispatch you you radio fire see",
+   "colour": [
+    0.3137,
+    0.7204,
+    0.08,
+    0.7521,
+    0.8949,
+    0.6527,
+    0.7842,
+    0.0259,
+    0.0664,
+    0.6141,
+    0.6925,
+    0.1096,
+    0.1316
+   ],
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "10-4 10-4 copy dispatch 10-4",
+   "colour": [
+    0.2211,
+    0.833,
+    0.6104,
+    0.2522,
+    0.3238,
+    0.6135,
+    0.9051,
+    0.4564,
+    0.2542,
+    0.9643,
+    0.4801,
+    0.5919,
+    0.6159
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "stolen you that copy help copy",
+   "colour": [
+    0.2782,
+    0.3278,
+    0.3768,
+    0.7921,
+    0.2643,
+    0.7683,
+    0.0486,
+    0.8583,
+    0.9662,
+    0.453,
+    0.5215,
+    0.6887,
+    0.8961
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "radio help Émile 10-4 stolen accepted help stolen weapon",
+   "colour": [
+    0.3308,
+    0.0814,
+    0.23,
+    0.6154,
+    0.958,
+    0.2964,
+    0.5161,
+    0.3101,
+    0.966,
+    0.8703,
+    0.9285,
+    0.8957,
+    0.733
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "fire player pistol radio",
+   "colour": [
+    0.5127,
+    0.8955,
+    0.132,
+    0.2273,
+    0.6531,
+    0.0223,
+    0.0026,
+    0.355,
+    0.1064,
+    0.3572,
+    0.2243,
+    0.5836,
+    0.5891
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "pistol mdt staff copy fire can",
+   "colour": [
+    0.2436,
+    0.1493,
+    0.0958,
+    0.6382,
+    0.8713,
+    0.7822,
+    0.402,
+    0.2642,
+    0.0115,
+    0.6449,
+    0.5623,
+    0.3503,
+    0.6456
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "Émile staff report copy can you you kick can",
+   "colour": [
+    0.2377,
+    0.0584,
+    0.7789,
+    0.0124,
+    0.5509,
+    0.9409,
+    0.1423,
+    0.1995,
+    0.6081,
+    0.5069,
+    0.6416,
+    0.8134,
+    0.1746
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "player radio",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "can help please Émile ticket see Émile radio ticket",
+   "colour": [
+    0.9966,
+    0.2614,
+    0.644,
+    0.1233,
+    0.8913,
+    0.9252,
+    0.9429,
+    0.2633,
+    0.0525,
+    0.6359,
+    0.6792,
+    0.6857,
+    0.9173
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "radio that see ban can",
+   "colour": [
+    0.9047,
+    0.8417,
+    0.2028,
+    0.1592,
+    0.915,
+    0.1919,
+    0.3887,
+    0.6012,
+    0.3794,
+    0.8519,
+    0.9217,
+    0.9817,
+    0.8415
+   ],
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "staff mdt ban unit can can please Émile",
+   "colour": [
+    0.8848,
+    0.7892,
+    0.3916,
+    0.5853,
+    0.5652,
+    0.1715,
+    0.0329,
+    0.1119,
+    0.622,
+    0.1618,
+    0.9774,
+    0.7007,
+    0.0309
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "unit",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "weapon café",
+   "colour": [
+    0.8176,
+    0.8196,
+    0.8913,
+    0.0659,
+    0.8678,
+    0.9144,
+    0.9443,
+    0.1071,
+    0.2057,
+    0.112,
+    0.0344,
+    0.8477,
+    0.812
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "staff the fire the 10-4",
+   "colour": [
+    0.205,
+    0.3191,
+    0.4238,
+    0.0209,
+    0.2567,
+    0.2826,
+    0.7158,
+    0.368,
+    0.3208,
+    0.964,
+    0.5037,
+    0.8514,
+    0.6183
+   ],
+   "label": 1
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "can please ban café the stolen staff",
+   "colour": [
+    0.5379,
+    0.2166,
+    0.8622,
+    0.0909,
+    0.8198,
+    0.1704,
+    0.0013,
+    0.202,
+    0.7622,
+    0.9779,
+    0.0044,
+    0.4908,
+    0.4915
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "weapon stolen mdt ban accepted weapon copy player",
+   "colour": [
+    0.9383,
+    0.2315,
+    0.1658,
+    0.9387,
+    0.7668,
+    0.4903,
+    0.9911,
+    0.5613,
+    0.1046,
+    0.3266,
+    0.0951,
+    0.9285,
+    0.8918
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "radio can stolen that player accepted please",
+   "colour": [
+    0.5012,
+    0.3793,
+    0.884,
+    0.2336,
+    0.4609,
+    0.5315,
+    0.7545,
+    0.753,
+    0.6463,
+    0.3485,
+    0.3267,
+    0.1553,
+    0.8431
+   ],
+   "label": 1
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "copy ticket ticket unit café accepted",
+   "colour": [
+    0.1261,
+    0.462,
+    0.8851,
+    0.2379,
+    0.1916,
+    0.3015,
+    0.7032,
+    0.8437,
+    0.1546,
+    0.156,
+    0.2476,
+    0.3266,
+    0.5222
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "car that accepted Émile",
+   "colour": [
+    0.1646,
+    0.6579,
+    0.1954,
+    0.151,
+    0.1483,
+    0.3021,
+    0.2974,
+    0.2738,
+    0.1093,
+    0.9114,
+    0.2808,
+    0.8852,
+    0.4639
+   ],
+   "label": 1
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "10-4 please unit report ban radio player",
+   "colour": [
+    0.1418,
+    0.6037,
+    0.4047,
+    0.7409,
+    0.908,
+    0.43,
+    0.574,
+    0.7491,
+    0.4212,
+    0.2286,
+    0.7222,
+    0.8801,
+    0.774
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "dispatch copy radio the",
+   "colour": [
+    0.313,
+    0.6283,
+    0.0979,
+    0.4196,
+    0.7824,
+    0.7132,
+    0.6296,
+    0.2501,
+    0.4236,
+    0.4552,
+    0.6216,
+    0.4093,
+    0.6752
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "café can help mdt staff the",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "copy unit 10-4 that",
+   "colour": [
+    0.1011,
+    0.5746,
+    0.541,
+    0.7173,
+    0.5122,
+    0.6393,
+    0.829,
+    0.5217,
+    0.4103,
+    0.948,
+    0.2101,
+    0.6844,
+    0.3925
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "radio you accepted accepted help help",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "please radio unit dispatch stolen weapon accepted",
+   "colour": [
+    0.3035,
+    0.4005,
+    0.9536,
+    0.9715,
+    0.9942,
+    0.9609,
+    0.4621,
+    0.1645,
+    0.9294,
+    0.0689,
+    0.7984,
+    0.1932,
+    0.6422
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "stolen dispatch radio",
+   "colour": [
+    0.7953,
+    0.4133,
+    0.9961,
+    0.7599,
+    0.6496,
+    0.7798,
+    0.4694,
+    0.7836,
+    0.2305,
+    0.7042,
+    0.6875,
+    0.9829,
+    0.6788
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "10-4",
+   "colour": [
+    0.2812,
+    0.245,
+    0.3018,
+    0.4796,
+    0.4285,
+    0.6373,
+    0.6593,
+    0.3624,
+    0.9287,
+    0.8544,
+    0.0571,
+    0.8279,
+    0.9058
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "mdt stolen radio weapon can dispatch can that see",
+   "colour": [
+    0.25,
+    0.1015,
+    0.1427,
+    0.2336,
+    0.7763,
+    0.3464,
+    0.1527,
+    0.9041,
+    0.7917,
+    0.1679,
+    0.8911,
+    0.6084,
+    0.7813
+   ],
+   "label": 1
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "that staff unit that ban",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "kick the",
+   "colour": [
+    0.2342,
+    0.1393,
+    0.4931,
+    0.0585,
+    0.4671,
+    0.1444,
+    0.4914,
+    0.4982,
+    0.5395,
+    0.8629,
+    0.0066,
+    0.8408,
+    0.468
+   ],
+   "label": 0
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "dispatch player mdt ticket stolen please please dispatch",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "can",
+   "colour": [
+    0.6826,
+    0.9315,
+    0.3305,
+    0.9817,
+    0.5106,
+    0.4847,
+    0.8976,
+    0.0339,
+    0.7182,
+    0.6253,
+    0.3386,
+    0.8617,
+    0.3662
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "kick café that player please car please accepted kick",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "stolen mdt staff help car",
+   "colour": [
+    0.2717,
+    0.5064,
+    0.975,
+    0.6546,
+    0.792,
+    0.3309,
+    0.3171,
+    0.2992,
+    0.5865,
+    0.6348,
+    0.7842,
+    0.0401,
+    0.7227
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "weapon you help player the can you that mdt",
+   "colour": [
+    0.6087,
+    0.658,
+    0.789,
+    0.9098,
+    0.6117,
+    0.6167,
+    0.6268,
+    0.6964,
+    0.5963,
+    0.681,
+    0.2125,
+    0.667,
+    0.4579
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "dispatch copy",
+   "colour": [
+    0.4216,
+    0.1006,
+    0.9305,
+    0.0134,
+    0.8719,
+    0.1387,
+    0.3093,
+    0.7101,
+    0.8625,
+    0.1848,
+    0.0342,
+    0.0204,
+    0.5663
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "staff",
+   "colour": [
+    0.0394,
+    0.1188,
+    0.8103,
+    0.5753,
+    0.9186,
+    0.4465,
+    0.0141,
+    0.3871,
+    0.592,
+    0.9377,
+    0.9808,
+    0.4754,
+    0.4124
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "radio staff",
+   "colour": [
+    0.1518,
+    0.0155,
+    0.0048,
+    0.6838,
+    0.1217,
+    0.9663,
+    0.0881,
+    0.8695,
+    0.129,
+    0.0178,
+    0.7194,
+    0.2423,
+    0.7336
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "stolen",
+   "colour": [
+    0.7136,
+    0.8555,
+    0.7297,
+    0.0843,
+    0.6286,
+    0.7092,
+    0.4606,
+    0.9323,
+    0.2541,
+    0.9643,
+    0.7172,
+    0.0114,
+    0.0147
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "help player",
+   "colour": [
+    0.6001,
+    0.9577,
+    0.8349,
+    0.6089,
+    0.3163,
+    0.9488,
+    0.7278,
+    0.4698,
+    0.1665,
+    0.9664,
+    0.1167,
+    0.9539,
+    0.164
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "help café 10-4 ticket accepted 10-4 café weapon",
+   "colour": [
+    0.2799,
+    0.6218,
+    0.6509,
+    0.8019,
+    0.5999,
+    0.8696,
+    0.7257,
+    0.0155,
+    0.1511,
+    0.8326,
+    0.5847,
+    0.9764,
+    0.2461
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "pistol café report 10-4 ticket player unit",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "please copy weapon mdt café",
+   "colour": [
+    0.0423,
+    0.8332,
+    0.8118,
+    0.8672,
+    0.5719,
+    0.2738,
+    0.8512,
+    0.807,
+    0.6846,
+    0.9137,
+    0.3469,
+    0.0851,
+    0.5537
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "10-4 café Émile report",
+   "colour": [
+    0.0576,
+    0.3955,
+    0.7083,
+    0.926,
+    0.5864,
+    0.0094,
+    0.385,
+    0.5406,
+    0.5362,
+    0.3551,
+    0.0626,
+    0.3982,
+    0.521
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "car staff ban weapon that that that that see",
+   "colour": [
+    0.7011,
+    0.3628,
+    0.5644,
+    0.4025,
+    0.5172,
+    0.149,
+    0.0446,
+    0.9971,
+    0.374,
+    0.1061,
+    0.6327,
+    0.7873,
+    0.1562
+   ],
+   "label": 0
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "stolen",
+   "colour": [
+    0.6071,
+    0.0941,
+    0.2046,
+    0.8708,
+    0.5655,
+    0.5867,
+    0.2136,
+    0.9255,
+    0.2798,
+    0.0971,
+    0.4469,
+    0.5931,
+    0.6087
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "mdt you car that copy",
+   "colour": [
+    0.0275,
+    0.0348,
+    0.3696,
+    0.7056,
+    0.4868,
+    0.8456,
+    0.8948,
+    0.863,
+    0.6398,
+    0.9222,
+    0.7064,
+    0.09,
+    0.3187
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "dispatch ban",
+   "colour": [
+    0.4483,
+    0.1597,
+    0.9658,
+    0.9917,
+    0.2217,
+    0.0386,
+    0.2559,
+    0.352,
+    0.9028,
+    0.9046,
+    0.8372,
+    0.047,
+    0.7864
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "the",
+   "colour": [
+    0.755,
+    0.9394,
+    0.6769,
+    0.2988,
+    0.5915,
+    0.7579,
+    0.1054,
+    0.3239,
+    0.257,
+    0.1241,
+    0.4813,
+    0.1686,
+    0.2385
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "ticket",
+   "colour": [
+    0.1951,
+    0.036,
+    0.9277,
+    0.2206,
+    0.934,
+    0.8668,
+    0.8887,
+    0.1398,
+    0.4472,
+    0.097,
+    0.9288,
+    0.8422,
+    0.6284
+   ],
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "car mdt report staff the radio",
+   "colour": [
+    0.332,
+    0.7361,
+    0.1802,
+    0.4514,
+    0.8893,
+    0.439,
+    0.1494,
+    0.4183,
+    0.2468,
+    0.0254,
+    0.571,
+    0.2966,
+    0.8041
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "the car ticket staff the fire ban you",
+   "colour": [
+    0.7876,
+    0.9252,
+    0.5599,
+    0.8353,
+    0.1192,
+    0.7549,
+    0.9707,
+    0.4321,
+    0.2615,
+    0.2387,
+    0.2381,
+    0.3901,
+    0.4156
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "mdt",
+   "colour": [
+    0.2935,
+    0.9786,
+    0.016,
+    0.807,
+    0.3409,
+    0.1401,
+    0.0019,
+    0.8322,
+    0.5266,
+    0.1858,
+    0.4352,
+    0.912,
+    0.2183
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "fire mdt copy",
+   "colour": [
+    0.2304,
+    0.1756,
+    0.6007,
+    0.829,
+    0.8893,
+    0.7308,
+    0.7613,
+    0.1753,
+    0.137,
+    0.6699,
+    0.6284,
+    0.1922,
+    0.308
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "unit Émile",
+   "colour": [
+    0.8411,
+    0.9162,
+    0.5185,
+    0.3476,
+    0.2818,
+    0.6392,
+    0.9456,
+    0.0903,
+    0.4095,
+    0.763,
+    0.1333,
+    0.6655,
+    0.2483
+   ],
+   "label": 1
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "you copy unit stolen weapon pistol",
+   "colour": [
+    0.3562,
+    0.9321,
+    0.9687,
+    0.0713,
+    0.3567,
+    0.2447,
+    0.83,
+    0.9125,
+    0.7791,
+    0.8681,
+    0.5763,
+    0.898,
+    0.2915
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "ticket ban can ban 10-4 kick fire can",
+   "colour": [
+    0.0886,
+    0.6191,
+    0.1679,
+    0.3119,
+    0.5554,
+    0.9554,
+    0.0195,
+    0.9263,
+    0.7387,
+    0.2614,
+    0.8373,
+    0.6368,
+    0.4639
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "the stolen the unit copy you accepted the",
+   "colour": [
+    0.5859,
+    0.7615,
+    0.11,
+    0.1215,
+    0.8844,
+    0.5416,
+    0.2274,
+    0.227,
+    0.6688,
+    0.4621,
+    0.3966,
+    0.9482,
+    0.0185
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "pistol mdt pistol ban you help you",
+   "colour": [
+    0.3385,
+    0.2404,
+    0.3351,
+    0.4356,
+    0.9812,
+    0.8044,
+    0.9128,
+    0.815,
+    0.8476,
+    0.0536,
+    0.5174,
+    0.9579,
+    0.9343
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "dispatch radio can stolen the ban copy",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "ban dispatch can report",
+   "colour": [
+    0.9697,
+    0.7766,
+    0.9369,
+    0.6332,
+    0.8093,
+    0.8844,
+    0.8846,
+    0.0344,
+    0.6416,
+    0.2658,
+    0.6784,
+    0.2734,
+    0.5423
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "accepted the",
+   "colour": [
+    0.4337,
+    0.9509,
+    0.2875,
+    0.3054,
+    0.6475,
+    0.1204,
+    0.5943,
+    0.9561,
+    0.5138,
+    0.2684,
+    0.4664,
+    0.5338,
+    0.1484
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "fire player please weapon player accepted report Émile see",
+   "colour": [
+    0.2872,
+    0.4541,
+    0.6948,
+    0.2216,
+    0.3867,
+    0.5486,
+    0.3668,
+    0.8918,
+    0.3037,
+    0.4779,
+    0.8188,
+    0.031,
+    0.3337
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "kick help weapon help can stolen copy report car",
+   "colour": [
+    0.4914,
+    0.2848,
+    0.9875,
+    0.2955,
+    0.7721,
+    0.1586,
+    0.0668,
+    0.8713,
+    0.44,
+    0.062,
+    0.3879,
+    0.4399,
+    0.7354
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "report dispatch Émile fire please car dispatch stolen fire",
+   "colour": [
+    0.6163,
+    0.85,
+    0.8212,
+    0.5178,
+    0.7388,
+    0.7433,
+    0.7597,
+    0.4752,
+    0.7849,
+    0.7086,
+    0.9147,
+    0.1273,
+    0.8708
+   ],
+   "label": 1
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "café kick weapon the staff help weapon",
+   "colour": [
+    0.8499,
+    0.2793,
+    0.6214,
+    0.111,
+    0.8517,
+    0.6926,
+    0.2881,
+    0.3526,
+    0.353,
+    0.5261,
+    0.5954,
+    0.6482,
+    0.0068
+   ],
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "ticket player copy kick player 10-4 fire",
+   "colour": [
+    0.377,
+    0.2319,
+    0.8216,
+    0.3301,
+    0.9689,
+    0.6081,
+    0.2427,
+    0.3258,
+    0.9721,
+    0.8913,
+    0.9559,
+    0.0256,
+    0.2565
+   ],
+   "label": 0
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "kick café player kick pistol",
+   "colour": [
+    0.5174,
+    0.5173,
+    0.6852,
+    0.3895,
+    0.3577,
+    0.5947,
+    0.3511,
+    0.9479,
+    0.6765,
+    0.5252,
+    0.099,
+    0.3744,
+    0.4009
+   ],
+   "label": 0
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "that please staff",
+   "colour": [
+    0.7673,
+    0.8992,
+    0.5874,
+    0.6916,
+    0.7465,
+    0.0922,
+    0.3627,
+    0.3667,
+    0.0751,
+    0.3106,
+    0.1756,
+    0.6559,
+    0.2949
+   ],
+   "label": 1
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "please radio copy ban player mdt ban that ban",
+   "colour": [
+    0.4123,
+    0.0602,
+    0.565,
+    0.1066,
+    0.5699,
+    0.6313,
+    0.7229,
+    0.6917,
+    0.0107,
+    0.0028,
+    0.7106,
+    0.5529,
+    0.917
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "weapon can",
+   "colour": [
+    0.1967,
+    0.4979,
+    0.5532,
+    0.266,
+    0.6468,
+    0.5315,
+    0.9971,
+    0.5745,
+    0.4111,
+    0.1215,
+    0.1568,
+    0.7595,
+    0.1066
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "copy ban",
+   "colour": [
+    0.4675,
+    0.4306,
+    0.8003,
+    0.6501,
+    0.6846,
+    0.5788,
+    0.1439,
+    0.2383,
+    0.2754,
+    0.0329,
+    0.6287,
+    0.8593,
+    0.9477
+   ],
+   "label": 1
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "that ticket pistol help can you",
+   "colour": [
+    0.396,
+    0.7641,
+    0.0439,
+    0.0546,
+    0.2383,
+    0.2229,
+    0.1594,
+    0.587,
+    0.1735,
+    0.0062,
+    0.867,
+    0.4554,
+    0.4184
+   ],
+   "label": 1
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "see report dispatch help dispatch unit weapon report",
+   "colour": [
+    0.3986,
+    0.7118,
+    0.0224,
+    0.8682,
+    0.0875,
+    0.1699,
+    0.379,
+    0.0076,
+    0.8823,
+    0.396,
+    0.3629,
+    0.335,
+    0.8715
+   ],
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "radio see the please mdt stolen kick",
+   "colour": [
+    0.1912,
+    0.2836,
+    0.2372,
+    0.0349,
+    0.6643,
+    0.3414,
+    0.1559,
+    0.7059,
+    0.0926,
+    0.2697,
+    0.835,
+    0.1278,
+    0.4433
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "stolen stolen that",
+   "colour": [
+    0.3769,
+    0.9584,
+    0.2081,
+    0.9509,
+    0.5048,
+    0.2273,
+    0.4527,
+    0.1309,
+    0.7065,
+    0.2608,
+    0.8996,
+    0.5876,
+    0.368
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "pistol ban that fire café the dispatch",
+   "colour": [
+    0.5426,
+    0.2704,
+    0.7717,
+    0.3848,
+    0.6575,
+    0.5677,
+    0.3108,
+    0.3899,
+    0.086,
+    0.177,
+    0.851,
+    0.321,
+    0.6627
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "kick stolen",
+   "colour": [
+    0.7585,
+    0.1928,
+    0.7187,
+    0.0879,
+    0.2886,
+    0.8168,
+    0.399,
+    0.3559,
+    0.8444,
+    0.4645,
+    0.628,
+    0.6286,
+    0.8631
+   ],
+   "label": 1
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "can stolen dispatch",
+   "colour": [
+    0.691,
+    0.8969,
+    0.0253,
+    0.7038,
+    0.4626,
+    0.9999,
+    0.4005,
+    0.906,
+    0.0977,
+    0.2915,
+    0.2709,
+    0.6089,
+    0.2192
+   ],
+   "label": 0
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "you pistol copy please that café player",
+   "colour": [
+    0.7383,
+    0.5523,
+    0.6295,
+    0.9416,
+    0.5645,
+    0.2277,
+    0.4979,
+    0.5208,
+    0.9257,
+    0.6701,
+    0.5753,
+    0.9357,
+    0.1119
+   ],
+   "label": 1
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "weapon",
+   "colour": [
+    0.0473,
+    0.2445,
+    0.1112,
+    0.7914,
+    0.2101,
+    0.9145,
+    0.7495,
+    0.0861,
+    0.6947,
+    0.3936,
+    0.7476,
+    0.8287,
+    0.2812
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "please ticket car unit ban Émile",
+   "colour": [
+    0.8389,
+    0.6259,
+    0.5087,
+    0.6766,
+    0.206,
+    0.6731,
+    0.8466,
+    0.7783,
+    0.4895,
+    0.1893,
+    0.9523,
+    0.8252,
+    0.5591
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "copy café radio report kick accepted report you copy",
+   "colour": [
+    0.4116,
+    0.2014,
+    0.3106,
+    0.1366,
+    0.707,
+    0.6703,
+    0.2379,
+    0.2417,
+    0.5154,
+    0.445,
+    0.9358,
+    0.3515,
+    0.2994
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "car radio mdt the",
+   "colour": [
+    0.7605,
+    0.1692,
+    0.6665,
+    0.5987,
+    0.4612,
+    0.7662,
+    0.8312,
+    0.1145,
+    0.2893,
+    0.3605,
+    0.2064,
+    0.0603,
+    0.2809
+   ],
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "unit player",
+   "colour": [
+    0.113,
+    0.3245,
+    0.4687,
+    0.363,
+    0.1681,
+    0.0718,
+    0.0108,
+    0.9921,
+    0.7504,
+    0.084,
+    0.7171,
+    0.9802,
+    0.5637
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "please staff that 10-4 kick car can stolen",
+   "colour": [
+    0.6445,
+    0.6277,
+    0.9352,
+    0.6526,
+    0.2514,
+    0.246,
+    0.1387,
+    0.0277,
+    0.7744,
+    0.8396,
+    0.2963,
+    0.1857,
+    0.6381
+   ],
+   "label": 1
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "10-4 Émile",
+   "colour": [
+    0.7423,
+    0.3267,
+    0.1845,
+    0.8253,
+    0.3202,
+    0.3685,
+    0.5511,
+    0.3693,
+    0.8314,
+    0.2394,
+    0.0413,
+    0.5669,
+    0.6282
+   ],
+   "label": 1
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "that",
+   "colour": [
+    0.4995,
+    0.1575,
+    0.2996,
+    0.5811,
+    0.0802,
+    0.688,
+    0.1636,
+    0.4432,
+    0.9698,
+    0.0897,
+    0.0399,
+    0.4395,
+    0.1908
+   ],
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "you",
+   "colour": [
+    0.8553,
+    0.7869,
+    0.4254,
+    0.2833,
+    0.6616,
+    0.5146,
+    0.4212,
+    0.3387,
+    0.4387,
+    0.6661,
+    0.8261,
+    0.904,
+    0.1645
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "ticket",
+   "colour": [
+    0.6753,
+    0.5675,
+    0.4688,
+    0.5427,
+    0.5168,
+    0.4284,
+    0.5347,
+    0.6257,
+    0.1544,
+    0.4014,
+    0.6091,
+    0.0814,
+    0.8097
+   ],
+   "label": 0
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "weapon weapon please stolen staff",
+   "colour": [
+    0.1369,
+    0.8653,
+    0.5304,
+    0.6337,
+    0.8481,
+    0.2225,
+    0.7397,
+    0.6914,
+    0.1469,
+    0.5791,
+    0.5549,
+    0.9432,
+    0.36
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "help accepted the report copy that kick Émile",
+   "colour": [
+    0.8622,
+    0.2535,
+    0.095,
+    0.5308,
+    0.2515,
+    0.4893,
+    0.554,
+    0.2266,
+    0.5727,
+    0.113,
+    0.5132,
+    0.5885,
+    0.0802
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "10-4 ticket",
+   "colour": [
+    0.5031,
+    0.5072,
+    0.8385,
+    0.9481,
+    0.6266,
+    0.9604,
+    0.5152,
+    0.46,
+    0.686,
+    0.5443,
+    0.968,
+    0.1916,
+    0.4751
+   ],
+   "label": 0
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "stolen café pistol",
+   "colour": null,
+   "label": 1
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "stolen",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "ticket player the unit",
+   "colour": [
+    0.9085,
+    0.0877,
+    0.9886,
+    0.2016,
+    0.1147,
+    0.7282,
+    0.3547,
+    0.367,
+    0.8415,
+    0.8041,
+    0.7361,
+    0.0116,
+    0.2556
+   ],
+   "label": 0
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "ban Émile ban stolen Émile staff",
+   "colour": null,
+   "label": 0
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "the stolen kick car 10-4 pistol",
+   "colour": [
+    0.9254,
+    0.6752,
+    0.2546,
+    0.1931,
+    0.4468,
+    0.8382,
+    0.5814,
+    0.1136,
+    0.021,
+    0.1104,
+    0.8007,
+    0.1853,
+    0.5542
+   ],
+   "label": 0
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "mdt fire weapon accepted kick unit café",
+   "colour": [
+    0.9488,
+    0.0138,
+    0.3424,
+    0.1509,
+    0.5018,
+    0.8731,
+    0.8005,
+    0.0355,
+    0.1823,
+    0.8183,
+    0.6795,
+    0.3926,
+    0.4758
+   ],
+   "label": 0
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "help report pistol ban see stolen car ban",
+   "colour": [
+    0.894,
+    0.5892,
+    0.0437,
+    0.1697,
+    0.361,
+    0.4678,
+    0.577,
+    0.3879,
+    0.3537,
+    0.006,
+    0.5792,
+    0.3338,
+    0.0205
+   ],
+   "label": 1
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "radio",
+   "colour": [
+    0.671,
+    0.2727,
+    0.2733,
+    0.5,
+    0.2621,
+    0.569,
+    0.5281,
+    0.957,
+    0.9922,
+    0.0341,
+    0.5606,
+    0.7709,
+    0.8724
+   ],
+   "label": 0
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "stolen 10-4",
+   "colour": [
+    0.7953,
+    0.8728,
+    0.9386,
+    0.6813,
+    0.304,
+    0.7633,
+    0.7395,
+    0.5089,
+    0.6352,
+    0.3504,
+    0.5507,
+    0.406,
+    0.0604
+   ],
+   "label": 0
+  }
+ ],
+ "test": [
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "10-4 staff ban stolen report 10-4",
+   "colour": [
+    0.3492,
+    0.1356,
+    0.0072,
+    0.871,
+    0.4531,
+    0.4455,
+    0.5687,
+    0.3024,
+    0.1689,
+    0.0663,
+    0.3015,
+    0.3085,
+    0.7267
+   ]
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "see that weapon see weapon copy",
+   "colour": [
+    0.3535,
+    0.4679,
+    0.9706,
+    0.6903,
+    0.7212,
+    0.922,
+    0.8386,
+    0.3193,
+    0.1752,
+    0.8977,
+    0.5465,
+    0.7585,
+    0.6264
+   ]
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "that",
+   "colour": null
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "pistol player ban radio",
+   "colour": null
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "fire",
+   "colour": [
+    0.0793,
+    0.8095,
+    0.8755,
+    0.3412,
+    0.1367,
+    0.1882,
+    0.5369,
+    0.8754,
+    0.6399,
+    0.9229,
+    0.2122,
+    0.3268,
+    0.7493
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "pistol dispatch 10-4 car copy you please",
+   "colour": [
+    0.0872,
+    0.6128,
+    0.776,
+    0.9878,
+    0.3996,
+    0.9402,
+    0.8733,
+    0.0257,
+    0.3169,
+    0.6541,
+    0.3134,
+    0.4151,
+    0.7101
+   ]
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "see can fire",
+   "colour": [
+    0.5295,
+    0.8406,
+    0.3578,
+    0.3617,
+    0.3441,
+    0.6802,
+    0.8659,
+    0.1534,
+    0.9814,
+    0.575,
+    0.23,
+    0.6187,
+    0.8135
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "café",
+   "colour": [
+    0.6516,
+    0.5495,
+    0.7064,
+    0.5593,
+    0.3614,
+    0.5296,
+    0.2739,
+    0.2529,
+    0.5581,
+    0.0998,
+    0.8092,
+    0.9769,
+    0.1506
+   ]
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "café see can pistol fire the you",
+   "colour": [
+    0.2049,
+    0.7774,
+    0.2591,
+    0.6061,
+    0.7376,
+    0.9029,
+    0.8708,
+    0.8557,
+    0.7791,
+    0.5285,
+    0.3508,
+    0.7096,
+    0.4416
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "radio stolen 10-4 help",
+   "colour": [
+    0.3238,
+    0.9035,
+    0.1078,
+    0.7334,
+    0.0654,
+    0.6455,
+    0.4019,
+    0.8641,
+    0.06,
+    0.5642,
+    0.4099,
+    0.9191,
+    0.945
+   ]
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "accepted",
+   "colour": null
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "report stolen that car",
+   "colour": [
+    0.6427,
+    0.2985,
+    0.9943,
+    0.2166,
+    0.5695,
+    0.1567,
+    0.8631,
+    0.8693,
+    0.2673,
+    0.7515,
+    0.8228,
+    0.2826,
+    0.3315
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "copy car dispatch pistol",
+   "colour": [
+    0.453,
+    0.5792,
+    0.8829,
+    0.2098,
+    0.8836,
+    0.3604,
+    0.7798,
+    0.8633,
+    0.1823,
+    0.864,
+    0.9948,
+    0.2976,
+    0.0244
+   ]
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "can fire player",
+   "colour": [
+    0.736,
+    0.0975,
+    0.1687,
+    0.6828,
+    0.0902,
+    0.3395,
+    0.9185,
+    0.7164,
+    0.882,
+    0.9797,
+    0.0329,
+    0.2346,
+    0.7921
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "fire",
+   "colour": [
+    0.2316,
+    0.4305,
+    0.1049,
+    0.0199,
+    0.9908,
+    0.3165,
+    0.8786,
+    0.1205,
+    0.4874,
+    0.1358,
+    0.4285,
+    0.179,
+    0.6854
+   ]
+  },
+  {
+   "channel": "report / question",
+   "tags": [
+    "report"
+   ],
+   "body": "ban the ban stolen mdt staff see stolen that",
+   "colour": [
+    0.9721,
+    0.224,
+    0.0724,
+    0.7036,
+    0.0152,
+    0.269,
+    0.9663,
+    0.1964,
+    0.0479,
+    0.7895,
+    0.9519,
+    0.2672,
+    0.3257
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "kick player kick car unit please Émile unit",
+   "colour": [
+    0.422,
+    0.54,
+    0.383,
+    0.1512,
+    0.761,
+    0.8817,
+    0.8038,
+    0.8981,
+    0.635,
+    0.2391,
+    0.5011,
+    0.9886,
+    0.6937
+   ]
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "mdt that dispatch the",
+   "colour": null
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "unit",
+   "colour": null
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "dispatch radio ticket kick dispatch car",
+   "colour": [
+    0.5777,
+    0.4735,
+    0.6473,
+    0.4706,
+    0.3424,
+    0.5462,
+    0.3799,
+    0.825,
+    0.7914,
+    0.8694,
+    0.3552,
+    0.0641,
+    0.9759
+   ]
+  },
+  {
+   "channel": "emote",
+   "tags": [
+    "emote"
+   ],
+   "body": "see radio 10-4 kick dispatch report",
+   "colour": [
+    0.7654,
+    0.2623,
+    0.841,
+    0.8577,
+    0.3478,
+    0.5895,
+    0.5707,
+    0.9994,
+    0.0659,
+    0.7573,
+    0.3641,
+    0.2048,
+    0.1691
+   ]
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "dispatch copy fire mdt",
+   "colour": [
+    0.1777,
+    0.9474,
+    0.8558,
+    0.6521,
+    0.9106,
+    0.322,
+    0.3618,
+    0.8636,
+    0.4281,
+    0.41,
+    0.7026,
+    0.3751,
+    0.3648
+   ]
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "player ticket dispatch see accepted help player ticket unit",
+   "colour": [
+    0.6346,
+    0.7307,
+    0.1745,
+    0.5173,
+    0.0059,
+    0.1305,
+    0.4888,
+    0.6603,
+    0.6227,
+    0.5234,
+    0.8016,
+    0.2529,
+    0.5562
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "you weapon copy player unit",
+   "colour": [
+    0.9169,
+    0.2556,
+    0.2654,
+    0.4381,
+    0.5252,
+    0.4934,
+    0.0888,
+    0.1283,
+    0.9584,
+    0.2905,
+    0.7811,
+    0.9205,
+    0.7174
+   ]
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "you unit café player please please",
+   "colour": [
+    0.8108,
+    0.3524,
+    0.3854,
+    0.5787,
+    0.9248,
+    0.1916,
+    0.9714,
+    0.7119,
+    0.3724,
+    0.6656,
+    0.3295,
+    0.0708,
+    0.756
+   ]
+  },
+  {
+   "channel": "say",
+   "tags": [
+    "say"
+   ],
+   "body": "ban please staff radio café 10-4 can",
+   "colour": [
+    0.5635,
+    0.9351,
+    0.7009,
+    0.4361,
+    0.9949,
+    0.1762,
+    0.0651,
+    0.3976,
+    0.1353,
+    0.7528,
+    0.0095,
+    0.2324,
+    0.2002
+   ]
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "dispatch",
+   "colour": [
+    0.3302,
+    0.3875,
+    0.4599,
+    0.0901,
+    0.8479,
+    0.571,
+    0.0155,
+    0.4969,
+    0.8482,
+    0.2156,
+    0.4543,
+    0.824,
+    0.1998
+   ]
+  },
+  {
+   "channel": "law",
+   "tags": [
+    "law"
+   ],
+   "body": "you kick unit Émile please mdt weapon fire",
+   "colour": [
+    0.8168,
+    0.8719,
+    0.1455,
+    0.3343,
+    0.5182,
+    0.006,
+    0.9887,
+    0.2747,
+    0.2623,
+    0.313,
+    0.255,
+    0.8589,
+    0.5557
+   ]
+  },
+  {
+   "channel": "dispatch",
+   "tags": [
+    "dispatch"
+   ],
+   "body": "dispatch you player player report help 10-4",
+   "colour": [
+    0.5396,
+    0.305,
+    0.1318,
+    0.2075,
+    0.6523,
+    0.9325,
+    0.6563,
+    0.7099,
+    0.1413,
+    0.9305,
+    0.3418,
+    0.4564,
+    0.7069
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "can kick see please weapon mdt",
+   "colour": [
+    0.2736,
+    0.7961,
+    0.2915,
+    0.7106,
+    0.8025,
+    0.5921,
+    0.4546,
+    0.9349,
+    0.4449,
+    0.8781,
+    0.0577,
+    0.4337,
+    0.6393
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "see mdt pistol",
+   "colour": [
+    0.0142,
+    0.7213,
+    0.7372,
+    0.1641,
+    0.2208,
+    0.7204,
+    0.7487,
+    0.8019,
+    0.5344,
+    0.159,
+    0.7775,
+    0.7153,
+    0.5162
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "that 10-4",
+   "colour": null
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "report dispatch mdt accepted unit ticket dispatch",
+   "colour": [
+    0.8682,
+    0.9239,
+    0.1334,
+    0.1601,
+    0.4463,
+    0.7582,
+    0.8747,
+    0.7972,
+    0.7069,
+    0.7194,
+    0.3096,
+    0.258,
+    0.5487
+   ]
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "10-4 dispatch report",
+   "colour": [
+    0.0329,
+    0.38,
+    0.6408,
+    0.2234,
+    0.5457,
+    0.0936,
+    0.4645,
+    0.7282,
+    0.4299,
+    0.6789,
+    0.1144,
+    0.8285,
+    0.1221
+   ]
+  },
+  {
+   "channel": "ooc",
+   "tags": [
+    "ooc"
+   ],
+   "body": "ban see player staff stolen can café 10-4 staff",
+   "colour": [
+    0.913,
+    0.2005,
+    0.28,
+    0.303,
+    0.5839,
+    0.7562,
+    0.2013,
+    0.4705,
+    0.7678,
+    0.7651,
+    0.9042,
+    0.5788,
+    0.2999
+   ]
+  },
+  {
+   "channel": "faction governor",
+   "tags": [
+    "faction"
+   ],
+   "body": "can stolen",
+   "colour": [
+    0.1522,
+    0.3,
+    0.172,
+    0.3502,
+    0.481,
+    0.3296,
+    0.3641,
+    0.1096,
+    0.832,
+    0.809,
+    0.7237,
+    0.455,
+    0.747
+   ]
+  },
+  {
+   "channel": "support chat",
+   "tags": [
+    "support"
+   ],
+   "body": "pistol help ticket",
+   "colour": null
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "weapon the please radio unit fire please weapon mdt",
+   "colour": [
+    0.3747,
+    0.6631,
+    0.1639,
+    0.1697,
+    0.9415,
+    0.3316,
+    0.8423,
+    0.8734,
+    0.4802,
+    0.149,
+    0.094,
+    0.8791,
+    0.1171
+   ]
+  },
+  {
+   "channel": "whisper",
+   "tags": [
+    "whisper"
+   ],
+   "body": "kick kick the car ticket",
+   "colour": [
+    0.5684,
+    0.0421,
+    0.2562,
+    0.9494,
+    0.2835,
+    0.5553,
+    0.988,
+    0.9084,
+    0.7266,
+    0.5348,
+    0.2396,
+    0.095,
+    0.1058
+   ]
+  },
+  {
+   "channel": "admin chat",
+   "tags": [
+    "admin"
+   ],
+   "body": "10-4 10-4 unit weapon that unit Émile report",
+   "colour": null
+  },
+  {
+   "channel": "admin chta",
+   "tags": [],
+   "body": "typo channel",
+   "colour": null
+  },
+  {
+   "channel": "brand new",
+   "tags": [],
+   "body": "never seen",
+   "colour": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ ],
+ "empty_probs": [
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.95,
+  0.95,
+  0.95,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.95,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.95,
+  0.95,
+  0.15,
+  0.95,
+  0.15,
+  0.15,
+  0.15,
+  0.15,
+  0.95,
+  0.15,
+  0.95,
+  0.15,
+  0.15
+ ],
+ "probs": [
+  0.09050733990120449,
+  0.20427064700824737,
+  0.01261491407726171,
+  0.024097412002029615,
+  0.010079036681192479,
+  0.02238997886744239,
+  0.03161293856073182,
+  0.03268263467038054,
+  0.014301529520696408,
+  0.02000305185805863,
+  0.013697869083576166,
+  0.02967482771117566,
+  0.020975621272131213,
+  0.9220695869210389,
+  0.9799244345308165,
+  0.9803661837077733,
+  0.9517948258357892,
+  0.0326061424163895,
+  0.029543991065399216,
+  0.1876106854086278,
+  0.03501926997712382,
+  0.061944295963543596,
+  0.17931140653478703,
+  0.9766590650723787,
+  0.027155963401047006,
+  0.10323329715033777,
+  0.4572100243547941,
+  0.044928513458971434,
+  0.24074537693329992,
+  0.9715475958417747,
+  0.9679533904967526,
+  0.02539365953344995,
+  0.9721769668763078,
+  0.022009727181490187,
+  0.03338131789824118,
+  0.021980329061988338,
+  0.9282204444856499,
+  0.9739486994904603,
+  0.01875576356913345,
+  0.9781678346880323,
+  0.9795594219730057,
+  0.11438381789784609
+ ],
+ "probs_tight": [
+  0.09009689232861046,
+  0.2054292718501061,
+  0.012640488153716475,
+  0.02403631693083448,
+  0.010084308600834408,
+  0.022470895135023674,
+  0.03166933928880748,
+  0.032682264258711374,
+  0.014385153608387262,
+  0.02001293897242394,
+  0.013692003874371474,
+  0.02954211453800642,
+  0.021005463133494044,
+  0.9219426640401779,
+  0.9799357291406386,
+  0.980135029351005,
+  0.9520825631028917,
+  0.03260684970811249,
+  0.029540769867569677,
+  0.18800214343690702,
+  0.03508403263534402,
+  0.062136298831105,
+  0.17876968003550053,
+  0.9765898881383483,
+  0.027038870759193055,
+  0.1027566408126013,
+  0.45986780133885863,
+  0.04494552876481695,
+  0.24145948925916297,
+  0.971736291481347,
+  0.9680435336989618,
+  0.02538020732050274,
+  0.9724454446045997,
+  0.022220849466521905,
+  0.03324991358406996,
+  0.02197495142485769,
+  0.9281817175511204,
+  0.9741379763229499,
+  0.018797642357334637,
+  0.9781168779847953,
+  0.9794829962597866,
+  0.1134645550746936
+ ],
+ "sources": [
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned",
+  "learned"
+ ],
+ "docs": [
+  "Admin Chat | Admin Chat | Can you  see\tthe fire?",
+  "a",
+  "ab",
+  "Émile café 10-4"
+ ],
+ "ngrams": [
+  [
+   " a",
+   "ad",
+   "dm",
+   "mi",
+   "in",
+   "n ",
+   " ad",
+   "adm",
+   "dmi",
+   "min",
+   "in ",
+   " adm",
+   "admi",
+   "dmin",
+   "min ",
+   " c",
+   "ch",
+   "ha",
+   "at",
+   "t ",
+   " ch",
+   "cha",
+   "hat",
+   "at ",
+   " cha",
+   "chat",
+   "hat ",
+   " |",
+   "| ",
+   " | ",
+   " a",
+   "ad",
+   "dm",
+   "mi",
+   "in",
+   "n ",
+   " ad",
+   "adm",
+   "dmi",
+   "min",
+   "in ",
+   " adm",
+   "admi",
+   "dmin",
+   "min ",
+   " c",
+   "ch",
+   "ha",
+   "at",
+   "t ",
+   " ch",
+   "cha",
+   "hat",
+   "at ",
+   " cha",
+   "chat",
+   "hat ",
+   " |",
+   "| ",
+   " | ",
+   " c",
+   "ca",
+   "an",
+   "n ",
+   " ca",
+   "can",
+   "an ",
+   " can",
+   "can ",
+   " y",
+   "yo",
+   "ou",
+   "u ",
+   " yo",
+   "you",
+   "ou ",
+   " you",
+   "you ",
+   " s",
+   "se",
+   "ee",
+   "e ",
+   " se",
+   "see",
+   "ee ",
+   " see",
+   "see ",
+   " t",
+   "th",
+   "he",
+   "e ",
+   " th",
+   "the",
+   "he ",
+   " the",
+   "the ",
+   " f",
+   "fi",
+   "ir",
+   "re",
+   "e?",
+   "? ",
+   " fi",
+   "fir",
+   "ire",
+   "re?",
+   "e? ",
+   " fir",
+   "fire",
+   "ire?",
+   "re? "
+  ],
+  [
+   " a",
+   "a ",
+   " a "
+  ],
+  [
+   " a",
+   "ab",
+   "b ",
+   " ab",
+   "ab ",
+   " ab "
+  ],
+  [
+   " é",
+   "ém",
+   "mi",
+   "il",
+   "le",
+   "e ",
+   " ém",
+   "émi",
+   "mil",
+   "ile",
+   "le ",
+   " émi",
+   "émil",
+   "mile",
+   "ile ",
+   " c",
+   "ca",
+   "af",
+   "fé",
+   "é ",
+   " ca",
+   "caf",
+   "afé",
+   "fé ",
+   " caf",
+   "café",
+   "afé ",
+   " 1",
+   "10",
+   "0-",
+   "-4",
+   "4 ",
+   " 10",
+   "10-",
+   "0-4",
+   "-4 ",
+   " 10-",
+   "10-4",
+   "0-4 "
+  ]
+ ],
+ "tfidf": [
+  {
+   " a": 0.093832537102,
+   "ad": 0.147006801454,
+   "dm": 0.147006801454,
+   "mi": 0.115901850805,
+   "in": 0.147006801454,
+   "n ": 0.182211141235,
+   " ad": 0.147006801454,
+   "adm": 0.147006801454,
+   "dmi": 0.147006801454,
+   "min": 0.147006801454,
+   "in ": 0.147006801454,
+   " adm": 0.147006801454,
+   "admi": 0.147006801454,
+   "dmin": 0.147006801454,
+   "min ": 0.147006801454,
+   " c": 0.14365735665,
+   "ch": 0.147006801454,
+   "ha": 0.147006801454,
+   "at": 0.147006801454,
+   "t ": 0.147006801454,
+   " ch": 0.147006801454,
+   "cha": 0.147006801454,
+   "hat": 0.147006801454,
+   "at ": 0.147006801454,
+   " cha": 0.147006801454,
+   "chat": 0.147006801454,
+   "hat ": 0.147006801454,
+   " |": 0.147006801454,
+   "| ": 0.147006801454,
+   " | ": 0.147006801454,
+   "ca": 0.068453500166,
+   "an": 0.086824585093,
+   " ca": 0.068453500166,
+   "can": 0.086824585093,
+   "an ": 0.086824585093,
+   " can": 0.086824585093,
+   "can ": 0.086824585093,
+   " y": 0.086824585093,
+   "yo": 0.086824585093,
+   "ou": 0.086824585093,
+   "u ": 0.086824585093,
+   " yo": 0.086824585093,
+   "you": 0.086824585093,
+   "ou ": 0.086824585093,
+   " you": 0.086824585093,
+   "you ": 0.086824585093,
+   " s": 0.086824585093,
+   "se": 0.086824585093,
+   "ee": 0.086824585093,
+   "e ": 0.115901850805,
+   " se": 0.086824585093,
+   "see": 0.086824585093,
+   "ee ": 0.086824585093,
+   " see": 0.086824585093,
+   "see ": 0.086824585093,
+   " t": 0.086824585093,
+   "th": 0.086824585093,
+   "he": 0.086824585093,
+   " th": 0.086824585093,
+   "the": 0.086824585093,
+   "he ": 0.086824585093,
+   " the": 0.086824585093,
+   "the ": 0.086824585093,
+   " f": 0.086824585093,
+   "fi": 0.086824585093,
+   "ir": 0.086824585093,
+   "re": 0.086824585093,
+   "e?": 0.086824585093,
+   "? ": 0.086824585093,
+   " fi": 0.086824585093,
+   "fir": 0.086824585093,
+   "ire": 0.086824585093,
+   "re?": 0.086824585093,
+   "e? ": 0.086824585093,
+   " fir": 0.086824585093,
+   "fire": 0.086824585093,
+   "ire?": 0.086824585093,
+   "re? ": 0.086824585093
+  },
+  {
+   " a": 0.411377911334,
+   "a ": 0.644502992261,
+   " a ": 0.644502992261
+  },
+  {
+   " a": 0.274486738386,
+   "ab": 0.430036517159,
+   "b ": 0.430036517159,
+   " ab": 0.430036517159,
+   "ab ": 0.430036517159,
+   " ab ": 0.430036517159
+  },
+  {
+   "mi": 0.129425360465,
+   " c": 0.129425360465,
+   "ca": 0.129425360465,
+   " ca": 0.129425360465,
+   "e ": 0.129425360465,
+   " é": 0.164159658685,
+   "ém": 0.164159658685,
+   "il": 0.164159658685,
+   "le": 0.164159658685,
+   " ém": 0.164159658685,
+   "émi": 0.164159658685,
+   "mil": 0.164159658685,
+   "ile": 0.164159658685,
+   "le ": 0.164159658685,
+   " émi": 0.164159658685,
+   "émil": 0.164159658685,
+   "mile": 0.164159658685,
+   "ile ": 0.164159658685,
+   "af": 0.164159658685,
+   "fé": 0.164159658685,
+   "é ": 0.164159658685,
+   "caf": 0.164159658685,
+   "afé": 0.164159658685,
+   "fé ": 0.164159658685,
+   " caf": 0.164159658685,
+   "café": 0.164159658685,
+   "afé ": 0.164159658685,
+   " 1": 0.164159658685,
+   "10": 0.164159658685,
+   "0-": 0.164159658685,
+   "-4": 0.164159658685,
+   "4 ": 0.164159658685,
+   " 10": 0.164159658685,
+   "10-": 0.164159658685,
+   "0-4": 0.164159658685,
+   "-4 ": 0.164159658685,
+   " 10-": 0.164159658685,
+   "10-4": 0.164159658685,
+   "0-4 ": 0.164159658685
+  }
+ ],
+ "test_public_key": "/W5dGAu6yliV0Ecueow+z1KNzu2yfCI+hTWM8jJY7KY=",
+ "test_private_pem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDf3qlSi4GR8eUSgGTf1GuIDyMCexYLwIZq8c73tQRAG\n-----END PRIVATE KEY-----\n",
+ "payload_canonical": "{\"app_version\":\"0.4.0\",\"channel_stats\":{\"admin chat\":[0,5],\"z\":[1,1],\"\\u00e9mote\":[7,0]},\"created\":\"2026-09-22T12:00:00+00:00\",\"defs_version\":3,\"format\":\"obscura-defs/1\",\"seeds\":[\"admin chat\",\"report\"]}",
+ "payload_signature": "+o/R7ydkDoGY+zJQcaJMtw7wcZJZnqYc2RLdujpZtFYHfJtUEC25DfqpqaNmZj5qw7c+CyJBQ16MSZMnkDYHDA=="
+}

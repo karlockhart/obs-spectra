@@ -234,6 +234,27 @@ void OBSBasic::CreateHotkeys()
 				  obs_data_get_json(newData));
 	}
 
+	loopHotkeys =
+		obs_hotkey_pair_register_frontend("Spectra.StartLoopRecording", Str("Spectra.Loop.Start"),
+						  "Spectra.StopLoopRecording", Str("Spectra.Loop.Stop"),
+						  MAKE_CALLBACK(basic.loopRecorder && !basic.loopRecorder->Active(),
+								basic.loopRecorder->Start, "Starting loop recording"),
+						  MAKE_CALLBACK(basic.loopRecorder && basic.loopRecorder->Active(),
+								basic.loopRecorder->Stop, "Stopping loop recording"),
+						  this, this);
+	LoadHotkeyPair(loopHotkeys, "Spectra.StartLoopRecording", "Spectra.StopLoopRecording");
+
+	auto clipLastCallback = [](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
+		OBSBasic *basic = static_cast<OBSBasic *>(data);
+		if (pressed && basic->loopRecorder) {
+			blog(LOG_INFO, "Saving loop clip due to hotkey");
+			basic->loopRecorder->ClipLast(basic->loopRecorder->DefaultClipSeconds());
+		}
+	};
+	clipLastHotkey = obs_hotkey_register_frontend("Spectra.ClipLast", Str("Spectra.Loop.ClipLastHotkey"),
+						      clipLastCallback, this);
+	LoadHotkey(clipLastHotkey, "Spectra.ClipLast");
+
 	if (vcamEnabled) {
 		vcamHotkeys = obs_hotkey_pair_register_frontend(
 			"OBSBasic.StartVirtualCam", Str("Basic.Main.StartVirtualCam"), "OBSBasic.StopVirtualCam",
@@ -322,6 +343,8 @@ void OBSBasic::ClearHotkeys()
 	obs_hotkey_unregister(splitFileHotkey);
 	obs_hotkey_unregister(addChapterHotkey);
 	obs_hotkey_pair_unregister(replayBufHotkeys);
+	obs_hotkey_pair_unregister(loopHotkeys);
+	obs_hotkey_unregister(clipLastHotkey);
 	obs_hotkey_pair_unregister(vcamHotkeys);
 	obs_hotkey_pair_unregister(togglePreviewHotkeys);
 	obs_hotkey_pair_unregister(contextBarHotkeys);

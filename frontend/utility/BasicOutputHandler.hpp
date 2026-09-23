@@ -22,11 +22,13 @@ struct BasicOutputHandler {
 	OBSOutputAutoRelease streamOutput;
 	OBSOutputAutoRelease replayBuffer;
 	OBSOutputAutoRelease virtualCam;
+	OBSOutputAutoRelease loopOutput;
 	bool streamingActive = false;
 	bool recordingActive = false;
 	bool delayActive = false;
 	bool replayBufferActive = false;
 	bool virtualCamActive = false;
+	bool loopActive = false;
 	OBSBasic *main;
 
 	std::unique_ptr<MultitrackVideoOutput> multitrackVideo;
@@ -66,6 +68,9 @@ struct BasicOutputHandler {
 	OBSSignal recordFileChanged;
 	OBSSignal replayBufferStopping;
 	OBSSignal replayBufferSaved;
+	OBSSignal startLoop;
+	OBSSignal stopLoop;
+	OBSSignal loopFileChanged;
 
 	BasicOutputHandler(OBSBasic *main_);
 
@@ -77,14 +82,18 @@ struct BasicOutputHandler {
 	virtual bool StartRecording() = 0;
 	virtual bool StartReplayBuffer() { return false; }
 	virtual bool StartVirtualCam();
+	virtual bool StartLoopRecording(const char * /* directory */, int /* segmentSeconds */) { return false; }
 	virtual void StopStreaming(bool force = false) = 0;
 	virtual void StopRecording(bool force = false) = 0;
 	virtual void StopReplayBuffer(bool force = false) { (void)force; }
 	virtual void StopVirtualCam();
+	void StopLoopRecording(bool force = false);
 	virtual bool StreamingActive() const = 0;
 	virtual bool RecordingActive() const = 0;
 	virtual bool ReplayBufferActive() const { return false; }
 	virtual bool VirtualCamActive() const;
+	bool LoopRecordingActive() const;
+	bool LoopRecordingAvailable() const { return !!loopOutput; }
 
 	virtual void Update() = 0;
 	virtual void SetupOutputs() = 0;
@@ -96,10 +105,20 @@ struct BasicOutputHandler {
 	inline bool Active() const
 	{
 		return streamingActive || recordingActive || delayActive || replayBufferActive || virtualCamActive ||
+		       multitrackVideoActive || loopActive;
+	}
+
+	/* Active for any reason other than background loop recording */
+	inline bool ActiveExceptLoop() const
+	{
+		return streamingActive || recordingActive || delayActive || replayBufferActive || virtualCamActive ||
 		       multitrackVideoActive;
 	}
 
 protected:
+	void CreateLoopOutput();
+	bool StartLoopOutput(const char *directory, int segmentSeconds);
+
 	void SetupAutoRemux(const char *&container);
 	std::string GetRecordingFilename(const char *path, const char *container, bool noSpace, bool overwrite,
 					 const char *format, bool ffmpeg);
@@ -125,6 +144,9 @@ void OBSStartReplayBuffer(void *data, calldata_t *params);
 void OBSStopReplayBuffer(void *data, calldata_t *params);
 void OBSReplayBufferStopping(void *data, calldata_t *params);
 void OBSReplayBufferSaved(void *data, calldata_t *params);
+void OBSStartLoopRecording(void *data, calldata_t *params);
+void OBSStopLoopRecording(void *data, calldata_t *params);
+void OBSLoopRecordingFileChanged(void *data, calldata_t *params);
 
 inline bool can_use_output(const char *prot, const char *output, const char *prot_test1,
 			   const char *prot_test2 = nullptr)

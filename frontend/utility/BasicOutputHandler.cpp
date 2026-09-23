@@ -143,6 +143,34 @@ void OBSReplayBufferSaved(void *data, calldata_t * /* params */)
 	QMetaObject::invokeMethod(output->main, &OBSBasic::ReplayBufferSaved, Qt::QueuedConnection);
 }
 
+void OBSStartLoopRecording(void *data, calldata_t * /* params */)
+{
+	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
+
+	output->loopActive = true;
+	QMetaObject::invokeMethod(output->main, &OBSBasic::LoopRecordingStart);
+}
+
+void OBSStopLoopRecording(void *data, calldata_t *params)
+{
+	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
+	int code = (int)calldata_int(params, "code");
+	const char *last_error = calldata_string(params, "last_error");
+
+	QString arg_last_error = QString::fromUtf8(last_error);
+
+	output->loopActive = false;
+	QMetaObject::invokeMethod(output->main, &OBSBasic::LoopRecordingStop, code, arg_last_error);
+}
+
+void OBSLoopRecordingFileChanged(void *data, calldata_t *params)
+{
+	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
+	QString next_file = QString::fromUtf8(calldata_string(params, "next_file"));
+
+	QMetaObject::invokeMethod(output->main, &OBSBasic::LoopRecordingFileChanged, next_file);
+}
+
 static void OBSStartVirtualCam(void *data, calldata_t * /* params */)
 {
 	BasicOutputHandler *output = static_cast<BasicOutputHandler *>(data);
@@ -611,4 +639,88 @@ BasicOutputHandler *CreateSimpleOutputHandler(OBSBasic *main)
 BasicOutputHandler *CreateAdvancedOutputHandler(OBSBasic *main)
 {
 	return new AdvancedOutput(main);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Spectra loop recording                                                    */
+
+#define LOOP_SEGMENT_FORMAT "%CCYY-%MM-%DD %hh-%mm-%ss"
+
+void BasicOutputHandler::CreateLoopOutput()
+{
+	loopOutput = obs_output_create("ffmpeg_muxer", "spectra_loop_output", nullptr, nullptr);
+	if (!loopOutput) {
+		blog(LOG_WARNING, "Failed to create loop recording output");
+		return;
+	}
+
+	signal_handler_t *signal = obs_output_get_signal_handler(loopOutput);
+	startLoop.Connect(signal, "start", OBSStartLoopRecording, this);
+	stopLoop.Connect(signal, "stop", OBSStopLoopRecording, this);
+	loopFileChanged.Connect(signal, "file_changed", OBSLoopRecordingFileChanged, this);
+}
+
+bool BasicOutputHandler::StartLoopOutput(const char *directory, int segmentSeconds)
+{
+	/* Segments are always Matroska: it survives crashes and power loss, and
+	 * every segment starts on a keyframe so they can be joined losslessly. */
+	string firstFile = GetOutputFilename(directory, "mkv", false, false, LOOP_SEGMENT_FORMAT);
+
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_string(settings, "path", firstFile.c_str());
+	obs_data_set_string(settings, "directory", directory);
+	obs_data_set_string(settings, "format", LOOP_SEGMENT_FORMAT);
+	obs_data_set_string(settings, "extension", "mkv");
+	obs_data_set_bool(settings, "allow_spaces", true);
+	obs_data_set_bool(settings, "allow_overwrite", false);
+	obs_data_set_bool(settings, "split_file", true);
+	obs_data_set_int(settings, "max_time_sec", segmentSeconds);
+	obs_data_set_int(settings, "max_size_mb", 0);
+	obs_data_set_string(settings, "muxer_settings", "");
+	obs_output_update(loopOutput, settings);
+
+	/* Segments split, and clips start, on keyframes. Encoders left on
+	 * "auto" often use ~8 s intervals, so use 2 s (the usual streaming
+	 * requirement) unless the user picked an interval themselves. */
+	obs_encoder_t *vencoder = obs_output_get_video_encoder(loopOutput);
+	if (vencoder && !obs_encoder_active(vencoder)) {
+		OBSDataAutoRelease encSettings = obs_encoder_get_settings(vencoder);
+		if (obs_data_get_int(encSettings, "keyint_sec") == 0) {
+			OBSDataAutoRelease update = obs_data_create();
+			obs_data_set_int(update, "keyint_sec", 2);
+			obs_encoder_update(vencoder, update);
+			blog(LOG_INFO, "Loop recording: using a 2 s keyframe interval for '%s'",
+			     obs_encoder_get_name(vencoder));
+		}
+	}
+
+	if (!obs_output_start(loopOutput)) {
+		const char *error = obs_output_get_last_error(loopOutput);
+		lastError = error ? error : "";
+		blog(LOG_WARNING, "Loop recording output failed to start: %s", lastError.c_str());
+		return false;
+	}
+
+	QMetaObject::invokeMethod(main, &OBSBasic::LoopRecordingFileChanged, QString::fromStdString(firstFile));
+	return true;
+}
+
+void BasicOutputHandler::StopLoopRecording(bool force)
+{
+	/* Stopping an output that never started resets its stopping event,
+	 * which nothing signals again, so obs_output_destroy would wait on
+	 * it forever at shutdown. */
+	if (!LoopRecordingActive()) {
+		return;
+	}
+	if (force) {
+		obs_output_force_stop(loopOutput);
+	} else {
+		obs_output_stop(loopOutput);
+	}
+}
+
+bool BasicOutputHandler::LoopRecordingActive() const
+{
+	return loopOutput && obs_output_active(loopOutput);
 }

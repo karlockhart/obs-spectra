@@ -9,7 +9,7 @@ else()
   target_enable_feature(obs "User Interface")
 endif()
 
-find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat)
+find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil avformat swscale)
 find_package(CURL REQUIRED)
 
 if(NOT TARGET OBS::json11)
@@ -38,6 +38,7 @@ target_link_libraries(
     FFmpeg::avcodec
     FFmpeg::avutil
     FFmpeg::avformat
+    FFmpeg::swscale
     OBS::libobs
     OBS::frontend-api
     OBS::json11
@@ -117,4 +118,4 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${ta
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Header Files" FILES ${target_hpp_sources})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Qt Files" FILES ${target_qt_sources})
 
-set_target_properties_obs(obs-studio PROPERTIES FOLDER frontend OUTPUT_NAME "$<IF:$<PLATFORM_ID:Windows>,obs64,obs>")
+set_target_properties_obs(obs-studio PROPERTIES FOLDER frontend OUTPUT_NAME obs-spectra)

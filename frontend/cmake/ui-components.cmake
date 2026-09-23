@@ -26,6 +26,8 @@ target_sources(
     components/BrowserToolbar.cpp
     components/BrowserToolbar.hpp
     components/ClickableLabel.hpp
+    components/ClipTimeline.cpp
+    components/ClipTimeline.hpp
     components/ColorSourceToolbar.cpp
     components/ColorSourceToolbar.hpp
     components/ComboSelectToolbar.cpp

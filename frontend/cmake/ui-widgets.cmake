@@ -24,6 +24,7 @@ target_sources(
     widgets/OBSBasic_Dropfiles.cpp
     widgets/OBSBasic_Hotkeys.cpp
     widgets/OBSBasic_Icons.cpp
+    widgets/OBSBasic_LoopRecording.cpp
     widgets/OBSBasic_MainControls.cpp
     widgets/OBSBasic_OutputHandler.cpp
     widgets/OBSBasic_Preview.cpp

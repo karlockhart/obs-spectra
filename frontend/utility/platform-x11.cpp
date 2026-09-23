@@ -147,7 +147,7 @@ const char *RunOnce::thr_name = "OBS runonce";
 
 void CheckIfAlreadyRunning(bool &already_running)
 {
-	std::string tmpfile_name = "/tmp/obs-studio.lock." + std::to_string(geteuid());
+	std::string tmpfile_name = "/tmp/obs-spectra.lock." + std::to_string(geteuid());
 	int fd = open(tmpfile_name.c_str(), O_RDWR | O_CREAT | O_EXLOCK, 0600);
 	if (fd == -1) {
 		already_running = true;

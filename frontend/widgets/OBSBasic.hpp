@@ -24,6 +24,7 @@
 #include <components/AccessibleAlignmentSelector.hpp>
 #include <oauth/Auth.hpp>
 #include <utility/BasicOutputHandler.hpp>
+#include <utility/LoopRecorder.hpp>
 #include <utility/OBSCanvas.hpp>
 #include <utility/PreviewProgramSizeObserver.hpp>
 #include <utility/VCamConfig.hpp>
@@ -57,6 +58,7 @@ class OBSBasicTransform;
 class OBSLogViewer;
 class OBSMissingFiles;
 class OBSProjector;
+class SpectraClipMaker;
 class VolumeControl;
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
@@ -496,6 +498,8 @@ private:
 	obs_hotkey_pair_id streamingHotkeys, recordingHotkeys, pauseHotkeys, replayBufHotkeys, vcamHotkeys,
 		togglePreviewHotkeys, contextBarHotkeys;
 	obs_hotkey_id forceStreamingStopHotkey, splitFileHotkey, addChapterHotkey, saveReplayBufferHotkey;
+	obs_hotkey_pair_id loopHotkeys = 0;
+	obs_hotkey_id clipLastHotkey = 0;
 
 	void InitHotkeys();
 	void CreateHotkeys();
@@ -1047,6 +1051,36 @@ private:
 	bool replayBufferStopping = false;
 	std::string lastReplay;
 
+	QPointer<LoopRecorder> loopRecorder;
+	QPointer<QMenu> spectraMenu;
+	QPointer<QAction> loopToggleAction;
+	QPointer<QAction> loopArmAction;
+	QPointer<QAction> captureStatusAction;
+	QPointer<SpectraClipMaker> clipMaker;
+
+	void InitSpectra();
+	void UpdateLoopRecordingUI(bool active);
+	void OpenLoopSettings();
+	void OpenClipMaker();
+	void ResetSourcesToDefaults();
+
+public:
+	bool StartLoopRecording(const QString &directory, int segmentSeconds, QString *error = nullptr);
+	void StopLoopRecording();
+	bool LoopRecordingActive() const;
+	bool SplitLoopRecording();
+	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
+	OBSScene GetProgramScene();
+
+	/* Applies Spectra's canvas/output resolution and recording quality
+	 * (SpectraLoop CanvasCX/CanvasCY/Quality). Returns false if outputs are
+	 * active, in which case nothing changes. */
+	bool ApplySpectraVideo();
+
+	/* Switches Simple output mode from x264 to the best hardware encoder
+	 * (a chosen hardware encoder is kept). Returns true if changed. */
+	bool PreferHardwareEncoder();
+
 public slots:
 	void ShowReplayBufferPauseWarning();
 	void StartReplayBuffer();
@@ -1057,6 +1091,14 @@ public slots:
 	void ReplayBufferSaved();
 	void ReplayBufferStopping();
 	void ReplayBufferStop(int code);
+
+	/* Spectra loop recording (OBSBasic_LoopRecording.cpp) */
+	void LoopRecordingStart();
+	void LoopRecordingStop(int code, QString lastError);
+	void LoopRecordingFileChanged(QString nextFile);
+	void LoopRecordingActionTriggered();
+	void LoopArmActionTriggered();
+	void LoopClipActionTriggered();
 
 	bool ReplayBufferActive();
 
@@ -1070,6 +1112,9 @@ signals:
 	void ReplayBufStarted();
 	void ReplayBufStopping();
 	void ReplayBufStopped();
+	/* 0: disarmed, 1: armed and waiting for a game, 2: recording */
+	void LoopRecordingStateChanged(int state);
+	void LoopRecordingEnabled(bool enabled);
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_SceneCollections

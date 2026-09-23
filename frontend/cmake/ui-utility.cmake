@@ -6,6 +6,10 @@ target_sources(
     utility/BaseLexer.hpp
     utility/BasicOutputHandler.cpp
     utility/BasicOutputHandler.hpp
+    utility/ClipExport.cpp
+    utility/ClipExport.hpp
+    utility/ClipRender.cpp
+    utility/ClipRender.hpp
     utility/CrashHandler.cpp
     utility/CrashHandler.hpp
     utility/FFmpegCodec.cpp
@@ -19,6 +23,10 @@ target_sources(
     utility/GoLiveAPI_Network.hpp
     utility/GoLiveAPI_PostData.cpp
     utility/GoLiveAPI_PostData.hpp
+    utility/LoopCapture.cpp
+    utility/LoopCapture.hpp
+    utility/LoopRecorder.cpp
+    utility/LoopRecorder.hpp
     utility/MissingFilesModel.cpp
     utility/MissingFilesModel.hpp
     utility/MissingFilesPathItemDelegate.cpp
@@ -57,6 +65,12 @@ target_sources(
     utility/SettingsEventFilter.hpp
     utility/SimpleOutput.cpp
     utility/SimpleOutput.hpp
+    utility/SpectraDefaults.cpp
+    utility/SpectraDefaults.hpp
+    utility/SpectraSplash.cpp
+    utility/SpectraSplash.hpp
+    utility/SpectraUpdateCheck.cpp
+    utility/SpectraUpdateCheck.hpp
     utility/StartMultiTrackVideoStreamingGuard.hpp
     utility/SurfaceEventFilter.hpp
     utility/ThumbnailItem.cpp

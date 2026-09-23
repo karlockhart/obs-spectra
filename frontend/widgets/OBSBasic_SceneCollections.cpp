@@ -20,6 +20,7 @@
 #include <dialogs/OBSMissingFiles.hpp>
 #include <importer/OBSImporter.hpp>
 #include <models/SceneCollection.hpp>
+#include <utility/SpectraDefaults.hpp>
 #include <utility/item-widget-helpers.hpp>
 
 #include <qt-wrappers.hpp>
@@ -1043,6 +1044,7 @@ void OBSBasic::CreateDefaultScene(bool firstStart)
 
 	if (firstStart) {
 		CreateFirstRunSources();
+		SpectraDefaults::EnsureTeamSpeakAudio(scene);
 	}
 
 	SetCurrentScene(scene, true);

@@ -43,4 +43,8 @@ target_sources(
     dialogs/OBSRemux.hpp
     dialogs/OBSWhatsNew.cpp
     dialogs/OBSWhatsNew.hpp
+    dialogs/SpectraClipMaker.cpp
+    dialogs/SpectraClipMaker.hpp
+    dialogs/SpectraLoopSettings.cpp
+    dialogs/SpectraLoopSettings.hpp
 )

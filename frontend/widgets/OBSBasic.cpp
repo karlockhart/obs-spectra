@@ -18,6 +18,9 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+
+#include <utility/SpectraDefaults.hpp>
+#include <utility/SpectraSplash.hpp>
 #include "ui-config.h"
 
 #include "ColorSelect.hpp"
@@ -310,6 +313,8 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 
 	connect(controls, &OBSBasicControls::ReplayBufferButtonClicked, this, &OBSBasic::ReplayBufferActionTriggered);
 	connect(controls, &OBSBasicControls::SaveReplayBufferButtonClicked, this, &OBSBasic::ReplayBufferSave);
+	connect(controls, &OBSBasicControls::LoopRecordButtonClicked, this, &OBSBasic::LoopArmActionTriggered);
+	connect(controls, &OBSBasicControls::LoopClipButtonClicked, this, &OBSBasic::LoopClipActionTriggered);
 
 	connect(controls, &OBSBasicControls::VirtualCamButtonClicked, this, &OBSBasic::VirtualCamActionTriggered);
 	connect(controls, &OBSBasicControls::VirtualCamConfigButtonClicked, this, &OBSBasic::OpenVirtualCamConfig);
@@ -596,8 +601,6 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 	UpdatePreviewOverflowSettings();
 }
 
-static const double scaled_vals[] = {1.0, 1.25, (1.0 / 0.75), 1.5, (1.0 / 0.6), 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.0};
-
 #ifdef __APPLE__ // macOS
 #define DEFAULT_CONTAINER "hybrid_mov"
 #else // Windows/Linux
@@ -754,11 +757,26 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "UseAdvanced", false);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "Preset", "veryfast");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "NVENCPreset2", "p5");
-	config_set_default_string(activeConfiguration, "SimpleOutput", "RecQuality", "Stream");
+	/* Spectra default: recordings in good quality */
+	config_set_default_string(activeConfiguration, "SimpleOutput", "RecQuality", "Small");
 	config_set_default_bool(activeConfiguration, "SimpleOutput", "RecRB", false);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "SimpleOutput", "RecRBSize", 512);
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecRBPrefix", "Replay");
+
+	config_set_default_uint(activeConfiguration, "SpectraLoop", "QuotaGB", 100);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "SegmentSec", 600);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "ClipSec", 120);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStart", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoStop", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "AutoCapture", true);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCX", SpectraDefaults::DefaultCanvasCX);
+	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCY", SpectraDefaults::DefaultCanvasCY);
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Quality", SpectraDefaults::DefaultQuality);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "FitToCanvas", true);
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
+	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
+	config_set_default_string(activeConfiguration, "SpectraLoop", "ClipsPath", "");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "RecAudioEncoder", "aac");
 	config_set_default_uint(activeConfiguration, "SimpleOutput", "RecTracks", (1 << 0));
@@ -802,6 +820,10 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_uint(activeConfiguration, "AdvOut", "RecRBTime", 20);
 	config_set_default_int(activeConfiguration, "AdvOut", "RecRBSize", 512);
 
+	/* Spectra default: record at 1920x1080 regardless of the monitor */
+	cx = SpectraDefaults::DefaultCanvasCX;
+	cy = SpectraDefaults::DefaultCanvasCY;
+
 	config_set_default_uint(activeConfiguration, "Video", "BaseCX", cx);
 	config_set_default_uint(activeConfiguration, "Video", "BaseCY", cy);
 
@@ -828,17 +850,9 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "Output", "NewSocketLoopEnable", false);
 	config_set_default_bool(activeConfiguration, "Output", "LowLatencyEnable", false);
 
-	int i = 0;
+	/* Spectra records at the full canvas resolution (no default downscale) */
 	uint32_t scale_cx = cx;
 	uint32_t scale_cy = cy;
-
-	/* use a default scaled resolution that has a pixel count no higher
-	 * than 1280x720 */
-	while (((scale_cx * scale_cy) > (1280 * 720)) && scaled_vals[i] > 0.0) {
-		double scale = scaled_vals[i++];
-		scale_cx = uint32_t(double(cx) / scale);
-		scale_cy = uint32_t(double(cy) / scale);
-	}
 
 	config_set_default_uint(activeConfiguration, "Video", "OutputCX", scale_cx);
 	config_set_default_uint(activeConfiguration, "Video", "OutputCY", scale_cy);
@@ -880,13 +894,11 @@ bool OBSBasic::InitBasicConfigDefaults()
 
 void OBSBasic::InitBasicConfigDefaults2()
 {
-	bool oldEncDefaults = config_get_bool(App()->GetUserConfig(), "General", "Pre23Defaults");
-	bool useNV = EncoderAvailable("ffmpeg_nvenc") && !oldEncDefaults;
-
-	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamEncoder",
-				  useNV ? SIMPLE_ENCODER_NVENC : SIMPLE_ENCODER_X264);
-	config_set_default_string(activeConfiguration, "SimpleOutput", "RecEncoder",
-				  useNV ? SIMPLE_ENCODER_NVENC : SIMPLE_ENCODER_X264);
+	/* Spectra always prefers a hardware encoder so recording doesn't cost
+	 * CPU time while gaming */
+	const char *encoder = SpectraDefaults::PreferredSimpleEncoder();
+	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamEncoder", encoder);
+	config_set_default_string(activeConfiguration, "SimpleOutput", "RecEncoder", encoder);
 
 	const char *aac_default = "ffmpeg_aac";
 	if (EncoderAvailable("CoreAudio_AAC")) {
@@ -1053,6 +1065,7 @@ void OBSBasic::OBSInit()
      */
 	RefreshSceneCollections(true);
 
+	SpectraSplash::Message(QTStr("Spectra.Splash.Plugins"));
 	App()->loadAppModules(mfi);
 
 	BPtr<char *> failed_modules = mfi.failed_modules;
@@ -1116,6 +1129,7 @@ void OBSBasic::OBSInit()
 	}
 	UpdateEditMenu();
 
+	SpectraSplash::Message(QTStr("Spectra.Splash.Scenes"));
 	{
 		ProfileScope("OBSBasic::Load");
 		const std::string sceneCollectionName{
@@ -1277,6 +1291,8 @@ void OBSBasic::OBSInit()
 
 	SystemTray(true);
 
+	InitSpectra();
+
 	TaskbarOverlayInit();
 
 #ifdef __APPLE__
@@ -1348,12 +1364,15 @@ void OBSBasic::OBSInit()
 	ui->actionShowMacPermissions = nullptr;
 #endif
 
+#if defined(_WIN32)
+	/* "Repair" reinstalls OBS Studio's files through its updater */
+	delete ui->actionRepair;
+	ui->actionRepair = nullptr;
+#endif
+
 #if defined(_WIN32) || defined(__APPLE__)
 	if (App()->IsUpdaterDisabled()) {
 		ui->actionCheckForUpdates->setEnabled(false);
-#if defined(_WIN32)
-		ui->actionRepair->setEnabled(false);
-#endif
 	}
 #endif
 
@@ -1462,6 +1481,9 @@ void OBSBasic::applicationShutdown() noexcept
 	ClearHotkeys();
 
 	service = nullptr;
+	if (outputHandler) {
+		outputHandler->StopLoopRecording(true);
+	}
 	outputHandler.reset();
 
 	delete interaction;
@@ -1943,7 +1965,8 @@ bool OBSBasic::isReadyToClose()
 bool OBSBasic::shouldPromptForClose()
 {
 	bool confirmOnExit = config_get_bool(App()->GetUserConfig(), "General", "ConfirmOnExit");
-	if (confirmOnExit && outputHandler && outputHandler->Active() && !clearingFailed) {
+	/* Background loop recording alone does not warrant a prompt */
+	if (confirmOnExit && outputHandler && outputHandler->ActiveExceptLoop() && !clearingFailed) {
 		return true;
 	}
 
@@ -2126,7 +2149,7 @@ void OBSBasic::UpdateTitleBar()
 	const char *profile = config_get_string(App()->GetUserConfig(), "Basic", "Profile");
 	const char *sceneCollection = config_get_string(App()->GetUserConfig(), "Basic", "SceneCollection");
 
-	name << "OBS ";
+	name << "OBS-Spectra ";
 	if (previewProgramMode) {
 		name << "Studio ";
 	}

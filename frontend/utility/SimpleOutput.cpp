@@ -258,6 +258,8 @@ SimpleOutput::SimpleOutput(OBSBasic *main_) : BasicOutputHandler(main_)
 			throw "Failed to create recording output "
 			      "(simple output)";
 		}
+
+		CreateLoopOutput();
 	}
 
 	startRecording.Connect(obs_output_get_signal_handler(fileOutput), "start", OBSStartRecording, this);
@@ -788,7 +790,7 @@ void SimpleOutput::UpdateRecording()
 	int idx2 = 0;
 	const char *quality = config_get_string(main->Config(), "SimpleOutput", "RecQuality");
 
-	if (replayBufferActive || recordingActive) {
+	if (replayBufferActive || recordingActive || loopActive) {
 		return;
 	}
 
@@ -824,6 +826,19 @@ void SimpleOutput::UpdateRecording()
 			for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
 				if ((tracks & (1 << i)) != 0) {
 					obs_output_set_audio_encoder(replayBuffer, audioTrack[i], idx2++);
+				}
+			}
+		}
+	}
+	if (loopOutput) {
+		int idx3 = 0;
+		obs_output_set_video_encoder(loopOutput, videoRecording);
+		if (flv || strcmp(quality, "Stream") == 0) {
+			obs_output_set_audio_encoder(loopOutput, audioRecording, 0);
+		} else {
+			for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
+				if ((tracks & (1 << i)) != 0) {
+					obs_output_set_audio_encoder(loopOutput, audioTrack[i], idx3++);
 				}
 			}
 		}
@@ -929,6 +944,16 @@ bool SimpleOutput::StartReplayBuffer()
 	}
 
 	return true;
+}
+
+bool SimpleOutput::StartLoopRecording(const char *directory, int segmentSeconds)
+{
+	if (!loopOutput) {
+		return false;
+	}
+
+	UpdateRecording();
+	return StartLoopOutput(directory, segmentSeconds);
 }
 
 void SimpleOutput::StopStreaming(bool force)

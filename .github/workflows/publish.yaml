@@ -1,12 +1,8 @@
 name: Publish
 run-name: Publish Repository Actions 🛫
+# Disabled for Spectra CI: runs only when started by hand.
 on:
-  release:
-    types:
-      - published
-    branches:
-      - master
-      - 'release/**'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

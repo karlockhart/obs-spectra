@@ -1,0 +1,67 @@
+[
+ {
+  "a": "docks",
+  "b": "dock5",
+  "ratio": 0.8
+ },
+ {
+  "a": "hello there",
+  "b": "hello thera",
+  "ratio": 0.9090909090909091
+ },
+ {
+  "a": "abc",
+  "b": "",
+  "ratio": 0.0
+ },
+ {
+  "a": "",
+  "b": "",
+  "ratio": 1.0
+ },
+ {
+  "a": "16 38 bob hello there",
+  "b": "16 38 bob hello the re",
+  "ratio": 0.9767441860465116
+ },
+ {
+  "a": "admin chat",
+  "b": "admin chot",
+  "ratio": 0.9
+ },
+ {
+  "a": "support chat",
+  "b": "report / question",
+  "ratio": 0.41379310344827586
+ },
+ {
+  "a": "café crème",
+  "b": "cafe creme",
+  "ratio": 0.8
+ },
+ {
+  "a": "fcgab bfa dabggbdb gabdagada cegc be cbdfb badh gf",
+  "b": "fcgabdbfa dabggedb gabdhgada cegc be hbdfb bcdh gf",
+  "ratio": 0.9
+ },
+ {
+  "a": "e hfhebb gcfchgab fffhhbbehbaehegfahfcbhadecdgghbchg ecg egfgdcbccddahceeacg ffc ah ggggbhgadbdhcbfabac bfabdgceffhbbhhhhebcbfehc ad fc a ebe fcfd   fdddgdd hfaaehedfhffbdbdhdfdhahfbbgdhcgfbghgbcccac",
+  "b": "e hfhcbb gcfchgcb fffhhbbehbaeheg ahfcbfadecdgghbchg edg egfg cbacfdahceeadg ffc ah ggggbhgadbdhcbfabac bfa dgccffhbbfhhhebcbfehc ad fb a eb  fcfd   fdddgddchfaaehedfhhhbdbdhdfdhahfbbgdacgfbghgbcccac",
+  "ratio": 0.9095477386934674
+ },
+ {
+  "a": " c  ahcaccchb af   hb addeab h abhf  deh  h d e dhcgbghfbdgbdebcfcechdbghcdcg gfgdffbfaf hhagf e bbdbbeeacecgegc  hfbeacgbeabebdbebhaf geca dbceacdee deh cefaeaaa  d hdhbgh g eddfdcgfacabegcabg edeahc",
+  "b": "cc  ahcaccchb af   hbdeadeab h abhf  deh  h d e dhcgbghfbdgbdefdfceccdbghcdca gagdffbfaf hhdge e fbdabceacecgegc  hfbeacgbeabebdeebhaf geca fbceacdee deh cefaeaae  d hdhbgh g eddfdcgfacabegcabg edea c",
+  "ratio": 0.0
+ },
+ {
+  "a": " cgfhceca g c  adbaacfbgh aa dheahb  b bhebedddhhgbheadbcfeecahahebdhe ehhhb debhaehb hegddbbc efc ebfdhhgacahhgecgfgfbfaffgbdaeefbggbfgeaebaecdeg fdfgag  dbaghceha cchgfeeeegdeh gbccbd h dhfhgc ddbcf bfdfedaggg dgefahefc  dbedgghgeacaghhabg hhdbdcc bhb aacdaece gbbbe dgedaa ehefdh d dageaadhgbedgfdhafgfgdae bdhdeddhdeebhcdhgacgadacgaacghfbbcfdc ha",
+  "b": " egfcceca g b  adgaagfbgh aa dhedhb  b baebegddhhgbheadccfeecahahebdhe ehhhb debhaehb hegddbbc efc ebfdhhgacahhgecgfgfbfaffgbdgegfbagbageaebafcdeg fdfgag  dbafhceha dchgfeeeegdeh gbccbdfh dhdggcdddbcf bfdfedaggg dgefahefc  dbefg hgeacaghhhbg fhdbdcc bhg cacdaece gbbbe dgedaa ehefdh d dabeaadhgbedgfdhafgfgdae bdhdeddhdeebhadhgacgadacgaacghebbcfdc ha",
+  "ratio": 0.002857142857142857
+ },
+ {
+  "a": "ecdffhfb dgcdgbah  fcgbbebdbghhcdcghd beeeefeedhdcddcedfbged  dbhabahdhfaedbaddbf cheabfdaffcadeadafgfcebdah hbgbg c bcgegeegaefggafdggdagcgbbgfhccaa cgbf ccfec cbbghdecahfagbcdgdhcdag cgfbcdda afbgh egedggfh hcaahhdhhchgbbcfgfbh  aacbf ba gcabbdchecdbfecfehce hde dffadcgcefgceb afh  be gfegfcffbhdcae eefaadcegg fachdaaaafeb f dgecdfhccadchbbcegeaa fh hdcaaa agcdcaba dcgd  gc ebeah agghbhcdbedabfeae g eedb aceddcfdgfdg hh aagdedgbccaabbcfcaaacababfd bgbdddbaabehbcbdeffgeafeeaff heagag bfha dbecga deaafhbhchf eceddhcbbh bffbggbgafdeeg  cgdhc aff ch fchhedcfhd deeccdf fcdfdebcbdgcceegedbbedghaag",
+  "b": "echffgfb dfcdaba   fcghbebdbghhcdcghd bbeeefeedhdcddcedfbfed  dbhabahdhfaedbaddbf cheabfdaffcadeadafefcfbdah hbebg c bcgegeeg ef gafcggdagcgbbgfhccaadcgbf ccfecgcbbdhdecahfagbcdgdhcdag dg bcgda afbbh egedggfh hcaahhhhhchgbbcfgfgh  aacgf ba gcabbdchgcdbfecfehcg hdc dffadcgcdfgceb efh  be gfegfcffbhdcah  efaadddgg fachdagaafeb f dgecdfhccadchbbcegeaa fh hdcaaagaghdceba dbgd  gc ebeah agghbhcdbedabfead g eedbgaceddcfdgafg fh aabdedgeccaahbdfcaaacababfd bgbdddbaabbhhcbdeffgeafeeaff heagdg bfha dbecgagdeaafhbhchf eceddhcbbh bffbggdgafdeegg cgdhc aff ch hcehedcfhd deeccdf fchfdebcbdgcceegedbbedghaag",
+  "ratio": 0.0033333333333333335
+ }
+]
