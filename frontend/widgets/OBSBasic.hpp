@@ -1074,6 +1074,8 @@ public:
 	void StopLoopRecording();
 	bool LoopRecordingActive() const;
 	bool SplitLoopRecording();
+	/* Opens the Clip Maker on a moment of the loop recording (see SpectraClipMaker::ShowMoment) */
+	void OpenClipMakerAt(const QString &segment, double offset, double before, double after);
 	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
 	SpectraGamepadPTT *GetGamepadPTT() const { return gamepadPTT; }
 	SpectraOverlay *GetSpectraOverlay() const { return spectraOverlay; }

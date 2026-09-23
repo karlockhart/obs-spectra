@@ -959,7 +959,85 @@ void SpectraClipMaker::ScanFinished(int generation, const std::vector<ScannedFil
 
 	if (rescanQueued) {
 		Rescan();
+	} else if (pendingMoment) {
+		PlaceMoment();
 	}
+}
+
+void SpectraClipMaker::ShowMoment(const QString &segment, double offset, double before, double after)
+{
+	const QString path = QDir::cleanPath(segment);
+	const QString dir = QDir::cleanPath(QFileInfo(path).absolutePath());
+	if (mode != Mode::Loop || dir.compare(folder, Qt::CaseInsensitive) != 0) {
+		if (!layers.empty() || inPoint >= 0.0) {
+			QMessageBox::StandardButton answer = OBSMessageBox::question(
+				this, QTStr("Spectra.ClipMaker.Title"), QTStr("Spectra.ClipMaker.DiscardEdits"));
+			if (answer != QMessageBox::Yes) {
+				return;
+			}
+			layers.clear();
+			inPoint = outPoint = -1.0;
+		}
+		if (mode != Mode::Loop) {
+			QSignalBlocker block(modeCombo);
+			modeCombo->setCurrentIndex(modeCombo->findData((int)Mode::Loop));
+			SetMode(Mode::Loop);
+		}
+		if (dir.compare(folder, Qt::CaseInsensitive) != 0) {
+			folder = dir;
+			ResetEditing();
+		}
+	}
+
+	pendingMoment = Moment{path, offset, before, after};
+	/* Placed when the scan finishes, so a segment finalized just now is in it */
+	Rescan();
+}
+
+void SpectraClipMaker::PlaceMoment()
+{
+	Moment &m = *pendingMoment;
+	const QString current = recorder ? QDir::cleanPath(recorder->CurrentSegment()) : QString();
+	auto it = std::find_if(segments.begin(), segments.end(),
+			       [&](const Segment &s) { return s.path.compare(m.segment, Qt::CaseInsensitive) == 0; });
+
+	if (it == segments.end()) {
+		if (!current.isEmpty() && current.compare(m.segment, Qt::CaseInsensitive) == 0) {
+			/* Still being written: finish it now, or wait for it to end */
+			if (!m.splitRequested) {
+				m.splitRequested = true;
+				main->SplitLoopRecording();
+			}
+			scanLabel->setText(QTStr("Spectra.ClipMaker.MomentWaiting"));
+			return;
+		}
+		pendingMoment.reset();
+		OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"), QTStr("Spectra.ClipMaker.MomentGone"));
+		return;
+	}
+
+	const double t = it->start + std::clamp(m.offset, 0.0, it->duration);
+	if (t + m.after > Duration() && !current.isEmpty() && !m.splitRequested) {
+		/* The Out point is in the segment being written */
+		m.splitRequested = true;
+		if (main->SplitLoopRecording()) {
+			scanLabel->setText(QTStr("Spectra.ClipMaker.MomentWaiting"));
+			return;
+		}
+	}
+
+	const double before = m.before, after = m.after;
+	pendingMoment.reset();
+	SetPlaying(false);
+	inPoint = std::max(0.0, t - before);
+	outPoint = std::min(Duration(), t + after);
+	InOutChanged();
+	Seek(inPoint);
+	if (outPoint > inPoint) {
+		timeline->SetZoom(timeline->width() / ((outPoint - inPoint) * 3.0), t);
+	}
+	timeline->EnsureVisible(outPoint);
+	timeline->EnsureVisible(inPoint);
 }
 
 void SpectraClipMaker::UpdateLibrary()

@@ -71,7 +71,7 @@ private:
 	spectra::censor::ImageView *image;
 	QPushButton *drawButton, *previewButton, *saveButton, *uploadButton, *saveAsButton;
 	QLabel *videoLabel;
-	QPushButton *playButton, *showVideoButton, *copyVideoButton;
+	QPushButton *playButton, *editClipButton, *showVideoButton, *copyVideoButton;
 	QLabel *status;
 
 	/* Screenshots tab */
@@ -124,6 +124,7 @@ private:
 	void Learn();
 
 	void PlayVideo();
+	void EditClip();
 	void ShowVideoFile();
 	void CopyVideo();
 

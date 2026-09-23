@@ -24,6 +24,27 @@ static QString FormatClipLength(int seconds)
 	return QTStr("Spectra.Loop.Minutes").arg(seconds / 60);
 }
 
+/* void spectra_edit_moment(in string path, in float offset, in float before, in float after):
+ * plugins (Lucida) open a moment of the loop recording in the Clip Maker */
+static QPointer<OBSBasic> editMomentTarget;
+
+static void ProcEditMoment(void *, calldata_t *cd)
+{
+	const char *path = calldata_string(cd, "path");
+	if (!path || !*path) {
+		return;
+	}
+	const QString segment = QString::fromUtf8(path);
+	const double offset = calldata_float(cd, "offset");
+	const double before = calldata_float(cd, "before");
+	const double after = calldata_float(cd, "after");
+	QMetaObject::invokeMethod(qApp, [segment, offset, before, after]() {
+		if (OBSBasic *main = editMomentTarget.data()) {
+			main->OpenClipMakerAt(segment, offset, before, after);
+		}
+	});
+}
+
 void OBSBasic::InitSpectra()
 {
 	/* Existing profiles on x264 move to the hardware encoder at startup */
@@ -34,6 +55,14 @@ void OBSBasic::InitSpectra()
 	loopRecorder = new LoopRecorder(this);
 	gamepadPTT = new SpectraGamepadPTT(this);
 	spectraOverlay = new SpectraOverlay();
+
+	if (!editMomentTarget) {
+		proc_handler_add(
+			obs_get_proc_handler(),
+			"void spectra_edit_moment(in string path, in float offset, in float before, in float after)",
+			ProcEditMoment, nullptr);
+	}
+	editMomentTarget = this;
 
 	spectraMenu = new QMenu(QTStr("Spectra.Menu"), this);
 	menuBar()->insertMenu(ui->menuTools->menuAction(), spectraMenu);
@@ -239,6 +268,12 @@ void OBSBasic::OpenClipMaker()
 	clipMaker->show();
 	clipMaker->raise();
 	clipMaker->activateWindow();
+}
+
+void OBSBasic::OpenClipMakerAt(const QString &segment, double offset, double before, double after)
+{
+	OpenClipMaker();
+	clipMaker->ShowMoment(segment, offset, before, after);
 }
 
 void OBSBasic::OpenLoopSettings()

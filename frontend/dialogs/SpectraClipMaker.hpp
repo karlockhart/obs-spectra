@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <vector>
 
@@ -43,6 +44,11 @@ class SpectraClipMaker : public QDialog {
 public:
 	SpectraClipMaker(OBSBasic *main, LoopRecorder *recorder);
 	~SpectraClipMaker();
+
+	/* Opens the loop recording at `offset` seconds into the segment file
+	 * `segment`, with In and Out `before` / `after` seconds either side.
+	 * Waits for the segment being recorded to be finalized if needed. */
+	void ShowMoment(const QString &segment, double offset, double before, double after);
 
 protected:
 	void closeEvent(QCloseEvent *event) override;
@@ -118,6 +124,16 @@ private:
 	QDoubleSpinBox *endEdit;
 	QSpinBox *xEdit, *yEdit, *wEdit, *hEdit;
 
+	/* A moment asked for with ShowMoment, placed once its segment is scanned */
+	struct Moment {
+		QString segment;
+		double offset = 0.0;
+		double before = 0.0;
+		double after = 0.0;
+		bool splitRequested = false;
+	};
+	std::optional<Moment> pendingMoment;
+
 	/* Data */
 	Mode mode = Mode::Loop;
 	QString folder;
@@ -180,6 +196,8 @@ private:
 	void ScanFinished(int generation, const std::vector<ScannedFile> &files);
 	void UpdateLibrary();
 	void UpdateStatus();
+	/* Sets In/Out around the pending moment once its segment is scanned */
+	void PlaceMoment();
 
 	/* Playback */
 	static void DrawPreview(void *data, uint32_t cx, uint32_t cy);
