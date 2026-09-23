@@ -23,6 +23,7 @@ public:
 		int minor = 0;
 		int patch = 0;
 		int spectra = 0;
+		int rc = 0; /* 32.2.1-spectra.1-rc.2: a release candidate, older than the final */
 
 		bool valid() const { return major || minor || patch; }
 		QString Base() const;

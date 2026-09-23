@@ -1,5 +1,7 @@
 #include "SpectraUpdateCheck.hpp"
 
+#include <climits>
+
 #include <OBSApp.hpp>
 #include <utility/RemoteTextThread.hpp>
 
@@ -31,7 +33,11 @@ QString SpectraUpdateCheck::Version::Base() const
 
 bool SpectraUpdateCheck::Version::operator<(const Version &other) const
 {
-	return std::tie(major, minor, patch, spectra) < std::tie(other.major, other.minor, other.patch, other.spectra);
+	/* a final release (rc 0) sorts after its release candidates */
+	const int rank = rc ? rc : INT_MAX;
+	const int otherRank = other.rc ? other.rc : INT_MAX;
+	return std::tie(major, minor, patch, spectra, rank) <
+	       std::tie(other.major, other.minor, other.patch, other.spectra, otherRank);
 }
 
 SpectraUpdateCheck::Version SpectraUpdateCheck::Parse(const QString &version)
@@ -46,6 +52,10 @@ SpectraUpdateCheck::Version SpectraUpdateCheck::Parse(const QString &version)
 	QRegularExpressionMatch spectra = QRegularExpression("-spectra\\.(\\d+)").match(version);
 	if (spectra.hasMatch()) {
 		v.spectra = spectra.captured(1).toInt();
+	}
+	QRegularExpressionMatch rc = QRegularExpression("-rc\\.?(\\d+)").match(version);
+	if (rc.hasMatch()) {
+		v.rc = rc.captured(1).toInt();
 	}
 	return v;
 }
