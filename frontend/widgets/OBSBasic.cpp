@@ -601,8 +601,6 @@ OBSBasic::OBSBasic(QWidget *parent) : OBSMainWindow(parent), undo_s(ui), ui(new 
 	UpdatePreviewOverflowSettings();
 }
 
-static const double scaled_vals[] = {1.0, 1.25, (1.0 / 0.75), 1.5, (1.0 / 0.6), 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 0.0};
-
 #ifdef __APPLE__ // macOS
 #define DEFAULT_CONTAINER "hybrid_mov"
 #else // Windows/Linux
@@ -852,12 +850,9 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "Output", "NewSocketLoopEnable", false);
 	config_set_default_bool(activeConfiguration, "Output", "LowLatencyEnable", false);
 
-	int i = 0;
+	/* Spectra records at the full canvas resolution (no default downscale) */
 	uint32_t scale_cx = cx;
 	uint32_t scale_cy = cy;
-
-	/* Spectra records at the full canvas resolution (no default downscale) */
-	UNUSED_PARAMETER(i);
 
 	config_set_default_uint(activeConfiguration, "Video", "OutputCX", scale_cx);
 	config_set_default_uint(activeConfiguration, "Video", "OutputCY", scale_cy);
