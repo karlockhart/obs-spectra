@@ -6,14 +6,16 @@
 
 include_guard(GLOBAL)
 
-set(SPECTRA_DEPS_DIR "${CMAKE_SOURCE_DIR}/.deps/spectra")
-
 # spectra_fetch(<name> URL <url> SHA256 <hash> [EXTRACT])
 #   Downloads <url> into .deps/spectra/<file>. With EXTRACT, the archive is
 #   unpacked into .deps/spectra/<name>. Sets SPECTRA_<NAME>_PATH to the file
 #   (or the extracted directory).
 function(spectra_fetch name)
   cmake_parse_arguments(PARSE_ARGV 1 _SF "EXTRACT" "URL;SHA256" "")
+
+  # Worked out here rather than at include time: include_guard(GLOBAL) means
+  # only the first directory to include this file would see a variable set there.
+  set(SPECTRA_DEPS_DIR "${CMAKE_SOURCE_DIR}/.deps/spectra")
 
   cmake_path(GET _SF_URL FILENAME file_name)
   set(file_path "${SPECTRA_DEPS_DIR}/${file_name}")
