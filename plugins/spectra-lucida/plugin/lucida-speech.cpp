@@ -149,6 +149,12 @@ void SpeechController::Run()
 	std::unique_ptr<Model> model;
 	QString loadedModel;
 	bool loadedGpu = true;
+	QDateTime retryDownloadAt;
+
+	auto stopping = [this]() {
+		std::lock_guard<std::mutex> lock(mutex);
+		return stopRequested;
+	};
 
 	for (;;) {
 		Config c;
@@ -163,6 +169,47 @@ void SpeechController::Run()
 			configChanged = false;
 			dir = loopDir;
 			recording = loopActive;
+		}
+
+		/* Fetch the model and the voice activity model if they're missing,
+		 * transcription on or not: the Clip Maker's captions use them too */
+		if (c.speech.autoDownload && !ModelDirectory().isEmpty() &&
+		    (!retryDownloadAt.isValid() || QDateTime::currentDateTime() >= retryDownloadAt)) {
+			const ModelInfo *wanted = FindWhisperModel(c.speech.model);
+			if (!wanted) {
+				wanted = FindWhisperModel(DefaultWhisperModel());
+			}
+			for (const ModelInfo *m : {&VadModel(), wanted}) {
+				if (!m || ModelInstalled(*m)) {
+					continue;
+				}
+				blog(LOG_INFO, "[Lucida] Downloading the speech model %s",
+				     m->file.toUtf8().constData());
+				QString error;
+				const bool ok = DownloadModel(
+					*m,
+					[&](qint64 received, qint64 total) {
+						SetStatus(Text("Lucida.Speech.Status.Downloading")
+								  .arg(m->title)
+								  .arg(total > 0 ? (int)(received * 100 / total) : 0));
+						return !stopping();
+					},
+					&error);
+				if (stopping()) {
+					break;
+				}
+				if (!ok) {
+					blog(LOG_WARNING, "[Lucida] Could not download %s: %s",
+					     m->file.toUtf8().constData(), error.toUtf8().constData());
+					SetStatus(Text("Lucida.Speech.Status.DownloadFailed").arg(error));
+					retryDownloadAt = QDateTime::currentDateTime().addSecs(600);
+					break;
+				}
+				blog(LOG_INFO, "[Lucida] Downloaded %s", m->file.toUtf8().constData());
+			}
+			if (stopping()) {
+				break;
+			}
 		}
 
 		if (!c.speech.enabled) {

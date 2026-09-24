@@ -250,6 +250,8 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	const SpeechSettings &sp = s.speech;
 
 	speechEnabled = Check("Lucida.Settings.Speech.Enabled", sp.enabled);
+	speechAutoDownload = Check("Lucida.Settings.Speech.AutoDownload", sp.autoDownload);
+	speechAutoDownload->setToolTip(T("Lucida.Settings.Speech.AutoDownload.Tip"));
 
 	speechModel = new QComboBox();
 	for (const ModelInfo &model : WhisperModels()) {
@@ -332,6 +334,7 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	form->addRow(T("Lucida.Settings.Speech.Model"), modelRow);
 	form->addRow(QString(), speechModelState);
 	form->addRow(QString(), speechProgress);
+	form->addRow(speechAutoDownload);
 	form->addRow(T("Lucida.Settings.Speech.Language"), speechLanguage);
 	form->addRow(T("Lucida.Settings.Speech.When"), speechWhen);
 	form->addRow(speechGpu);
@@ -605,6 +608,7 @@ Settings SettingsDialog::Collect() const
 	SpeechSettings &sp = s.speech;
 	const bool wasEnabled = sp.enabled;
 	sp.enabled = speechEnabled->isChecked();
+	sp.autoDownload = speechAutoDownload->isChecked();
 	sp.model = speechModel->currentData().toString();
 	sp.language = speechLanguage->currentData().toString();
 	sp.when = (SpeechSettings::When)speechWhen->currentData().toInt();

@@ -88,6 +88,7 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "TolerateTypos", d.tolerateTypos);
 	const SpeechSettings &sp = d.speech;
 	config_set_default_bool(c, SECTION, "SpeechEnabled", sp.enabled);
+	config_set_default_bool(c, SECTION, "SpeechAutoDownload", sp.autoDownload);
 	config_set_default_string(c, SECTION, "SpeechModel",
 				  spectra::speech::DefaultWhisperModel().toUtf8().constData());
 	config_set_default_string(c, SECTION, "SpeechLanguage", sp.language.toUtf8().constData());
@@ -164,6 +165,7 @@ Settings Settings::Load()
 	s.tolerateTypos = config_get_bool(c, SECTION, "TolerateTypos");
 	SpeechSettings &sp = s.speech;
 	sp.enabled = config_get_bool(c, SECTION, "SpeechEnabled");
+	sp.autoDownload = config_get_bool(c, SECTION, "SpeechAutoDownload");
 	sp.model = ConfigString(c, SECTION, "SpeechModel");
 	sp.language = ConfigString(c, SECTION, "SpeechLanguage");
 	sp.when = config_get_int(c, SECTION, "SpeechWhen") == (int)SpeechSettings::When::AfterGame
@@ -211,6 +213,7 @@ void Settings::Save() const
 	config_set_string(c, SECTION, "TagRules", TagRulesToJson(tagRules).toUtf8().constData());
 	config_set_bool(c, SECTION, "TolerateTypos", tolerateTypos);
 	config_set_bool(c, SECTION, "SpeechEnabled", speech.enabled);
+	config_set_bool(c, SECTION, "SpeechAutoDownload", speech.autoDownload);
 	config_set_string(c, SECTION, "SpeechModel", speech.model.toUtf8().constData());
 	config_set_string(c, SECTION, "SpeechLanguage", speech.language.toUtf8().constData());
 	config_set_int(c, SECTION, "SpeechWhen", (int)speech.when);

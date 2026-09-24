@@ -56,7 +56,7 @@ private:
 	QLabel *tryResult;
 
 	/* Speech (Spectra) */
-	QCheckBox *speechEnabled, *speechGpu, *speechMe, *speechTeamSpeak, *speechGame;
+	QCheckBox *speechEnabled, *speechAutoDownload, *speechGpu, *speechMe, *speechTeamSpeak, *speechGame;
 	QComboBox *speechModel, *speechLanguage, *speechWhen;
 	QPushButton *speechDownload, *speechOlder;
 	QProgressBar *speechProgress;

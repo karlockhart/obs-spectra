@@ -21,6 +21,9 @@ struct SpeechSettings {
 	enum class When { AfterSegment = 0, AfterGame = 1 };
 
 	bool enabled = false;
+	/* Download the model when Spectra starts if it's missing (the Clip
+	 * Maker's captions use it too, so even when transcription is off) */
+	bool autoDownload = true;
 	QString model; /* spectra::speech::ModelInfo::id */
 	QString language = QStringLiteral("auto");
 	When when = When::AfterSegment; /* as each segment is finished, or once the game has closed */

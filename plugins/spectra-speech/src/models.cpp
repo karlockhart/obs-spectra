@@ -39,6 +39,9 @@ ModelInfo Whisper(const char *id, const char *title, qint64 size, const char *sh
 
 QMutex directoryMutex;
 QString directory;
+/* One download at a time: Lucida fetching at startup and the settings'
+ * Download button must not write the same file together */
+QMutex downloadMutex;
 
 } // namespace
 
@@ -129,6 +132,11 @@ bool DownloadModel(const ModelInfo &model, const DownloadProgress &progress, QSt
 		return false;
 	};
 
+	QMutexLocker downloading(&downloadMutex);
+	/* Another download may have fetched it while this one waited */
+	if (ModelInstalled(model)) {
+		return true;
+	}
 	const QString target = ModelPath(model);
 	if (target.isEmpty()) {
 		return fail(QStringLiteral("No folder for speech models"));
