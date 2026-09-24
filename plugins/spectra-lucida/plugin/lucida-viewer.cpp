@@ -50,7 +50,8 @@ namespace {
 constexpr int kLimit = 1000;
 constexpr int kGalleryLimit = 300;
 constexpr int kThumbWidth = 256;
-constexpr double kPlayLeadIn = 5.0; /* s of context before the line */
+constexpr double kPlayLeadIn = 5.0;   /* s of context before the line */
+constexpr double kClipPadding = 15.0; /* s either side of the line in the clip editor */
 constexpr int kRoleLine = Qt::UserRole;
 constexpr int kRoleFrame = Qt::UserRole + 1;
 
@@ -310,14 +311,18 @@ QWidget *Viewer::BuildLogTab()
 	videoLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 	playButton = new QPushButton(T("Lucida.Viewer.Play"));
 	playButton->setToolTip(T("Lucida.Viewer.Play.Tip"));
+	editClipButton = new QPushButton(T("Lucida.Viewer.EditClip"));
+	editClipButton->setToolTip(T("Lucida.Viewer.EditClip.Tip").arg(kClipPadding));
 	showVideoButton = new QPushButton(T("Lucida.Viewer.ShowVideo"));
 	copyVideoButton = new QPushButton(T("Lucida.Viewer.CopyVideo"));
 	connect(playButton, &QPushButton::clicked, this, &Viewer::PlayVideo);
+	connect(editClipButton, &QPushButton::clicked, this, &Viewer::EditClip);
 	connect(showVideoButton, &QPushButton::clicked, this, &Viewer::ShowVideoFile);
 	connect(copyVideoButton, &QPushButton::clicked, this, &Viewer::CopyVideo);
 	QHBoxLayout *videoRow = new QHBoxLayout();
 	videoRow->addWidget(videoLabel, 1);
 	videoRow->addWidget(playButton);
+	videoRow->addWidget(editClipButton);
 	videoRow->addWidget(showVideoButton);
 	videoRow->addWidget(copyVideoButton);
 
@@ -537,6 +542,7 @@ void Viewer::ShowVideo(const std::optional<LogLine> &line)
 		videoLabel->setText(line ? T("Lucida.Viewer.NoVideo") : QString());
 		videoLabel->setToolTip(QString());
 	}
+	editClipButton->setVisible(video && source.editClip);
 	for (QPushButton *b : {playButton, showVideoButton, copyVideoButton}) {
 		b->setEnabled(video.has_value());
 	}
@@ -877,6 +883,24 @@ void Viewer::PlayVideo()
 	/* no player that can seek: open it and say where to go */
 	QDesktopServices::openUrl(QUrl::fromLocalFile(video->path));
 	status->setText(T("Lucida.Viewer.PlayFrom").arg(FormatOffset(video->offset)));
+}
+
+void Viewer::EditClip()
+{
+	if (!video || !source.editClip) {
+		return;
+	}
+	if (!QFileInfo::exists(video->path)) {
+		/* deleted since the line was selected (disk quota) */
+		ShowVideo(std::nullopt);
+		status->setText(T("Lucida.Viewer.NoVideo"));
+		return;
+	}
+	if (source.editClip(*video, kClipPadding, kClipPadding)) {
+		status->setText(T("Lucida.Viewer.EditingClip").arg(FormatOffset(video->offset)));
+	} else {
+		status->setText(T("Lucida.Viewer.EditClipFailed"));
+	}
 }
 
 void Viewer::ShowVideoFile()

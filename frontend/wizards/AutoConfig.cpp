@@ -12,6 +12,7 @@
 #include <docks/YouTubeAppDock.hpp>
 #include <utility/YoutubeApiWrappers.hpp>
 #endif
+#include <utility/LoopRecorder.hpp>
 #include <widgets/OBSBasic.hpp>
 
 #include <qt-wrappers.hpp>
@@ -69,6 +70,10 @@ AutoConfig::AutoConfig(QWidget *parent) : QWizard(parent)
 
 	OBSBasic *main = OBSBasic::Get();
 	main->EnableOutputs(false);
+	/* The wizard picks the loop's folders: don't record anywhere before */
+	if (LoopRecorder *recorder = main->GetLoopRecorder()) {
+		recorder->HoldStart(true);
+	}
 
 	installEventFilter(CreateShortcutFilter());
 
@@ -207,6 +212,9 @@ AutoConfig::~AutoConfig()
 {
 	OBSBasic *main = OBSBasic::Get();
 	main->EnableOutputs(true);
+	if (LoopRecorder *recorder = main->GetLoopRecorder()) {
+		recorder->HoldStart(false);
+	}
 	EnableThreadedMessageBoxes(false);
 }
 
@@ -264,6 +272,9 @@ void AutoConfig::done(int result)
 	QWizard::done(result);
 
 	if (result == QDialog::Accepted) {
+		if (auto *spectraPage = qobject_cast<AutoConfigSpectraPage *>(page(SpectraPage))) {
+			spectraPage->Save();
+		}
 		if (type == Type::Streaming) {
 			SaveStreamSettings();
 		}

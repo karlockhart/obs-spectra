@@ -67,6 +67,8 @@ public:
 	void OpenSettings(QWidget *parent);
 	void UploadLast();
 	void UploadFile(const QString &path);
+	/* OBS took a screenshot (Spectra's screenshot hotkey) */
+	void OnObsScreenshot(const QString &path);
 	void SetPaused(bool paused);
 	bool Paused() const { return paused; }
 	void CheckUpdates(bool manual);
@@ -131,7 +133,8 @@ private:
 	void OnDirectoryChanged(const QString &dir);
 	void InstallDefinitions(const QString &url);
 
-	void Notify(const QString &message, bool error = false);
+	/* toasted: the message was already shown in Spectra's in-game overlay */
+	void Notify(const QString &message, bool error = false, bool toasted = false);
 };
 
 } // namespace obscura

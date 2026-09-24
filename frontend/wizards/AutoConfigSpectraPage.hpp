@@ -28,6 +28,8 @@ class AutoConfigSpectraPage : public QWizardPage {
 	QComboBox *quality;
 
 	void UpdatePreview();
+	/* The folders can't change while the loop records into them */
+	static bool FoldersLocked();
 
 public:
 	AutoConfigSpectraPage(QWidget *parent = nullptr);

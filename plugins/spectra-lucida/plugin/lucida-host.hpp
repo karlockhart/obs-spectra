@@ -22,6 +22,9 @@ QString ProfileString(const char *section, const char *name);
 struct ViewerSource {
 	std::function<Store *()> reader;
 	std::function<std::optional<VideoSpot>(const LogLine &line)> videoFor;
+	/* Opens `before` / `after` seconds either side of a spot in Spectra's
+	 * clip editor; unset where there is none (the standalone viewer) */
+	std::function<bool(const VideoSpot &spot, double before, double after)> editClip;
 };
 
 } // namespace lucida

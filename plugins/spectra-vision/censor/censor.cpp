@@ -7,7 +7,9 @@
 #include <QGraphicsPixmapItem>
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
+#include <QDateTime>
 #include <QJsonArray>
+#include <QRegularExpression>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMouseEvent>
@@ -319,7 +321,43 @@ ObscuraPrefs LoadObscuraPrefs()
 	prefs.imgbbExpiration = o.value("imgbb_expiration").toInt(prefs.imgbbExpiration);
 	prefs.imgbbCopyLink = o.value("imgbb_copy_link").toBool(prefs.imgbbCopyLink);
 	prefs.imgbbOpenLink = o.value("imgbb_open_link").toBool(prefs.imgbbOpenLink);
+	prefs.imgbbAlbum = o.value("imgbb_album").toString();
 	return prefs;
+}
+
+QString ImgbbAlbumId(const QString &albumOrUrl)
+{
+	QString s = albumOrUrl.trimmed();
+	const int album = s.indexOf(QLatin1String("/album/"));
+	if (album >= 0) {
+		s = s.mid(album + 7).section('/', 0, 0).section('?', 0, 0).section('#', 0, 0);
+	}
+	static const QRegularExpression id(QStringLiteral("^[A-Za-z0-9]+$"));
+	return id.match(s).hasMatch() ? s : QString();
+}
+
+QString ImgbbUploadLogPath()
+{
+	return QFileInfo(ObscuraConfigPath()).dir().filePath(QStringLiteral("imgbb-uploads.jsonl"));
+}
+
+[[maybe_unused]] static void LogUpload(const QString &path, const UploadResult &r, const QString &album)
+{
+	QFile log(ImgbbUploadLogPath());
+	QDir().mkpath(QFileInfo(log).path());
+	if (!log.open(QIODevice::Append | QIODevice::Text)) {
+		return;
+	}
+	QJsonObject o;
+	o["time"] = QDateTime::currentDateTime().toString(Qt::ISODate);
+	o["file"] = QDir::toNativeSeparators(path);
+	o["url"] = r.displayUrl.isEmpty() ? r.url : r.displayUrl;
+	o["image"] = r.url;
+	o["delete_url"] = r.deleteUrl;
+	if (!album.isEmpty()) {
+		o["album"] = album;
+	}
+	log.write(QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n');
 }
 
 /* ------------------------------------------------------------------------- */
@@ -474,6 +512,10 @@ UploadResult UploadToImgbb(const QString &path, int expiration, const QString &a
 	if (expiration > 0) {
 		form.addQueryItem("expiration", QString::number(expiration));
 	}
+	const QString album = ImgbbAlbumId(LoadObscuraPrefs().imgbbAlbum);
+	if (!album.isEmpty()) {
+		form.addQueryItem("album_id", album);
+	}
 	QByteArray body = form.query(QUrl::FullyEncoded).replace('+', "%2B").toUtf8();
 
 	HINTERNET session = WinHttpOpen(L"OBS-Spectra", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
@@ -535,6 +577,7 @@ UploadResult UploadToImgbb(const QString &path, int expiration, const QString &a
 	result.displayUrl = d.value("display_url").toString(result.url);
 	result.deleteUrl = d.value("delete_url").toString();
 	result.id = d.value("id").toString();
+	LogUpload(path, result, album);
 	return result;
 }
 #else

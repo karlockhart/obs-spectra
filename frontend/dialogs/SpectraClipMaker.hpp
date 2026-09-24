@@ -1,6 +1,7 @@
 #pragma once
 
 #include <utility/ClipRender.hpp>
+#include <utility/YouTubeUpload.hpp>
 
 #include <obs.hpp>
 
@@ -11,6 +12,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <vector>
 
@@ -43,6 +45,17 @@ class SpectraClipMaker : public QDialog {
 public:
 	SpectraClipMaker(OBSBasic *main, LoopRecorder *recorder);
 	~SpectraClipMaker();
+
+	/* Opens the loop recording at `offset` seconds into the segment file
+	 * `segment`, with In and Out `before` / `after` seconds either side.
+	 * Waits for the segment being recorded to be finalized if needed. */
+	void ShowMoment(const QString &segment, double offset, double before, double after);
+
+	/* The export quality choices, keyed "Original", "High", "Medium",
+	 * "Small" and "YouTube". QualityFromKey is false for Original, which
+	 * copies the video rather than re-encoding it. */
+	static void FillQualityCombo(QComboBox *combo);
+	static bool QualityFromKey(const QString &key, ClipRender::Quality &quality);
 
 protected:
 	void closeEvent(QCloseEvent *event) override;
@@ -103,8 +116,11 @@ private:
 	/* Timeline */
 	ClipTimeline *timeline;
 	QLabel *rangeLabel;
+	QSlider *zoomSlider;
+	QComboBox *qualityCombo;
 	QCheckBox *reencodeCheck;
 	QPushButton *exportButton;
+	QPushButton *uploadButton;
 
 	/* Layers */
 	QListWidget *layerList;
@@ -118,6 +134,16 @@ private:
 	QDoubleSpinBox *endEdit;
 	QSpinBox *xEdit, *yEdit, *wEdit, *hEdit;
 
+	/* A moment asked for with ShowMoment, placed once its segment is scanned */
+	struct Moment {
+		QString segment;
+		double offset = 0.0;
+		double before = 0.0;
+		double after = 0.0;
+		bool splitRequested = false;
+	};
+	std::optional<Moment> pendingMoment;
+
 	/* Data */
 	Mode mode = Mode::Loop;
 	QString folder;
@@ -130,6 +156,9 @@ private:
 	double inPoint = -1.0;
 	double outPoint = -1.0;
 	bool updatingUI = false;
+	bool updatingZoom = false;
+	/* Playback was on when scrubbing began and resumes after */
+	bool resumeAfterScrub = false;
 
 	/* Scanning */
 	int scanGeneration = 0;
@@ -164,6 +193,8 @@ private:
 	std::shared_ptr<ExportState> exportState;
 	QPointer<QProgressDialog> progressDialog;
 	QTimer progressTimer;
+	/* Set while an export is one that goes to YouTube afterwards */
+	std::optional<YouTubeUpload::Video> pendingUpload;
 
 	QWidget *BuildLibrary();
 	QWidget *BuildPreview();
@@ -180,6 +211,8 @@ private:
 	void ScanFinished(int generation, const std::vector<ScannedFile> &files);
 	void UpdateLibrary();
 	void UpdateStatus();
+	/* Sets In/Out around the pending moment once its segment is scanned */
+	void PlaceMoment();
 
 	/* Playback */
 	static void DrawPreview(void *data, uint32_t cx, uint32_t cy);
@@ -197,6 +230,7 @@ private:
 	void Step(double seconds);
 	void Poll();
 	void PlayheadChanged();
+	void UpdateZoomSlider();
 
 	/* In / Out */
 	void SetIn(double t);
@@ -222,7 +256,24 @@ private:
 	void PreviewMouseMove(QMouseEvent *event);
 	void PreviewMouseRelease(QMouseEvent *event);
 
+	/* A long job (export, upload) with a progress dialog */
+	std::shared_ptr<ExportState> StartJob(const QString &label);
+	/* Returns whether the job was cancelled */
+	bool EndJob();
+
 	/* Export */
+	void SaveExportSettings();
+	/* Whether there's a clip to export; explains if not */
+	bool CheckExportable();
+	/* The clips folder and a file name for the clip between In and Out */
+	QString DefaultExportName(QString &dir) const;
 	void Export();
+	/* Exports the clip between In and Out to `path` at the quality with
+	 * key `qualityKey`; `frameAccurate` re-encodes even at Original */
+	void StartExport(const QString &path, const QString &qualityKey, bool frameAccurate);
 	void ExportFinished(bool ok, const QString &path, const QString &error);
+	/* Asks what to upload, then exports and uploads */
+	void UploadToYouTube();
+	void StartUpload(const QString &path);
+	void UploadFinished(bool ok, const QString &path, const QString &videoId, const QString &error);
 };

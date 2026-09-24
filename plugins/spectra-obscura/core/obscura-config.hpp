@@ -54,6 +54,9 @@ struct Config {
 	int imgbbExpiration = 0;
 	bool imgbbCopyLink = true;
 	bool imgbbOpenLink = false;
+	QString imgbbAlbum;                          /* album ID or ibb.co album link */
+	bool imgbbAutoUpload = false;                /* upload every Obscura screenshot once saved */
+	bool imgbbUploadObsShots = false;            /* also OBS's own screenshots, uncensored */
 	QString cropReview = QStringLiteral("auto"); /* auto | always | never */
 
 	static QString Path();

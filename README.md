@@ -26,9 +26,11 @@ Versions are named `<OBS version>-spectra.<n>`. For example, `32.2.2-spectra.1` 
 **Loop recording.** Records continuously into a folder with a disk limit (100 GB by default), deleting the oldest footage when the limit is reached. It can start by itself when a listed game is running (`FiveM*` by default). *Spectra → Clip Last* saves the last few minutes as a single file.
 
 **Clip Maker** (*Spectra → Clip Maker...*). An editor for the whole loop recording or for a saved clip:
-- Set the start and end of a clip with In and Out points (keys `I` and `O`).
+- Mark the clip by dragging on the timeline's clip strip, or with In and Out points at the playhead (keys `I` and `O`). Drag the handles to trim it and the bar to move it.
+- Click anywhere on the timeline to play from there, or drag to scrub. Ctrl+scroll (or the zoom slider) zooms in on the timeline; scroll or middle-drag to move along it.
 - Draw rectangles or ellipses over the video to censor it, using a solid color, pixelation or blur.
-- Export the clip as one file. Without censoring it's copied without re-encoding (lossless); tick Frame-accurate to re-encode so the clip starts exactly on the In point.
+- Export the clip as one file at a chosen quality. Original copies the video without re-encoding (lossless); High, Medium and Small re-encode it, at roughly 15, 8 and 4 Mbps for 1080p60; YouTube 1080p follows YouTube's upload recommendations (at most 1080p, 12 Mbps at 60 fps). Tick Frame-accurate to re-encode at Original so the clip starts exactly on the In point.
+- Upload the clip to YouTube: sign in with Google once, give the video a title, description, tags and visibility, and the clip is exported and uploaded with a link at the end. Release builds carry the Google API client this needs (the `YOUTUBE_CLIENTID` and `YOUTUBE_SECRET` build settings).
 
 **Lucida.** Logs in-game chat in the background. It reads the chat from the game capture with OCR and saves each line once to a searchable log. You browse the log in a Chat Log dock, and lines can be tagged by rules and linked to the moment in the loop recording where they appeared. `lucida-viewer.exe` opens the log without starting OBS-Spectra.
 

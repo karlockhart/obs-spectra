@@ -23,6 +23,8 @@ target_sources(
     utility/GoLiveAPI_Network.hpp
     utility/GoLiveAPI_PostData.cpp
     utility/GoLiveAPI_PostData.hpp
+    utility/YouTubeUpload.cpp
+    utility/YouTubeUpload.hpp
     utility/LoopCapture.cpp
     utility/LoopCapture.hpp
     utility/LoopRecorder.cpp
@@ -69,10 +71,14 @@ target_sources(
     utility/SpectraDefaults.hpp
     utility/SpectraGamepad.cpp
     utility/SpectraGamepad.hpp
+    utility/SpectraOverlay.cpp
+    utility/SpectraOverlay.hpp
     utility/SpectraSplash.cpp
     utility/SpectraSplash.hpp
     utility/SpectraUpdateCheck.cpp
     utility/SpectraUpdateCheck.hpp
+    utility/StarlingLink.cpp
+    utility/StarlingLink.hpp
     utility/StartMultiTrackVideoStreamingGuard.hpp
     utility/SurfaceEventFilter.hpp
     utility/ThumbnailItem.cpp

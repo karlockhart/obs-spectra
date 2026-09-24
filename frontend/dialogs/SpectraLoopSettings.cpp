@@ -4,6 +4,7 @@
 #include <components/SpectraHotkeyEdit.hpp>
 #include <utility/LoopRecorder.hpp>
 #include <utility/SpectraDefaults.hpp>
+#include <utility/SpectraOverlay.hpp>
 #include <widgets/OBSBasic.hpp>
 
 #include <qt-wrappers.hpp>
@@ -13,6 +14,7 @@
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -22,6 +24,7 @@
 #include <QVBoxLayout>
 
 #define LOOP_SECTION "SpectraLoop"
+#define OVERLAY_SECTION "SpectraOverlay"
 
 SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder_)
 	: QDialog(main_),
@@ -66,6 +69,9 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	fitToCanvas = new QCheckBox(QTStr("Spectra.Loop.Settings.FitToCanvas"));
 	fitToCanvas->setChecked(recorder->FitToCanvasEnabled());
 	fitToCanvas->setToolTip(QTStr("Spectra.Loop.Settings.FitToCanvasTip"));
+	starlingVoice = new QCheckBox(QTStr("Spectra.Loop.Settings.StarlingVoice"));
+	starlingVoice->setChecked(recorder->StarlingVoiceEnabled());
+	starlingVoice->setToolTip(QTStr("Spectra.Loop.Settings.StarlingVoiceTip"));
 
 	resolution = new QComboBox();
 	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, LOOP_SECTION, "CanvasCX"),
@@ -83,9 +89,12 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	double usedGB = (double)recorder->UsedBytes() / (1024.0 * 1024.0 * 1024.0);
 	usage = new QLabel(QTStr("Spectra.Loop.Settings.Usage").arg(usedGB, 0, 'f', 1));
 
+	loopPathRow = PathRow(loopPath);
+	clipsPathRow = PathRow(clipsPath);
+
 	auto *form = new QFormLayout();
-	form->addRow(QTStr("Spectra.Loop.Settings.LoopPath"), PathRow(loopPath));
-	form->addRow(QTStr("Spectra.Loop.Settings.ClipsPath"), PathRow(clipsPath));
+	form->addRow(QTStr("Spectra.Loop.Settings.LoopPath"), loopPathRow);
+	form->addRow(QTStr("Spectra.Loop.Settings.ClipsPath"), clipsPathRow);
 	form->addRow(QTStr("Spectra.Loop.Settings.Quota"), quotaGB);
 	form->addRow(QString(), usage);
 	form->addRow(QTStr("Spectra.Loop.Settings.Segment"), segmentSec);
@@ -97,6 +106,55 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoStop);
 	form->addRow(QString(), autoCapture);
 	form->addRow(QString(), fitToCanvas);
+	form->addRow(QString(), starlingVoice);
+
+	QGroupBox *overlayGroup = new QGroupBox(QTStr("Spectra.Overlay.Settings"));
+	auto *overlayForm = new QFormLayout(overlayGroup);
+	overlayEnabled = new QCheckBox(QTStr("Spectra.Overlay.Settings.Enabled"));
+	overlayEnabled->setToolTip(QTStr("Spectra.Overlay.Settings.EnabledTip"));
+	overlayEnabled->setChecked(config_get_bool(config, OVERLAY_SECTION, "Enabled"));
+	overlayCorner = new QComboBox();
+	for (const char *key :
+	     {"Spectra.Overlay.Corner.TopRight", "Spectra.Overlay.Corner.TopLeft", "Spectra.Overlay.Corner.BottomRight",
+	      "Spectra.Overlay.Corner.BottomLeft", "Spectra.Overlay.Corner.TopCenter"}) {
+		overlayCorner->addItem(QTStr(key));
+	}
+	overlayCorner->setCurrentIndex((int)config_get_int(config, OVERLAY_SECTION, "Corner"));
+	overlayDuration = new QSpinBox();
+	overlayDuration->setRange(1, 30);
+	overlayDuration->setSuffix(QStringLiteral(" s"));
+	overlayDuration->setValue((int)config_get_int(config, OVERLAY_SECTION, "DurationSec"));
+	QPushButton *overlayTest = new QPushButton(QTStr("Spectra.Overlay.Settings.Test"));
+	connect(overlayTest, &QPushButton::clicked, this, [this]() {
+		SpectraOverlay *overlay = main->GetSpectraOverlay();
+		if (!overlay) {
+			return;
+		}
+		/* preview the choices; Cancel/OK reloads the saved ones */
+		overlay->SetStyle(true, (SpectraOverlay::Corner)overlayCorner->currentIndex(),
+				  overlayDuration->value());
+		overlay->Notify(SpectraOverlay::Kind::Loop, QTStr("Spectra.Overlay.LoopStarted"),
+				QTStr("Spectra.Overlay.LoopStartedText").arg(QTStr("Spectra.Loop.Minutes").arg(2)));
+		overlay->Notify(SpectraOverlay::Kind::Clip, QTStr("Spectra.Overlay.ClipSaved"),
+				QStringLiteral("FiveM 2026-09-23 21-04-12.mp4"));
+		overlay->Notify(SpectraOverlay::Kind::Obscura, QTStr("Spectra.Overlay.Test.Obscura"),
+				QTStr("Spectra.Overlay.Test.ObscuraText"));
+	});
+	overlayForm->addRow(overlayEnabled);
+	overlayForm->addRow(QTStr("Spectra.Overlay.Settings.Corner"), overlayCorner);
+	overlayForm->addRow(QTStr("Spectra.Overlay.Settings.Duration"), overlayDuration);
+	auto *eventGrid = new QGridLayout();
+	eventGrid->setContentsMargins(0, 0, 0, 0);
+	for (const SpectraOverlay::Category &category : SpectraOverlay::Categories()) {
+		auto *check = new QCheckBox(QTStr(category.labelKey));
+		check->setChecked(config_get_bool(config, OVERLAY_SECTION, category.configKey));
+		check->setProperty("configKey", QString::fromLatin1(category.configKey));
+		const int i = (int)overlayEvents.size();
+		eventGrid->addWidget(check, i / 2, i % 2);
+		overlayEvents << check;
+	}
+	overlayForm->addRow(QTStr("Spectra.Overlay.Settings.Events"), eventGrid);
+	overlayForm->addRow(QString(), overlayTest);
 
 	QGroupBox *shortcutGroup = new QGroupBox(QTStr("Spectra.Hotkey.Shortcuts"));
 	auto *shortcutForm = new QFormLayout(shortcutGroup);
@@ -111,6 +169,7 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 
 	auto *layout = new QVBoxLayout(this);
 	layout->addLayout(form);
+	layout->addWidget(overlayGroup);
 	layout->addWidget(shortcutGroup);
 	layout->addWidget(buttons);
 
@@ -123,6 +182,18 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 		QLabel *note = new QLabel(QTStr("Spectra.Loop.Settings.ActiveNote"));
 		note->setWordWrap(true);
 		layout->insertWidget(1, note);
+		LockFolders();
+	}
+}
+
+void SpectraLoopSettings::LockFolders()
+{
+	config_t *config = main->Config();
+	loopPath->setText(QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Path")));
+	clipsPath->setText(QString::fromUtf8(config_get_string(config, LOOP_SECTION, "ClipsPath")));
+	for (QWidget *row : {loopPathRow, clipsPathRow}) {
+		row->setEnabled(false);
+		row->setToolTip(QTStr("Spectra.Loop.FoldersLocked"));
 	}
 }
 
@@ -145,9 +216,33 @@ QWidget *SpectraLoopSettings::PathRow(QLineEdit *edit)
 	return row;
 }
 
+void SpectraLoopSettings::reject()
+{
+	if (SpectraOverlay *overlay = main->GetSpectraOverlay()) {
+		overlay->LoadSettings();
+	}
+	QDialog::reject();
+}
+
 void SpectraLoopSettings::accept()
 {
 	config_t *config = main->Config();
+
+	/* The loop can start by itself while the dialog is open */
+	const bool foldersLocked = recorder->Active();
+	if (foldersLocked && loopPathRow->isEnabled()) {
+		const bool changed =
+			loopPath->text().trimmed() !=
+				QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Path")).trimmed() ||
+			clipsPath->text().trimmed() !=
+				QString::fromUtf8(config_get_string(config, LOOP_SECTION, "ClipsPath")).trimmed();
+		LockFolders();
+		if (changed) {
+			OBSMessageBox::warning(this, QTStr("Spectra.Loop.Settings.Title"),
+					       QTStr("Spectra.Loop.FoldersLockedNotSaved"));
+			return;
+		}
+	}
 
 	int cx = 0, cy = 0;
 	if (!SpectraDefaults::ParseResolution(resolution->currentText(), cx, cy)) {
@@ -162,8 +257,10 @@ void SpectraLoopSettings::accept()
 	config_set_int(config, LOOP_SECTION, "CanvasCX", cx);
 	config_set_int(config, LOOP_SECTION, "CanvasCY", cy);
 	config_set_string(config, LOOP_SECTION, "Quality", QT_TO_UTF8(quality->currentData().toString()));
-	config_set_string(config, LOOP_SECTION, "Path", QT_TO_UTF8(loopPath->text().trimmed()));
-	config_set_string(config, LOOP_SECTION, "ClipsPath", QT_TO_UTF8(clipsPath->text().trimmed()));
+	if (!foldersLocked) {
+		config_set_string(config, LOOP_SECTION, "Path", QT_TO_UTF8(loopPath->text().trimmed()));
+		config_set_string(config, LOOP_SECTION, "ClipsPath", QT_TO_UTF8(clipsPath->text().trimmed()));
+	}
 	config_set_uint(config, LOOP_SECTION, "QuotaGB", (uint64_t)quotaGB->value());
 	config_set_int(config, LOOP_SECTION, "SegmentSec", segmentSec->value());
 	config_set_int(config, LOOP_SECTION, "ClipSec", clipSec->value());
@@ -171,8 +268,16 @@ void SpectraLoopSettings::accept()
 	config_set_bool(config, LOOP_SECTION, "AutoStop", autoStop->isChecked());
 	config_set_bool(config, LOOP_SECTION, "AutoCapture", autoCapture->isChecked());
 	config_set_bool(config, LOOP_SECTION, "FitToCanvas", fitToCanvas->isChecked());
+	config_set_bool(config, LOOP_SECTION, "StarlingVoice", starlingVoice->isChecked());
 	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->Patterns()));
 	config_set_bool(config, LOOP_SECTION, "AnyFullscreen", processes->AnyFullscreen());
+	config_set_bool(config, OVERLAY_SECTION, "Enabled", overlayEnabled->isChecked());
+	config_set_int(config, OVERLAY_SECTION, "Corner", overlayCorner->currentIndex());
+	config_set_int(config, OVERLAY_SECTION, "DurationSec", overlayDuration->value());
+	for (QCheckBox *check : overlayEvents) {
+		config_set_bool(config, OVERLAY_SECTION, QT_TO_UTF8(check->property("configKey").toString()),
+				check->isChecked());
+	}
 	for (SpectraHotkeyEdit *shortcut : shortcuts) {
 		shortcut->Save(config);
 	}
@@ -180,6 +285,9 @@ void SpectraLoopSettings::accept()
 
 	if (videoChanged) {
 		main->ApplySpectraVideo();
+	}
+	if (SpectraOverlay *overlay = main->GetSpectraOverlay()) {
+		overlay->LoadSettings();
 	}
 
 	QDialog::accept();

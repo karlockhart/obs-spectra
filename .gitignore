@@ -33,6 +33,8 @@
 !INSTALL
 !README.rst
 !README.md
+!AGENTS.md
+!CLAUDE.md
 
 # Exclude lock files
 *.lock.json
@@ -50,3 +52,7 @@ build-aux/flatpak-github-action-modified-*
 
 # Exclude CMake build number cache
 /cmake/.CMakeBuildNumber
+
+# Google API client for the YouTube integration (see frontend/cmake/feature-youtube.cmake)
+client_secret*.json
+youtube-client.json

@@ -774,8 +774,15 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_int(activeConfiguration, "SpectraLoop", "CanvasCY", SpectraDefaults::DefaultCanvasCY);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Quality", SpectraDefaults::DefaultQuality);
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "FitToCanvas", true);
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "StarlingVoice", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AnyFullscreen", false);
+	config_set_default_bool(activeConfiguration, "SpectraOverlay", "Enabled", true);
+	config_set_default_int(activeConfiguration, "SpectraOverlay", "Corner", 0);
+	config_set_default_int(activeConfiguration, "SpectraOverlay", "DurationSec", 5);
+	for (const SpectraOverlay::Category &category : SpectraOverlay::Categories()) {
+		config_set_default_bool(activeConfiguration, "SpectraOverlay", category.configKey, true);
+	}
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Path", "");
 	config_set_default_string(activeConfiguration, "SpectraLoop", "ClipsPath", "");
 	config_set_default_string(activeConfiguration, "SimpleOutput", "StreamAudioEncoder", "aac");
@@ -1309,7 +1316,16 @@ void OBSBasic::OBSInit()
 	}
 
 	if (!first_run && !has_last_version && !Active()) {
-		QMetaObject::invokeMethod(this, &OBSBasic::on_autoConfigure_triggered, Qt::QueuedConnection);
+		/* The wizard opens after the loop's first check for the game, so
+		 * hold the loop now or it starts recording to the default folders */
+		loopRecorder->HoldStart(true);
+		QMetaObject::invokeMethod(
+			this,
+			[this]() {
+				on_autoConfigure_triggered();
+				loopRecorder->HoldStart(false);
+			},
+			Qt::QueuedConnection);
 	}
 
 #if (defined(_WIN32) || defined(__APPLE__)) && (OBS_RELEASE_CANDIDATE > 0 || OBS_BETA > 0)

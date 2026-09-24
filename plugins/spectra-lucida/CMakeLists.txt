@@ -52,6 +52,13 @@ target_link_libraries(lucida-tests PRIVATE lucida-core)
 set_target_properties(lucida-tests PROPERTIES FOLDER spectra)
 set_target_properties_obs(lucida-tests)
 
+# Replays screenshots through the recorder and checks each kept screenshot's boxes:
+# lucida-replay [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...
+add_executable(lucida-replay tools/lucida-replay.cpp)
+target_link_libraries(lucida-replay PRIVATE lucida-core)
+set_target_properties(lucida-replay PROPERTIES FOLDER spectra)
+set_target_properties_obs(lucida-replay)
+
 # The plugin: sampling loop inside Spectra, the "Chat Log" dock, the log browser and settings.
 # Censoring uses Obscura's learner and naming (obscura-core).
 add_library(spectra-lucida MODULE)

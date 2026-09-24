@@ -20,6 +20,7 @@ public:
 	SpectraLoopSettings(OBSBasic *main, LoopRecorder *recorder);
 
 	void accept() override;
+	void reject() override;
 
 private:
 	OBSBasic *main;
@@ -27,6 +28,8 @@ private:
 
 	QLineEdit *loopPath;
 	QLineEdit *clipsPath;
+	QWidget *loopPathRow;
+	QWidget *clipsPathRow;
 	QSpinBox *quotaGB;
 	QSpinBox *segmentSec;
 	QSpinBox *clipSec;
@@ -34,6 +37,11 @@ private:
 	QCheckBox *autoStop;
 	QCheckBox *autoCapture;
 	QCheckBox *fitToCanvas;
+	QCheckBox *starlingVoice;
+	QCheckBox *overlayEnabled;
+	QComboBox *overlayCorner;
+	QSpinBox *overlayDuration;
+	QList<QCheckBox *> overlayEvents;
 	QComboBox *resolution;
 	QComboBox *quality;
 	SpectraAppPicker *processes;
@@ -41,4 +49,6 @@ private:
 	QList<SpectraHotkeyEdit *> shortcuts;
 
 	QWidget *PathRow(QLineEdit *edit);
+	/* The folders can't change while the loop records into them */
+	void LockFolders();
 };

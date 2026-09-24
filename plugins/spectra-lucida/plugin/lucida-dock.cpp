@@ -18,6 +18,24 @@
 namespace lucida {
 
 namespace {
+
+/* Spectra's Clip Maker (the frontend's spectra_edit_moment proc) */
+bool EditClip(const VideoSpot &spot, double before, double after)
+{
+	const QByteArray path = spot.path.toUtf8();
+	calldata_t cd = {0};
+	calldata_set_string(&cd, "path", path.constData());
+	calldata_set_float(&cd, "offset", spot.offset);
+	calldata_set_float(&cd, "before", before);
+	calldata_set_float(&cd, "after", after);
+	const bool called = proc_handler_call(obs_get_proc_handler(), "spectra_edit_moment", &cd);
+	calldata_free(&cd);
+	return called;
+}
+
+} // namespace
+
+namespace {
 constexpr int kShownLines = 300;
 
 QString LineLabel(const LogLine &l)
@@ -101,7 +119,8 @@ void Dock::OpenViewer(long long lineId)
 		ViewerSource source{[c]() { return c ? c->Reader() : nullptr; },
 				    [c](const LogLine &line) {
 					    return c ? c->VideoFor(line) : std::optional<VideoSpot>();
-				    }};
+				    },
+				    EditClip};
 		viewer = new Viewer(std::move(source), window());
 		viewer->setWindowFlag(Qt::Window);
 	}

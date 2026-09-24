@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QLocale>
 #include <QPointer>
 #include <QRegularExpression>
 
@@ -28,8 +29,31 @@ static constexpr int PROCESS_POLL_MS = 3000;
  * so launcher/game process hand-offs don't cut the recording. */
 static constexpr int AUTO_STOP_POLLS = 4;
 static constexpr int SPLIT_TIMEOUT_MS = 5000;
+static constexpr int STATUS_UPDATE_MS = 2000;
 /* Wait before trying again after an automatic start failed */
 static constexpr int AUTO_START_RETRY_SEC = 30;
+
+/* The size of a file as it is now. A folder listing (and QFileInfo, which
+ * may read it) shows the size from when the file was last closed, which is
+ * 0 for a segment still being written. */
+static qint64 FileSizeOnDisk(const QString &path)
+{
+#ifdef _WIN32
+	HANDLE file = CreateFileW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()),
+				  FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+				  OPEN_EXISTING, 0, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return -1;
+	}
+	LARGE_INTEGER size;
+	const bool ok = GetFileSizeEx(file, &size);
+	CloseHandle(file);
+	return ok ? (qint64)size.QuadPart : -1;
+#else
+	QFileInfo info(path);
+	return info.exists() ? info.size() : -1;
+#endif
+}
 
 static QStringList RunningProcessNames()
 {
@@ -130,13 +154,23 @@ static QString FullscreenAppExe()
 #endif
 }
 
-LoopRecorder::LoopRecorder(OBSBasic *main_) : QObject(main_), main(main_), capture(new LoopCapture(main_))
+LoopRecorder::LoopRecorder(OBSBasic *main_)
+	: QObject(main_),
+	  main(main_),
+	  capture(new LoopCapture(main_)),
+	  starling(new StarlingLink(main_))
 {
 	captureTimer.setInterval(PROCESS_POLL_MS);
 	connect(&captureTimer, &QTimer::timeout, this, &LoopRecorder::UpdateCapture);
 
 	processTimer.setInterval(PROCESS_POLL_MS);
 	connect(&processTimer, &QTimer::timeout, this, &LoopRecorder::CheckProcesses);
+
+	statusTimer.setInterval(STATUS_UPDATE_MS);
+	connect(&statusTimer, &QTimer::timeout, this, [this]() {
+		CheckWriting();
+		emit recordingStatusChanged();
+	});
 
 	splitTimeout.setSingleShot(true);
 	splitTimeout.setInterval(SPLIT_TIMEOUT_MS);
@@ -212,6 +246,11 @@ bool LoopRecorder::FitToCanvasEnabled() const
 	return config_get_bool(main->Config(), LOOP_SECTION, "FitToCanvas");
 }
 
+bool LoopRecorder::StarlingVoiceEnabled() const
+{
+	return config_get_bool(main->Config(), LOOP_SECTION, "StarlingVoice");
+}
+
 bool LoopRecorder::AnyFullscreenEnabled() const
 {
 	return config_get_bool(main->Config(), LOOP_SECTION, "AnyFullscreen");
@@ -264,6 +303,8 @@ QStringList LoopRecorder::ActivePatterns() const
 
 void LoopRecorder::SettingsChanged()
 {
+	starling->SetEnabled(StarlingVoiceEnabled());
+
 	if (!AnyFullscreenEnabled()) {
 		fullscreenExe.clear();
 	}
@@ -293,6 +334,7 @@ void LoopRecorder::SetArmed(bool arm)
 	if (!armed) {
 		autoStarted = false;
 		if (Active()) {
+			stopCause = StopCause::User;
 			main->StopLoopRecording();
 		}
 	}
@@ -301,10 +343,33 @@ void LoopRecorder::SetArmed(bool arm)
 	emit armedChanged(armed);
 }
 
+void LoopRecorder::HoldStart(bool hold)
+{
+	const bool wasHeld = StartHeld();
+	startHolds = std::max(startHolds + (hold ? 1 : -1), 0);
+	if (StartHeld() == wasHeld) {
+		return;
+	}
+
+	if (StartHeld()) {
+		blog(LOG_INFO, "[Spectra] Loop recording on hold until setup is finished");
+	} else {
+		blog(LOG_INFO, "[Spectra] Loop recording no longer on hold");
+		/* Starts right away if the game is already running */
+		SettingsChanged();
+	}
+}
+
 bool LoopRecorder::Start(const QString &label_)
 {
 	if (Active()) {
 		return true;
+	}
+
+	if (StartHeld()) {
+		lastStartError = QTStr("Spectra.Loop.Error.OnHold");
+		blog(LOG_INFO, "[Spectra] Loop recording not started: %s", QT_TO_UTF8(lastStartError));
+		return false;
 	}
 
 	QString dir = LoopDirectory();
@@ -332,12 +397,15 @@ bool LoopRecorder::Start(const QString &label_)
 	return true;
 }
 
-void LoopRecorder::Stop()
+void LoopRecorder::Stop(StopCause cause)
 {
 	/* Don't let a still-running game restart a loop that was just stopped;
 	 * auto-start resumes once the game has exited. */
 	suppressAutoStart = true;
 	autoStarted = false;
+	if (Active()) {
+		stopCause = cause;
+	}
 	main->StopLoopRecording();
 }
 
@@ -351,10 +419,17 @@ void LoopRecorder::OnStarted()
 	blog(LOG_INFO, "[Spectra] Loop recording started in '%s' (quota %llu GB, %d s segments)",
 	     QT_TO_UTF8(LoopDirectory()), QuotaBytes() / (1024ull * 1024ull * 1024ull), SegmentSeconds());
 	lastStartError.clear();
+	startedAt = QDateTime::currentDateTime();
+	stopCause = StopCause::Unexpected;
+	stalled = false;
+	diskSize = -1;
+	diskSizeChanged = startedAt;
 	EnforceQuota();
 	FitGameToCanvas();
 	captureTimer.start();
+	statusTimer.start();
 	emit activeChanged(true);
+	emit recordingStatusChanged();
 }
 
 void LoopRecorder::OnStopped(int code, const QString &error)
@@ -364,18 +439,26 @@ void LoopRecorder::OnStopped(int code, const QString &error)
 		currentSegment.clear();
 	}
 
+	lastStopCause = code == OBS_OUTPUT_SUCCESS ? stopCause : StopCause::Unexpected;
+	stopCause = StopCause::Unexpected;
+	stalled = false;
+
 	if (code != OBS_OUTPUT_SUCCESS) {
 		blog(LOG_WARNING, "[Spectra] Loop recording stopped with code %d: %s", code, QT_TO_UTF8(error));
+	} else if (lastStopCause == StopCause::Unexpected) {
+		blog(LOG_WARNING, "[Spectra] Loop recording stopped, not by the user or the game exiting");
 	} else {
 		blog(LOG_INFO, "[Spectra] Loop recording stopped");
 	}
 
 	autoStarted = false;
 	captureTimer.stop();
+	statusTimer.stop();
 	capture->Reset();
 	ProcessPendingClips();
 	emit activeChanged(false);
 	emit segmentsChanged();
+	emit recordingStatusChanged();
 }
 
 void LoopRecorder::OnFileChanged(const QString &nextFile)
@@ -384,6 +467,10 @@ void LoopRecorder::OnFileChanged(const QString &nextFile)
 		sessionSegments << currentSegment;
 	}
 	currentSegment = nextFile;
+	segmentStartBytes = main->LoopRecordingTotalBytes();
+	/* The watchdog follows the new file; a stall carries over until it grows */
+	diskSize = -1;
+	diskSizeChanged = QDateTime::currentDateTime();
 
 	EnforceQuota();
 
@@ -393,6 +480,63 @@ void LoopRecorder::OnFileChanged(const QString &nextFile)
 	}
 
 	emit segmentsChanged();
+	emit recordingStatusChanged();
+}
+
+void LoopRecorder::CheckWriting()
+{
+	if (!Active() || currentSegment.isEmpty()) {
+		return;
+	}
+
+	const QDateTime now = QDateTime::currentDateTime();
+	const qint64 size = FileSizeOnDisk(currentSegment);
+	if (size >= 0 && size != diskSize) {
+		diskSize = size;
+		diskSizeChanged = now;
+		if (stalled) {
+			stalled = false;
+			blog(LOG_INFO, "[Spectra] Loop recording is writing to '%s' again", QT_TO_UTF8(currentSegment));
+			emit writingResumed();
+		}
+		return;
+	}
+
+	if (!stalled && diskSizeChanged.secsTo(now) >= StallWarnSeconds) {
+		stalled = true;
+		if (size < 0) {
+			blog(LOG_WARNING, "[Spectra] Loop recording: '%s' is missing", QT_TO_UTF8(currentSegment));
+		} else {
+			blog(LOG_WARNING, "[Spectra] Loop recording: '%s' has not grown for %lld s (%lld bytes)",
+			     QT_TO_UTF8(currentSegment), diskSizeChanged.secsTo(now), size);
+		}
+		emit writingStalled();
+	}
+}
+
+QString LoopRecorder::RecordingStatusText() const
+{
+	if (!Active()) {
+		return QString();
+	}
+
+	const QLocale locale;
+	auto size = [&](quint64 bytes) {
+		return locale.formattedDataSize((qint64)bytes, 1, QLocale::DataSizeTraditionalFormat);
+	};
+
+	const quint64 total = main->LoopRecordingTotalBytes();
+	QStringList lines;
+	if (!currentSegment.isEmpty()) {
+		const quint64 segment = total > segmentStartBytes ? total - segmentStartBytes : 0;
+		lines << QTStr("Spectra.Loop.Status.Writing")
+				 .arg(QDir::toNativeSeparators(QDir::cleanPath(currentSegment)), size(segment));
+	}
+	lines << QTStr("Spectra.Loop.Status.Session").arg(size(total), startedAt.toString(QStringLiteral("HH:mm")));
+	if (stalled) {
+		lines << QTStr("Spectra.Loop.Status.Stalled").arg(diskSizeChanged.toString(QStringLiteral("HH:mm:ss")));
+	}
+	return lines.join('\n');
 }
 
 /* ------------------------------------------------------------------------- */
@@ -449,7 +593,7 @@ void LoopRecorder::CheckProcesses()
 	if (!matched.isEmpty()) {
 		missingPolls = 0;
 		bool waiting = retryAutoStartAt.isValid() && QDateTime::currentDateTime() < retryAutoStartAt;
-		if (!Active() && armed && !suppressAutoStart && !waiting) {
+		if (!Active() && armed && !suppressAutoStart && !waiting && !StartHeld()) {
 			blog(LOG_INFO, "[Spectra] Detected process matching '%s', starting loop recording",
 			     QT_TO_UTF8(matched));
 			if (Start(LabelForPattern(matched))) {
@@ -471,7 +615,7 @@ void LoopRecorder::CheckProcesses()
 	if (autoStarted && Active() && AutoStopEnabled()) {
 		if (++missingPolls >= AUTO_STOP_POLLS) {
 			blog(LOG_INFO, "[Spectra] Game process exited, stopping loop recording");
-			Stop();
+			Stop(StopCause::GameExited);
 		}
 	}
 }

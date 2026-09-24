@@ -126,6 +126,7 @@ struct ObscuraPrefs {
 	int imgbbExpiration = 0;
 	bool imgbbCopyLink = true;
 	bool imgbbOpenLink = false;
+	QString imgbbAlbum; /* album ID or ibb.co album link, empty for none */
 };
 SPECTRA_CENSOR_API QString ObscuraConfigPath();
 SPECTRA_CENSOR_API ObscuraPrefs LoadObscuraPrefs();
@@ -149,8 +150,18 @@ struct UploadResult {
 	QString error;
 };
 
+/* An album ID from "https://ibb.co/album/<id>", "<user>.imgbb.com/album/<id>"
+ * or the bare ID; empty when it is neither */
+SPECTRA_CENSOR_API QString ImgbbAlbumId(const QString &albumOrUrl);
+
+/* Every successful upload is appended to <Obscura folder>/imgbb-uploads.jsonl
+ * (time, file, url, delete_url, album) so links and delete links are kept */
+SPECTRA_CENSOR_API QString ImgbbUploadLogPath();
+
 /* POST https://api.imgbb.com/1/upload. Blocking: call off the UI thread.
- * expiration in seconds, 0 = never. */
+ * expiration in seconds, 0 = never. The album from Obscura's config
+ * (imgbb_album) is sent as album_id; imgbb's public API does not document
+ * albums, so an account that ignores it keeps the image in its main stream. */
 SPECTRA_CENSOR_API UploadResult UploadToImgbb(const QString &path, int expiration = 0,
 					      const QString &apiKey = QString());
 
