@@ -15,6 +15,13 @@ namespace ClipRender {
 enum class Shape { Rectangle, Ellipse };
 enum class Fill { Solid, Pixelate, Blur };
 
+/* How hard a re-encode compresses. High keeps the look of the recording
+ * (about 15 Mbps for 1080p60); Medium is about half of that and Small a
+ * quarter, for clips that are going to be shared. YouTube1080p follows
+ * YouTube's upload recommendations: at most 1080p, 12 Mbps at 60 fps or
+ * 8 Mbps at 30 fps, High profile, a keyframe every half second. */
+enum class Quality { High, Medium, Small, YouTube1080p };
+
 struct Layer {
 	Shape shape = Shape::Rectangle;
 	Fill fill = Fill::Solid;
@@ -52,6 +59,6 @@ void Apply(const Planes &image, const std::vector<Layer> &layers, double t);
  */
 bool Export(const std::vector<std::string> &inputs, double startSec, double endSec, const std::string &output,
 	    const std::vector<Layer> &layers, std::string &error,
-	    const ClipExport::ProgressCallback &progress = nullptr);
+	    const ClipExport::ProgressCallback &progress = nullptr, Quality quality = Quality::High);
 
 } // namespace ClipRender

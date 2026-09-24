@@ -1,6 +1,7 @@
 #include "SpectraClipMaker.hpp"
 
 #include <components/ClipTimeline.hpp>
+#include <dialogs/SpectraYouTubeUpload.hpp>
 #include <utility/ClipExport.hpp>
 #include <utility/LoopRecorder.hpp>
 #include <utility/display-helpers.hpp>
@@ -10,6 +11,7 @@
 #include <qt-wrappers.hpp>
 
 #include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QColorDialog>
 #include <QComboBox>
@@ -59,6 +61,8 @@ static constexpr double PRELOAD_SEC = 3.0;
 static constexpr double STEP_SEC = 1.0 / 60.0;
 static constexpr double JUMP_SEC = 5.0;
 static constexpr double MIN_SHAPE = 0.01;
+/* Zoom slider resolution */
+static constexpr int ZOOM_STEPS = 1000;
 static constexpr double PI = 3.14159265358979323846;
 
 /* ------------------------------------------------------------------------- */
@@ -374,8 +378,14 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	QPushButton *addRect = ToolButton(QTStr("Spectra.ClipMaker.AddRectangle"));
 	QPushButton *addEllipse = ToolButton(QTStr("Spectra.ClipMaker.AddEllipse"));
 	QPushButton *fit = ToolButton(QTStr("Spectra.ClipMaker.Fit"), QTStr("Spectra.ClipMaker.FitTip"));
+	QPushButton *fitRange = ToolButton(QTStr("Spectra.ClipMaker.FitRange"), QTStr("Spectra.ClipMaker.FitRangeTip"));
 	QPushButton *zoomIn = ToolButton(QStringLiteral("+"), QTStr("Spectra.ClipMaker.ZoomIn"));
 	QPushButton *zoomOut = ToolButton(QStringLiteral("−"), QTStr("Spectra.ClipMaker.ZoomOut"));
+	zoomSlider = new QSlider(Qt::Horizontal);
+	zoomSlider->setRange(0, ZOOM_STEPS);
+	zoomSlider->setFixedWidth(120);
+	zoomSlider->setFocusPolicy(Qt::NoFocus);
+	zoomSlider->setToolTip(QTStr("Spectra.ClipMaker.ZoomSliderTip"));
 
 	tools->addWidget(setIn);
 	tools->addWidget(setOut);
@@ -385,17 +395,38 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	tools->addWidget(addEllipse);
 	tools->addSpacing(16);
 	tools->addWidget(zoomOut);
+	tools->addWidget(zoomSlider);
 	tools->addWidget(zoomIn);
 	tools->addWidget(fit);
+	tools->addWidget(fitRange);
 	tools->addSpacing(16);
 	rangeLabel = new QLabel();
 	tools->addWidget(rangeLabel);
 	tools->addStretch();
 
+	config_t *config = main->Config();
+	tools->addWidget(new QLabel(QTStr("Spectra.ClipMaker.Quality")));
+	qualityCombo = new QComboBox();
+	qualityCombo->setFocusPolicy(Qt::NoFocus);
+	qualityCombo->setToolTip(QTStr("Spectra.ClipMaker.QualityTip"));
+	FillQualityCombo(qualityCombo);
+	int qualityIndex = qualityCombo->findData(
+		QString::fromUtf8(config_get_string(config, "SpectraClipMaker", "ExportQuality")));
+	qualityCombo->setCurrentIndex(std::max(qualityIndex, 0));
+	tools->addWidget(qualityCombo);
+
 	reencodeCheck = new QCheckBox(QTStr("Spectra.ClipMaker.Reencode"));
 	reencodeCheck->setToolTip(QTStr("Spectra.ClipMaker.ReencodeTip"));
 	reencodeCheck->setFocusPolicy(Qt::NoFocus);
+	reencodeCheck->setChecked(config_get_bool(config, "SpectraClipMaker", "FrameAccurate"));
+	/* Every quality but the original re-encodes, which is frame-accurate */
+	reencodeCheck->setEnabled(qualityCombo->currentIndex() == 0);
 	tools->addWidget(reencodeCheck);
+	connect(qualityCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
+		reencodeCheck->setEnabled(index == 0);
+		SaveExportSettings();
+	});
+	connect(reencodeCheck, &QCheckBox::toggled, this, &SpectraClipMaker::SaveExportSettings);
 	exportButton = new QPushButton(QTStr("Spectra.ClipMaker.Export"));
 	exportButton->setToolTip(QTStr("Spectra.ClipMaker.ExportTip"));
 	exportButton->setFocusPolicy(Qt::NoFocus);
@@ -403,6 +434,12 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	exportButton->setAutoDefault(false);
 	exportButton->setStyleSheet("font-weight: bold; padding: 4px 18px;");
 	tools->addWidget(exportButton);
+	uploadButton = new QPushButton(QTStr("Spectra.ClipMaker.UploadToYouTube"));
+	uploadButton->setToolTip(QTStr("Spectra.ClipMaker.UploadToYouTubeTip"));
+	uploadButton->setFocusPolicy(Qt::NoFocus);
+	uploadButton->setDefault(false);
+	uploadButton->setAutoDefault(false);
+	tools->addWidget(uploadButton);
 	layout->addLayout(tools);
 
 	connect(setIn, &QPushButton::clicked, this, [this]() { SetIn(playhead); });
@@ -414,6 +451,7 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	connect(addRect, &QPushButton::clicked, this, [this]() { AddLayer(Shape::Rectangle); });
 	connect(addEllipse, &QPushButton::clicked, this, [this]() { AddLayer(Shape::Ellipse); });
 	connect(exportButton, &QPushButton::clicked, this, &SpectraClipMaker::Export);
+	connect(uploadButton, &QPushButton::clicked, this, &SpectraClipMaker::UploadToYouTube);
 
 	timeline = new ClipTimeline();
 	timeline->SetLabels(QTStr("Spectra.ClipMaker.VideoTrack"), QTStr("Spectra.ClipMaker.NoRecordings"));
@@ -424,10 +462,39 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	scroll->setFrameShape(QFrame::NoFrame);
 	layout->addWidget(scroll, 1);
 
+	timeline->SetRangeLabels(QTStr("Spectra.ClipMaker.RangeTrack"), QTStr("Spectra.ClipMaker.RangeHint"));
 	connect(fit, &QPushButton::clicked, timeline, &ClipTimeline::ZoomToFit);
-	connect(zoomIn, &QPushButton::clicked, this, [this]() { timeline->SetZoom(timeline->Zoom() * 2.0); });
-	connect(zoomOut, &QPushButton::clicked, this, [this]() { timeline->SetZoom(timeline->Zoom() / 2.0); });
+	connect(fitRange, &QPushButton::clicked, timeline, &ClipTimeline::ZoomToRange);
+	connect(zoomIn, &QPushButton::clicked, this, [this]() { timeline->ZoomBy(2.0); });
+	connect(zoomOut, &QPushButton::clicked, this, [this]() { timeline->ZoomBy(0.5); });
+	connect(zoomSlider, &QSlider::valueChanged, this, [this](int value) {
+		if (updatingZoom) {
+			return;
+		}
+		const double lo = timeline->MinZoom(), hi = timeline->MaxZoom();
+		updatingZoom = true;
+		timeline->SetZoom(lo * std::pow(hi / lo, value / (double)ZOOM_STEPS));
+		updatingZoom = false;
+	});
+	connect(timeline, &ClipTimeline::zoomChanged, this, &SpectraClipMaker::UpdateZoomSlider);
+	UpdateZoomSlider();
 	connect(timeline, &ClipTimeline::seekRequested, this, &SpectraClipMaker::Seek);
+	connect(timeline, &ClipTimeline::scrubStarted, this, [this]() {
+		resumeAfterScrub = playing;
+		if (playing) {
+			SetPlaying(false);
+		}
+	});
+	connect(timeline, &ClipTimeline::scrubFinished, this, [this]() {
+		if (resumeAfterScrub) {
+			SetPlaying(true);
+		}
+		resumeAfterScrub = false;
+	});
+	connect(timeline, &ClipTimeline::playFromRequested, this, [this](double t) {
+		Seek(t);
+		SetPlaying(true);
+	});
 	connect(timeline, &ClipTimeline::inOutChanged, this, [this](double in, double out) {
 		inPoint = in;
 		outPoint = out;
@@ -662,8 +729,9 @@ void SpectraClipMaker::BuildShortcuts()
 	add(Qt::Key_Delete, [this]() { DeleteLayer(); });
 	add(QKeySequence(Qt::CTRL | Qt::Key_E), [this]() { Export(); });
 	add(QKeySequence(Qt::CTRL | Qt::Key_0), [this]() { timeline->ZoomToFit(); });
-	add(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this]() { timeline->SetZoom(timeline->Zoom() * 2.0); });
-	add(QKeySequence(Qt::CTRL | Qt::Key_Minus), [this]() { timeline->SetZoom(timeline->Zoom() / 2.0); });
+	add(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_0), [this]() { timeline->ZoomToRange(); });
+	add(QKeySequence(Qt::CTRL | Qt::Key_Equal), [this]() { timeline->ZoomBy(2.0); });
+	add(QKeySequence(Qt::CTRL | Qt::Key_Minus), [this]() { timeline->ZoomBy(0.5); });
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1321,11 +1389,16 @@ void SpectraClipMaker::Poll()
 
 	const Segment &seg = segments[active.segment];
 	double local = obs_source_media_get_time(active.source) / 1000.0;
+	/* The view follows the playhead while it's on screen; once the user
+	 * has scrolled elsewhere it stays there */
+	const bool follow = timeline->IsVisible(playhead);
 	playhead = std::clamp(seg.start + local, seg.start, seg.start + seg.duration);
 	if (hasNext && seg.duration - local < PRELOAD_SEC && Standby().segment != next) {
 		LoadSegment(Standby(), next, 0);
 	}
-	timeline->EnsureVisible(playhead);
+	if (follow) {
+		timeline->EnsureVisible(playhead);
+	}
 	PlayheadChanged();
 }
 
@@ -1340,6 +1413,22 @@ void SpectraClipMaker::PlayheadChanged()
 						 .arg(recorded.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
 				       : QString());
 	UpdateOverlay();
+}
+
+void SpectraClipMaker::UpdateZoomSlider()
+{
+	if (updatingZoom) {
+		return;
+	}
+	const double lo = timeline->MinZoom(), hi = timeline->MaxZoom();
+	int value = 0;
+	if (hi > lo) {
+		value = (int)std::lround(ZOOM_STEPS * std::log(timeline->Zoom() / lo) / std::log(hi / lo));
+	}
+	updatingZoom = true;
+	zoomSlider->setValue(std::clamp(value, 0, ZOOM_STEPS));
+	zoomSlider->setEnabled(hi > lo);
+	updatingZoom = false;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1374,6 +1463,7 @@ void SpectraClipMaker::InOutChanged()
 	}
 	rangeLabel->setText(text);
 	exportButton->setEnabled(inPoint >= 0.0 && outPoint > inPoint && !exportState);
+	uploadButton->setEnabled(inPoint >= 0.0 && outPoint > inPoint && !exportState);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1981,18 +2071,121 @@ bool SpectraClipMaker::eventFilter(QObject *object, QEvent *event)
 /* ------------------------------------------------------------------------- */
 /* Export                                                                    */
 
-void SpectraClipMaker::Export()
+void SpectraClipMaker::FillQualityCombo(QComboBox *combo)
+{
+	combo->addItem(QTStr("Spectra.ClipMaker.Quality.Original"), QStringLiteral("Original"));
+	combo->addItem(QTStr("Spectra.ClipMaker.Quality.High"), QStringLiteral("High"));
+	combo->addItem(QTStr("Spectra.ClipMaker.Quality.Medium"), QStringLiteral("Medium"));
+	combo->addItem(QTStr("Spectra.ClipMaker.Quality.Small"), QStringLiteral("Small"));
+	combo->addItem(QTStr("Spectra.ClipMaker.Quality.YouTube"), QStringLiteral("YouTube"));
+}
+
+bool SpectraClipMaker::QualityFromKey(const QString &key, ClipRender::Quality &quality)
+{
+	if (key == QStringLiteral("High")) {
+		quality = ClipRender::Quality::High;
+	} else if (key == QStringLiteral("Medium")) {
+		quality = ClipRender::Quality::Medium;
+	} else if (key == QStringLiteral("Small")) {
+		quality = ClipRender::Quality::Small;
+	} else if (key == QStringLiteral("YouTube")) {
+		quality = ClipRender::Quality::YouTube1080p;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+void SpectraClipMaker::SaveExportSettings()
+{
+	config_t *config = main->Config();
+	config_set_string(config, "SpectraClipMaker", "ExportQuality",
+			  QT_TO_UTF8(qualityCombo->currentData().toString()));
+	config_set_bool(config, "SpectraClipMaker", "FrameAccurate", reencodeCheck->isChecked());
+	config_save_safe(config, "tmp", nullptr);
+}
+
+bool SpectraClipMaker::CheckExportable()
 {
 	if (exportState || segments.empty()) {
-		return;
+		return false;
 	}
 	if (inPoint < 0.0 || outPoint <= inPoint) {
 		OBSMessageBox::information(this, QTStr("Spectra.ClipMaker.Title"),
 					   QTStr("Spectra.ClipMaker.NeedRange"));
+		return false;
+	}
+	return true;
+}
+
+QString SpectraClipMaker::DefaultExportName(QString &dir) const
+{
+	dir = recorder ? recorder->ClipsDirectory() : folder;
+	QString name = QStringLiteral("Clip %1").arg(RecordedAt(inPoint).toString("yyyy-MM-dd HH-mm-ss"));
+	if (mode == Mode::Clips) {
+		dir = QFileInfo(clipFile).absolutePath();
+		name = QTStr("Spectra.ClipMaker.TrimmedName").arg(QFileInfo(clipFile).completeBaseName());
+	}
+	return name;
+}
+
+void SpectraClipMaker::Export()
+{
+	if (!CheckExportable()) {
 		return;
 	}
 	if (playing) {
 		SetPlaying(false);
+	}
+	QString clipsDir;
+	const QString name = DefaultExportName(clipsDir) + QStringLiteral(".mp4");
+	QDir().mkpath(clipsDir);
+	QString path = QFileDialog::getSaveFileName(this, QTStr("Spectra.ClipMaker.Export"),
+						    QDir(clipsDir).filePath(name),
+						    QStringLiteral("MP4 (*.mp4);;Matroska (*.mkv)"));
+	if (path.isEmpty()) {
+		return;
+	}
+	if (QFileInfo(path).suffix().isEmpty()) {
+		path += QStringLiteral(".mp4");
+	}
+	StartExport(path, qualityCombo->currentData().toString(), reencodeCheck->isChecked());
+}
+
+void SpectraClipMaker::UploadToYouTube()
+{
+	if (!CheckExportable()) {
+		return;
+	}
+	if (playing) {
+		SetPlaying(false);
+	}
+	if (!YouTubeUpload::Available(main->Config())) {
+		OBSMessageBox::information(this, QTStr("Spectra.YouTube.Title"), QTStr("Spectra.YouTube.Unavailable"));
+		return;
+	}
+	QString clipsDir;
+	const QString name = DefaultExportName(clipsDir);
+	SpectraYouTubeUpload dialog(main->Config(), name, this);
+	if (dialog.exec() != QDialog::Accepted) {
+		return;
+	}
+	pendingUpload = dialog.Video();
+
+	/* The clip is kept in the clips folder as well */
+	QDir().mkpath(clipsDir);
+	QString path = QDir(clipsDir).filePath(name + QStringLiteral(".mp4"));
+	for (int i = 2; QFileInfo::exists(path); i++) {
+		path = QDir(clipsDir).filePath(QStringLiteral("%1 (%2).mp4").arg(name).arg(i));
+	}
+	StartExport(path, dialog.QualityKey(), false);
+}
+
+void SpectraClipMaker::StartExport(const QString &path, const QString &qualityKey, bool frameAccurate)
+{
+	if (exportState || segments.empty() || inPoint < 0.0 || outPoint <= inPoint) {
+		pendingUpload.reset();
+		return;
 	}
 
 	const int first = SegmentAt(inPoint);
@@ -2005,6 +2198,15 @@ void SpectraClipMaker::Export()
 		paths << segments[i].path;
 		inputs.push_back(segments[i].path.toStdString());
 	}
+	/* The output can't replace a file it is being made from */
+	for (const QString &input : paths) {
+		if (QFileInfo(input) == QFileInfo(path)) {
+			pendingUpload.reset();
+			OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"),
+					       QTStr("Spectra.ClipMaker.SameFile"));
+			return;
+		}
+	}
 
 	std::vector<ClipRender::Layer> burn;
 	for (const CensorLayer &l : layers) {
@@ -2015,66 +2217,24 @@ void SpectraClipMaker::Export()
 			burn.push_back(shifted);
 		}
 	}
-	const bool render = reencodeCheck->isChecked() || !burn.empty();
 
-	QString clipsDir = recorder ? recorder->ClipsDirectory() : folder;
-	QDir().mkpath(clipsDir);
-	QString name = QStringLiteral("Clip %1.mp4").arg(RecordedAt(inPoint).toString("yyyy-MM-dd HH-mm-ss"));
-	if (mode == Mode::Clips) {
-		clipsDir = QFileInfo(clipFile).absolutePath();
-		name = QTStr("Spectra.ClipMaker.TrimmedName").arg(QFileInfo(clipFile).completeBaseName()) + ".mp4";
-	}
-	QString path = QFileDialog::getSaveFileName(this, QTStr("Spectra.ClipMaker.Export"),
-						    QDir(clipsDir).filePath(name),
-						    QStringLiteral("MP4 (*.mp4);;Matroska (*.mkv)"));
-	if (path.isEmpty()) {
-		return;
-	}
-	if (QFileInfo(path).suffix().isEmpty()) {
-		path += QStringLiteral(".mp4");
-	}
-	/* The output can't replace a file it is being made from */
-	for (const QString &input : paths) {
-		if (QFileInfo(input) == QFileInfo(path)) {
-			OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"),
-					       QTStr("Spectra.ClipMaker.SameFile"));
-			return;
-		}
-	}
+	ClipRender::Quality quality = ClipRender::Quality::High;
+	const bool render = QualityFromKey(qualityKey, quality) || frameAccurate || !burn.empty();
 
 	const double start = inPoint - base, end = outPoint - base;
-	blog(LOG_INFO, "[Spectra] Clip maker: exporting %.2f s from %d segment(s) to '%s' (%s, %zu censor layer(s))",
-	     outPoint - inPoint, (int)inputs.size(), QT_TO_UTF8(path), render ? "re-encoded" : "lossless", burn.size());
+	blog(LOG_INFO, "[Spectra] Clip maker: exporting %.2f s from %d segment(s) to '%s' (%s, %zu censor layer(s)%s)",
+	     outPoint - inPoint, (int)inputs.size(), QT_TO_UTF8(path), render ? QT_TO_UTF8(qualityKey) : "lossless",
+	     burn.size(), pendingUpload ? ", for YouTube" : "");
 
 	if (recorder) {
 		recorder->Lock(paths);
 	}
 
-	exportState = std::make_shared<ExportState>();
-	exportButton->setEnabled(false);
-
-	progressDialog = new QProgressDialog(QTStr("Spectra.ClipMaker.Exporting"), QTStr("Cancel"), 0, 1000, this);
-	progressDialog->setWindowTitle(QTStr("Spectra.ClipMaker.Title"));
-	progressDialog->setWindowModality(Qt::WindowModal);
-	progressDialog->setMinimumDuration(0);
-	progressDialog->setAutoClose(false);
-	progressDialog->setAutoReset(false);
-	progressDialog->setValue(0);
-	std::shared_ptr<ExportState> state = exportState;
-	connect(progressDialog, &QProgressDialog::canceled, this, [state]() { state->cancel = true; });
-
-	progressTimer.setInterval(100);
-	disconnect(&progressTimer, nullptr, nullptr, nullptr);
-	connect(&progressTimer, &QTimer::timeout, this, [this]() {
-		if (exportState && progressDialog) {
-			progressDialog->setValue((int)(exportState->progress * 1000.0f));
-		}
-	});
-	progressTimer.start();
+	std::shared_ptr<ExportState> state = StartJob(QTStr("Spectra.ClipMaker.Exporting"));
 
 	QPointer<SpectraClipMaker> self(this);
 	QPointer<LoopRecorder> rec = recorder;
-	std::thread([self, rec, state, inputs, paths, start, end, burn, render, path]() {
+	std::thread([self, rec, state, inputs, paths, start, end, burn, render, quality, path]() {
 		auto progress = [state](float p) {
 			state->progress = p;
 			return !state->cancel;
@@ -2085,7 +2245,7 @@ void SpectraClipMaker::Export()
 		auto run = [&](const QString &target) {
 			error.clear();
 			return render ? ClipRender::Export(inputs, start, end, target.toStdString(), burn, error,
-							   progress)
+							   progress, quality)
 				      : ClipExport::Export(inputs, start, end, target.toStdString(), error, progress);
 		};
 		bool ok = run(outPath);
@@ -2117,9 +2277,93 @@ void SpectraClipMaker::Export()
 	}).detach();
 }
 
-void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QString &error)
+void SpectraClipMaker::StartUpload(const QString &path)
 {
-	bool cancelled = exportState && exportState->cancel;
+	YouTubeUpload::Session session;
+	if (!pendingUpload || !YouTubeUpload::LoadSession(main->Config(), session)) {
+		UploadFinished(false, path, QString(), QTStr("Spectra.YouTube.NotSignedIn"));
+		return;
+	}
+	const YouTubeUpload::Video video = *pendingUpload;
+	std::shared_ptr<ExportState> state = StartJob(QTStr("Spectra.YouTube.Uploading"));
+
+	QPointer<SpectraClipMaker> self(this);
+	std::thread([self, state, session, path, video]() mutable {
+		auto progress = [state](float p) {
+			state->progress = p;
+			return !state->cancel;
+		};
+		QString videoId, error;
+		const bool ok = YouTubeUpload::Upload(session, path, video, videoId, error, progress);
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, session, ok, path, videoId, error]() {
+				if (!self) {
+					return;
+				}
+				/* Keep a refreshed access token */
+				YouTubeUpload::SaveSession(self->main->Config(), session);
+				self->UploadFinished(ok, path, videoId, error);
+			},
+			Qt::QueuedConnection);
+	}).detach();
+}
+
+void SpectraClipMaker::UploadFinished(bool ok, const QString &path, const QString &videoId, const QString &error)
+{
+	const bool cancelled = EndJob();
+	pendingUpload.reset();
+	const QString shownPath = QDir::toNativeSeparators(path);
+
+	if (ok) {
+		const QString url = YouTubeUpload::VideoUrl(videoId);
+		QMessageBox box(QMessageBox::Information, QTStr("Spectra.YouTube.Title"),
+				QTStr("Spectra.YouTube.Done").arg(url, shownPath), QMessageBox::Ok, this);
+		QPushButton *open = box.addButton(QTStr("Spectra.YouTube.OpenVideo"), QMessageBox::ActionRole);
+		QPushButton *copy = box.addButton(QTStr("Spectra.YouTube.CopyLink"), QMessageBox::ActionRole);
+		box.exec();
+		if (box.clickedButton() == open) {
+			QDesktopServices::openUrl(QUrl(url));
+		} else if (box.clickedButton() == copy) {
+			QApplication::clipboard()->setText(url);
+		}
+	} else if (!cancelled) {
+		blog(LOG_WARNING, "[Spectra] YouTube: upload failed: %s", QT_TO_UTF8(error));
+		OBSMessageBox::warning(this, QTStr("Spectra.YouTube.Title"),
+				       QTStr("Spectra.YouTube.Failed").arg(error, shownPath));
+	}
+}
+
+std::shared_ptr<SpectraClipMaker::ExportState> SpectraClipMaker::StartJob(const QString &label)
+{
+	exportState = std::make_shared<ExportState>();
+	exportButton->setEnabled(false);
+	uploadButton->setEnabled(false);
+
+	progressDialog = new QProgressDialog(label, QTStr("Cancel"), 0, 1000, this);
+	progressDialog->setWindowTitle(QTStr("Spectra.ClipMaker.Title"));
+	progressDialog->setWindowModality(Qt::WindowModal);
+	progressDialog->setMinimumDuration(0);
+	progressDialog->setAutoClose(false);
+	progressDialog->setAutoReset(false);
+	progressDialog->setValue(0);
+	std::shared_ptr<ExportState> state = exportState;
+	connect(progressDialog, &QProgressDialog::canceled, this, [state]() { state->cancel = true; });
+
+	progressTimer.setInterval(100);
+	disconnect(&progressTimer, nullptr, nullptr, nullptr);
+	connect(&progressTimer, &QTimer::timeout, this, [this]() {
+		if (exportState && progressDialog) {
+			progressDialog->setValue((int)(exportState->progress * 1000.0f));
+		}
+	});
+	progressTimer.start();
+	return state;
+}
+
+bool SpectraClipMaker::EndJob()
+{
+	const bool cancelled = exportState && exportState->cancel;
 	progressTimer.stop();
 	exportState.reset();
 	if (progressDialog) {
@@ -2127,7 +2371,18 @@ void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QStrin
 		progressDialog->deleteLater();
 	}
 	InOutChanged();
+	return cancelled;
+}
 
+void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QString &error)
+{
+	const bool cancelled = EndJob();
+
+	if (ok && pendingUpload) {
+		StartUpload(path);
+		return;
+	}
+	pendingUpload.reset();
 	if (ok) {
 		QMessageBox box(QMessageBox::Information, QTStr("Spectra.ClipMaker.Title"),
 				QTStr("Spectra.ClipMaker.Saved").arg(QDir::toNativeSeparators(path)), QMessageBox::Ok,
