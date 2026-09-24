@@ -33,6 +33,8 @@
 !INSTALL
 !README.rst
 !README.md
+!AGENTS.md
+!CLAUDE.md
 
 # Exclude lock files
 *.lock.json
