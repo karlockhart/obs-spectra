@@ -1,5 +1,6 @@
 #include "LoopRecorder.hpp"
 #include "ClipExport.hpp"
+#include "SpectraSpeakerTracks.hpp"
 
 #include <widgets/OBSBasic.hpp>
 
@@ -278,6 +279,10 @@ void LoopRecorder::UpdateCapture()
 		capture->Update(ActivePatterns());
 	} else {
 		capture->Reset();
+	}
+	/* Captures and the Starling voice come and go while recording */
+	if (SpectraSpeakerTracks::Enabled(main->Config())) {
+		SpectraSpeakerTracks::Apply();
 	}
 }
 

@@ -527,6 +527,9 @@ bool Export(const std::vector<std::string> &inputs, double startSec, double endS
 
 	std::vector<int> streamMap(streamCount, -1);
 	AVStream *vost = nullptr;
+	/* Only the first audio track, the full mix: loop recordings can also
+	 * have one track per speaker, for transcripts */
+	bool audioCopied = false;
 	for (unsigned i = 0; i < streamCount; i++) {
 		AVStream *ist = in->streams[i];
 		if ((int)i == videoIndex) {
@@ -541,9 +544,10 @@ bool Export(const std::vector<std::string> &inputs, double startSec, double endS
 			streamMap[i] = vost->index;
 			continue;
 		}
-		if (ist->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+		if (ist->codecpar->codec_type != AVMEDIA_TYPE_AUDIO || audioCopied) {
 			continue;
 		}
+		audioCopied = true;
 		if (avformat_query_codec(oc->oformat, ist->codecpar->codec_id, FF_COMPLIANCE_NORMAL) != 1) {
 			error = std::string("Codec '") + avcodec_get_name(ist->codecpar->codec_id) +
 				"' is not supported by the output container";

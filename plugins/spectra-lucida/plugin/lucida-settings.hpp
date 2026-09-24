@@ -4,10 +4,16 @@
 
 #include <QDialog>
 
+#include <atomic>
+#include <memory>
+
 class QCheckBox;
+class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QProgressBar;
+class QPushButton;
 class QSpinBox;
 class QTableWidget;
 
@@ -20,6 +26,7 @@ class SettingsDialog : public QDialog {
 
 public:
 	SettingsDialog(Controller *controller, QWidget *parent = nullptr);
+	~SettingsDialog() override;
 
 	void accept() override;
 
@@ -48,7 +55,21 @@ private:
 	QLineEdit *tryLine;
 	QLabel *tryResult;
 
+	/* Speech (Spectra) */
+	QCheckBox *speechEnabled, *speechGpu, *speechMe, *speechTeamSpeak, *speechGame;
+	QComboBox *speechModel, *speechLanguage, *speechWhen;
+	QPushButton *speechDownload, *speechOlder;
+	QProgressBar *speechProgress;
+	QLabel *speechModelState, *speechStatus, *speechOlderNote;
+	QLineEdit *speechPrompt;
+	bool speechIncludeOlder = false;
+	/* Set to cancel a model download when the dialog closes */
+	std::shared_ptr<std::atomic<bool>> downloadCancel;
+
 	QWidget *GeneralPage(const Settings &s);
+	QWidget *SpeechPage(const Settings &s);
+	void UpdateModelState();
+	void DownloadModel();
 	QWidget *SamplingPage(const Settings &s);
 	QWidget *ScreenshotsPage(const Settings &s);
 	QWidget *TagsPage(const Settings &s);

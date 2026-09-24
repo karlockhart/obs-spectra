@@ -72,6 +72,9 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	starlingVoice = new QCheckBox(QTStr("Spectra.Loop.Settings.StarlingVoice"));
 	starlingVoice->setChecked(recorder->StarlingVoiceEnabled());
 	starlingVoice->setToolTip(QTStr("Spectra.Loop.Settings.StarlingVoiceTip"));
+	speakerTracks = new QCheckBox(QTStr("Spectra.Loop.Settings.SpeakerTracks"));
+	speakerTracks->setChecked(config_get_bool(config, LOOP_SECTION, "SpeakerTracks"));
+	speakerTracks->setToolTip(QTStr("Spectra.Loop.Settings.SpeakerTracksTip"));
 
 	resolution = new QComboBox();
 	SpectraDefaults::FillResolutionCombo(resolution, (int)config_get_int(config, LOOP_SECTION, "CanvasCX"),
@@ -107,6 +110,7 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoCapture);
 	form->addRow(QString(), fitToCanvas);
 	form->addRow(QString(), starlingVoice);
+	form->addRow(QString(), speakerTracks);
 
 	QGroupBox *overlayGroup = new QGroupBox(QTStr("Spectra.Overlay.Settings"));
 	auto *overlayForm = new QFormLayout(overlayGroup);
@@ -269,6 +273,7 @@ void SpectraLoopSettings::accept()
 	config_set_bool(config, LOOP_SECTION, "AutoCapture", autoCapture->isChecked());
 	config_set_bool(config, LOOP_SECTION, "FitToCanvas", fitToCanvas->isChecked());
 	config_set_bool(config, LOOP_SECTION, "StarlingVoice", starlingVoice->isChecked());
+	config_set_bool(config, LOOP_SECTION, "SpeakerTracks", speakerTracks->isChecked());
 	config_set_string(config, LOOP_SECTION, "Processes", QT_TO_UTF8(processes->Patterns()));
 	config_set_bool(config, LOOP_SECTION, "AnyFullscreen", processes->AnyFullscreen());
 	config_set_bool(config, OVERLAY_SECTION, "Enabled", overlayEnabled->isChecked());

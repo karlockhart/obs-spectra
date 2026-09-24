@@ -1,8 +1,16 @@
 #include "lucida-settings.hpp"
+#include "lucida-speech.hpp"
+
+#include <spectra-speech/models.hpp>
 
 #include <obs-module.h>
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDateTime>
+#include <QPointer>
+#include <QProgressBar>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
@@ -20,6 +28,8 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
+
+#include <thread>
 
 namespace lucida {
 
@@ -88,6 +98,7 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	tabs->addTab(TagsPage(s), T("Lucida.Settings.Tags"));
 	tabs->addTab(SamplingPage(s), T("Lucida.Settings.Sampling"));
 	tabs->addTab(ScreenshotsPage(s), T("Lucida.Settings.Screenshots"));
+	tabs->addTab(SpeechPage(s), T("Lucida.Settings.Speech"));
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -96,6 +107,13 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->addWidget(tabs);
 	layout->addWidget(buttons);
+}
+
+SettingsDialog::~SettingsDialog()
+{
+	if (downloadCancel) {
+		*downloadCancel = true;
+	}
 }
 
 QWidget *SettingsDialog::PathRow(QLineEdit *edit, bool file)
@@ -224,6 +242,192 @@ QWidget *SettingsDialog::ScreenshotsPage(const Settings &s)
 	form->addRow(T("Lucida.Settings.Quality"), cropQuality);
 	form->addRow(T("Lucida.Settings.Retention"), cropRetention);
 	return Page(form);
+}
+
+QWidget *SettingsDialog::SpeechPage(const Settings &s)
+{
+	using namespace spectra::speech;
+	const SpeechSettings &sp = s.speech;
+
+	speechEnabled = Check("Lucida.Settings.Speech.Enabled", sp.enabled);
+
+	speechModel = new QComboBox();
+	for (const ModelInfo &model : WhisperModels()) {
+		speechModel->addItem(QStringLiteral("%1 (%2 MB)").arg(model.title).arg(model.size / (1024 * 1024)),
+				     model.id);
+	}
+	const int modelIndex = speechModel->findData(sp.model.isEmpty() ? DefaultWhisperModel() : sp.model);
+	speechModel->setCurrentIndex(std::max(modelIndex, 0));
+	speechDownload = new QPushButton(T("Lucida.Settings.Speech.Download"));
+	speechDownload->setAutoDefault(false);
+	speechProgress = new QProgressBar();
+	speechProgress->setVisible(false);
+	speechModelState = new QLabel();
+	connect(speechModel, &QComboBox::currentIndexChanged, this, &SettingsDialog::UpdateModelState);
+	connect(speechDownload, &QPushButton::clicked, this, &SettingsDialog::DownloadModel);
+
+	QWidget *modelRow = new QWidget();
+	QHBoxLayout *modelLayout = new QHBoxLayout(modelRow);
+	modelLayout->setContentsMargins(0, 0, 0, 0);
+	modelLayout->addWidget(speechModel, 1);
+	modelLayout->addWidget(speechDownload);
+
+	speechLanguage = new QComboBox();
+	const std::pair<const char *, const char *> languages[] = {
+		{"auto", "Lucida.Settings.Speech.Language.Auto"}, {"en", "Lucida.Settings.Speech.Language.en"},
+		{"es", "Lucida.Settings.Speech.Language.es"},     {"fr", "Lucida.Settings.Speech.Language.fr"},
+		{"de", "Lucida.Settings.Speech.Language.de"},     {"nl", "Lucida.Settings.Speech.Language.nl"},
+		{"pt", "Lucida.Settings.Speech.Language.pt"},     {"it", "Lucida.Settings.Speech.Language.it"},
+		{"pl", "Lucida.Settings.Speech.Language.pl"},
+	};
+	for (const auto &[code, key] : languages) {
+		speechLanguage->addItem(T(key), QString::fromLatin1(code));
+	}
+	speechLanguage->setCurrentIndex(std::max(speechLanguage->findData(sp.language), 0));
+
+	speechWhen = new QComboBox();
+	speechWhen->addItem(T("Lucida.Settings.Speech.When.AfterSegment"), (int)SpeechSettings::When::AfterSegment);
+	speechWhen->addItem(T("Lucida.Settings.Speech.When.AfterGame"), (int)SpeechSettings::When::AfterGame);
+	speechWhen->setCurrentIndex(std::max(speechWhen->findData((int)sp.when), 0));
+	speechWhen->setToolTip(T("Lucida.Settings.Speech.When.Tip"));
+
+	speechGpu = Check("Lucida.Settings.Speech.Gpu", sp.useGpu);
+	speechGpu->setToolTip(T("Lucida.Settings.Speech.Gpu.Tip"));
+	speechMe = Check("Lucida.Settings.Speech.Me", sp.me);
+	speechTeamSpeak = Check("Lucida.Settings.Speech.TeamSpeak", sp.teamSpeak);
+	speechGame = Check("Lucida.Settings.Speech.Game", sp.game);
+	QWidget *speakers = new QWidget();
+	QHBoxLayout *speakerLayout = new QHBoxLayout(speakers);
+	speakerLayout->setContentsMargins(0, 0, 0, 0);
+	speakerLayout->addWidget(speechMe);
+	speakerLayout->addWidget(speechTeamSpeak);
+	speakerLayout->addWidget(speechGame);
+	speakerLayout->addStretch(1);
+
+	speechPrompt = new QLineEdit(sp.prompt);
+	speechPrompt->setPlaceholderText(T("Lucida.Settings.Speech.Prompt.Placeholder"));
+	speechPrompt->setToolTip(T("Lucida.Settings.Speech.Prompt.Tip"));
+
+	speechOlder = new QPushButton(T("Lucida.Settings.Speech.Older"));
+	speechOlder->setAutoDefault(false);
+	speechOlderNote = Note(sp.enabled && sp.since <= 0.0 ? T("Lucida.Settings.Speech.Older.All") : QString());
+	speechOlder->setEnabled(!(sp.enabled && sp.since <= 0.0));
+	connect(speechOlder, &QPushButton::clicked, this, [this] {
+		if (QMessageBox::question(this, T("Lucida.Settings.Title"),
+					  T("Lucida.Settings.Speech.Older.Confirm")) != QMessageBox::Yes) {
+			return;
+		}
+		speechIncludeOlder = true;
+		speechOlder->setEnabled(false);
+		speechOlderNote->setText(T("Lucida.Settings.Speech.Older.All"));
+	});
+
+	speechStatus = new QLabel(controller->Speech()->Status());
+	speechStatus->setWordWrap(true);
+	connect(controller->Speech(), &SpeechController::statusChanged, speechStatus, &QLabel::setText);
+
+	QFormLayout *form = new QFormLayout();
+	form->addRow(speechEnabled);
+	form->addRow(Note(T("Lucida.Settings.Speech.Note")));
+	form->addRow(T("Lucida.Settings.Speech.Model"), modelRow);
+	form->addRow(QString(), speechModelState);
+	form->addRow(QString(), speechProgress);
+	form->addRow(T("Lucida.Settings.Speech.Language"), speechLanguage);
+	form->addRow(T("Lucida.Settings.Speech.When"), speechWhen);
+	form->addRow(speechGpu);
+	form->addRow(T("Lucida.Settings.Speech.Speakers"), speakers);
+	form->addRow(Note(T("Lucida.Settings.Speech.Speakers.Note")));
+	form->addRow(T("Lucida.Settings.Speech.Prompt"), speechPrompt);
+	form->addRow(speechOlder);
+	form->addRow(speechOlderNote);
+	form->addRow(T("Lucida.Settings.Speech.Status"), speechStatus);
+	UpdateModelState();
+	return Page(form);
+}
+
+void SettingsDialog::UpdateModelState()
+{
+	using namespace spectra::speech;
+	const ModelInfo *model = FindWhisperModel(speechModel->currentData().toString());
+	if (!model) {
+		return;
+	}
+	const bool installed = ModelInstalled(*model) && ModelInstalled(VadModel());
+	const bool downloading = downloadCancel && !*downloadCancel;
+	speechModelState->setText(installed ? T("Lucida.Settings.Speech.Installed")
+					    : T("Lucida.Settings.Speech.NotInstalled").arg(ModelDirectory()));
+	speechDownload->setVisible(!installed || downloading);
+	speechDownload->setText(downloading ? T("Lucida.Settings.Speech.Cancel")
+					    : T("Lucida.Settings.Speech.Download"));
+	speechModel->setEnabled(!downloading);
+}
+
+void SettingsDialog::DownloadModel()
+{
+	using namespace spectra::speech;
+	if (downloadCancel && !*downloadCancel) {
+		*downloadCancel = true;
+		return;
+	}
+	const ModelInfo *model = FindWhisperModel(speechModel->currentData().toString());
+	if (!model) {
+		return;
+	}
+
+	auto cancel = std::make_shared<std::atomic<bool>>(false);
+	downloadCancel = cancel;
+	speechProgress->setRange(0, 1000);
+	speechProgress->setValue(0);
+	speechProgress->setVisible(true);
+	UpdateModelState();
+
+	QPointer<SettingsDialog> self(this);
+	const ModelInfo whisper = *model;
+	std::thread([self, cancel, whisper]() {
+		QString error;
+		bool ok = true;
+		for (const ModelInfo &m : {VadModel(), whisper}) {
+			if (ModelInstalled(m)) {
+				continue;
+			}
+			ok = spectra::speech::DownloadModel(
+				m,
+				[self, cancel, &m](qint64 received, qint64 total) {
+					const int permille = total > 0 ? (int)(received * 1000 / total) : 0;
+					QMetaObject::invokeMethod(
+						qApp,
+						[self, permille, title = m.title]() {
+							if (self) {
+								self->speechProgress->setValue(permille);
+								self->speechProgress->setFormat(
+									QStringLiteral("%1: %p%").arg(title));
+							}
+						},
+						Qt::QueuedConnection);
+					return !*cancel;
+				},
+				&error);
+			if (!ok) {
+				break;
+			}
+		}
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, cancel, ok, error]() {
+				const bool cancelled = *cancel;
+				*cancel = true;
+				if (!self) {
+					return;
+				}
+				self->speechProgress->setVisible(false);
+				self->UpdateModelState();
+				if (!ok && !cancelled) {
+					QMessageBox::warning(self, T("Lucida.Settings.Title"),
+							     T("Lucida.Settings.Speech.DownloadFailed").arg(error));
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
 }
 
 QWidget *SettingsDialog::TagsPage(const Settings &s)
@@ -397,6 +601,24 @@ Settings SettingsDialog::Collect() const
 
 	s.tagRules = Rules();
 	s.tolerateTypos = tolerateTypos->isChecked();
+
+	SpeechSettings &sp = s.speech;
+	const bool wasEnabled = sp.enabled;
+	sp.enabled = speechEnabled->isChecked();
+	sp.model = speechModel->currentData().toString();
+	sp.language = speechLanguage->currentData().toString();
+	sp.when = (SpeechSettings::When)speechWhen->currentData().toInt();
+	sp.useGpu = speechGpu->isChecked();
+	sp.me = speechMe->isChecked();
+	sp.teamSpeak = speechTeamSpeak->isChecked();
+	sp.game = speechGame->isChecked();
+	sp.prompt = speechPrompt->text().trimmed();
+	if (speechIncludeOlder) {
+		sp.since = 0.0;
+	} else if (sp.enabled && !wasEnabled && sp.since <= 0.0) {
+		/* Turning it on starts from now, not the whole loop folder */
+		sp.since = QDateTime::currentSecsSinceEpoch();
+	}
 	return s;
 }
 

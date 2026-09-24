@@ -1077,6 +1077,9 @@ public:
 	bool LoopRecordingActive() const;
 	/* Bytes written since the loop started, across all its segments */
 	uint64_t LoopRecordingTotalBytes() const;
+	/* Audio tracks (mixer bits) the loop records: the recording tracks, or
+	 * with speaker tracks on, the mix plus one track per speaker */
+	int LoopAudioTracks(int recordTracks) const;
 	bool SplitLoopRecording();
 	/* Opens the Clip Maker on a moment of the loop recording (see SpectraClipMaker::ShowMoment) */
 	void OpenClipMakerAt(const QString &segment, double offset, double before, double after);

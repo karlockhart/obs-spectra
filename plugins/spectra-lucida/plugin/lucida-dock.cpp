@@ -1,6 +1,7 @@
 #include "lucida-dock.hpp"
 #include "lucida-controller.hpp"
 #include "lucida-settings.hpp"
+#include "lucida-speech.hpp"
 #include "lucida-viewer.hpp"
 
 #include <obs-module.h>
@@ -55,6 +56,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 {
 	status = new QLabel(controller->Status());
 	status->setWordWrap(true);
+	speechStatus = new QLabel(controller->Speech()->Status());
+	speechStatus->setWordWrap(true);
+	speechStatus->setVisible(!speechStatus->text().isEmpty());
 
 	search = new QLineEdit();
 	search->setPlaceholderText(obs_module_text("Lucida.Dock.Search"));
@@ -86,6 +90,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(status);
+	layout->addWidget(speechStatus);
 	layout->addLayout(row);
 	layout->addWidget(list, 1);
 
@@ -105,6 +110,15 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	connect(controller, &Controller::statusChanged, status, &QLabel::setText);
 	connect(controller, &Controller::ticked, this, [this](int added, double, bool) {
 		if (added > 0 && search->text().isEmpty()) {
+			Reload();
+		}
+	});
+	connect(controller->Speech(), &SpeechController::statusChanged, this, [this](const QString &text) {
+		speechStatus->setText(text);
+		speechStatus->setVisible(!text.isEmpty());
+	});
+	connect(controller->Speech(), &SpeechController::transcribed, this, [this](const QString &, int lines) {
+		if (lines > 0 && search->text().isEmpty()) {
 			Reload();
 		}
 	});

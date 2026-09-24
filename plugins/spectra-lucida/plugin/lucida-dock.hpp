@@ -28,6 +28,7 @@ public:
 private:
 	QPointer<Controller> controller;
 	QLabel *status;
+	QLabel *speechStatus;
 	QLineEdit *search;
 	QCheckBox *pause;
 	QListWidget *list;

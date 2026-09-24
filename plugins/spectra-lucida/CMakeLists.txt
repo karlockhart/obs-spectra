@@ -73,12 +73,22 @@ target_sources(
     plugin/lucida-plugin.cpp
     plugin/lucida-settings.cpp
     plugin/lucida-settings.hpp
+    plugin/lucida-speech.cpp
+    plugin/lucida-speech.hpp
     plugin/lucida-viewer.cpp
     plugin/lucida-viewer.hpp
 )
 target_link_libraries(
   spectra-lucida
-  PRIVATE lucida-core obscura-core spectra-censor spectra-grab OBS::libobs OBS::frontend-api Qt::Widgets
+  PRIVATE
+    lucida-core
+    obscura-core
+    spectra-censor
+    spectra-grab
+    spectra-speech
+    OBS::libobs
+    OBS::frontend-api
+    Qt::Widgets
 )
 set_target_properties(spectra-lucida PROPERTIES AUTOMOC ON)
 set_target_properties_obs(spectra-lucida PROPERTIES FOLDER spectra PREFIX "")

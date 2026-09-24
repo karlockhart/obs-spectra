@@ -405,10 +405,16 @@ inline void AdvancedOutput::SetupRecording()
 				if (replayBuffer) {
 					obs_output_set_audio_encoder(replayBuffer, recordTrack[i], idx);
 				}
-				if (loopOutput) {
-					obs_output_set_audio_encoder(loopOutput, recordTrack[i], idx);
-				}
 				idx++;
+			}
+		}
+		if (loopOutput) {
+			const int loopTracks = main->LoopAudioTracks(tracks);
+			int loopIdx = 0;
+			for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
+				if ((loopTracks & (1 << i)) != 0) {
+					obs_output_set_audio_encoder(loopOutput, recordTrack[i], loopIdx++);
+				}
 			}
 		}
 	} else if (flv && tracks != 0) {

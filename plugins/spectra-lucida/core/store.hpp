@@ -95,6 +95,24 @@ struct Stats {
 	std::vector<std::pair<QString, long long>> channels;
 };
 
+/* A line of transcribed speech (Spectra): channel "voice" or "voice/<speaker>" */
+struct SpeechLine {
+	double at = 0.0; /* wall clock when it was said, s */
+	QString speaker; /* "me", "teamspeak", "game" or empty for the mix */
+	QString body;
+	double confidence = 0.0;
+	VideoSpot video;
+};
+
+/* How far transcription of a loop segment got */
+struct SpeechSegment {
+	QString path;
+	long long size = 0; /* when transcribed; a different size is a new file */
+	QString state;      /* "done" or "failed" */
+	int lines = 0;
+	QString error;
+};
+
 struct RepairResult {
 	QString backup;
 	std::unordered_map<std::string, int> copied;
@@ -148,6 +166,14 @@ public:
 	/* Kept screenshots, newest first */
 	std::vector<FrameInfo> Frames(int limit = 200, std::optional<long long> from = {},
 				      std::optional<long long> to = {});
+
+	/* Spectra: the transcript of one loop segment. Replaces what an earlier
+	 * run stored for it and records it as done, in one transaction, so an
+	 * interrupted run leaves neither duplicates nor a half transcript. */
+	std::vector<long long> SetSegmentSpeech(const QString &segment, long long size,
+						const std::vector<SpeechLine> &lines);
+	void MarkSpeechFailed(const QString &segment, long long size, const QString &error);
+	std::optional<SpeechSegment> GetSpeechSegment(const QString &segment);
 
 	/* Tags lines as they are added (and when a better reading replaces one) */
 	std::function<QStringList(const QString &body)> labeler;

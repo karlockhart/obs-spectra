@@ -68,6 +68,15 @@ CREATE TABLE IF NOT EXISTS frame_lines (
     PRIMARY KEY (frame_id, line_id)
 );
 CREATE INDEX IF NOT EXISTS frame_lines_line ON frame_lines(line_id);
+-- Spectra: loop segments whose speech has been transcribed
+CREATE TABLE IF NOT EXISTS speech_segments (
+    path        TEXT PRIMARY KEY,
+    size        INTEGER NOT NULL,
+    state       TEXT NOT NULL,
+    lines       INTEGER NOT NULL DEFAULT 0,
+    error       TEXT,
+    updated     REAL NOT NULL
+);
 )SQL";
 
 /* Columns added after Lucida 0.1.0; older databases are migrated on open */
@@ -79,7 +88,9 @@ const std::pair<const char *, const char *> kLaterColumns[] = {
 	{"colour", "TEXT"},
 	{"labels", "TEXT"},
 	{"video", "TEXT"},
-	{"video_offset", "REAL"}};
+	{"video_offset", "REAL"},
+	/* Spectra: 'speech' for transcribed speech, NULL for chat read by OCR */
+	{"source", "TEXT"}};
 
 constexpr double kFuzzyRatio = 0.9; /* below this, two readings are different lines */
 constexpr int kPrefixMin = 12;      /* shorter than this, a shared opening proves nothing */
@@ -465,7 +476,7 @@ void Store::LoadWindow()
 	 * is still on screen */
 	const double now = Now();
 	Stmt s(db, "SELECT id, dedup_key, clock, body, score, sort_ts, last_seen FROM lines"
-		   " WHERE sort_ts >= ? OR last_seen >= ?");
+		   " WHERE (sort_ts >= ? OR last_seen >= ?) AND source IS NULL");
 	s.Bind(1, (long long)(now - dedupWindow)).Bind(2, now - dedupWindow);
 	while (s.Step() == SQLITE_ROW) {
 		long long sortTs = s.Int(5);
@@ -553,6 +564,88 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 		f.Bind(1, rowId).Bind(2, body).Run();
 	}
 	return rowId;
+}
+
+std::vector<long long> Store::SetSegmentSpeech(const QString &segment, long long size,
+					       const std::vector<SpeechLine> &lines)
+{
+	std::vector<long long> added;
+	if (!db) {
+		return added;
+	}
+	Exec("BEGIN");
+
+	/* What an earlier, interrupted or outdated run stored for this segment */
+	{
+		Stmt old(db, "SELECT id, body FROM lines WHERE source='speech' AND video=?");
+		old.Bind(1, segment);
+		std::vector<std::pair<long long, QString>> rows;
+		while (old.Step() == SQLITE_ROW) {
+			rows.emplace_back(old.Int(0), old.Text(1));
+		}
+		for (const auto &[id, body] : rows) {
+			if (fts) {
+				Stmt del(db, "INSERT INTO lines_fts(lines_fts, rowid, body) VALUES ('delete', ?, ?)");
+				del.Bind(1, id).Bind(2, body).Run();
+			}
+			Stmt del(db, "DELETE FROM lines WHERE id=?");
+			del.Bind(1, id).Run();
+		}
+	}
+
+	for (size_t i = 0; i < lines.size(); i++) {
+		const SpeechLine &line = lines[i];
+		const QString body = line.body.trimmed();
+		if (body.isEmpty()) {
+			continue;
+		}
+		const QString channel = line.speaker.isEmpty() ? QStringLiteral("voice")
+							       : QStringLiteral("voice/") + line.speaker;
+		Stmt s(db, "INSERT INTO lines(sort_ts, seq, ts_source, channel, tags, body, dedup_key, score, frames,"
+			   " first_seen, last_seen, labels, video, video_offset, source)"
+			   " VALUES (?,?,'wall',?,'[]',?,?,?,1,?,?,?,?,?,'speech')");
+		s.Bind(1, (long long)std::floor(line.at))
+			.Bind(2, (int)i)
+			.Bind(3, channel)
+			.Bind(4, body)
+			.Bind(5, DedupKey(std::nullopt, body))
+			.Bind(6, line.confidence)
+			.Bind(7, line.at)
+			.Bind(8, line.at)
+			.Bind(9, TagsJson(labeler ? labeler(body) : QStringList()))
+			.Bind(10, line.video.path)
+			.Bind(11, line.video.offset)
+			.Run();
+		const long long rowId = sqlite3_last_insert_rowid(db);
+		if (fts) {
+			Stmt f(db, "INSERT INTO lines_fts(rowid, body) VALUES (?,?)");
+			f.Bind(1, rowId).Bind(2, body).Run();
+		}
+		added.push_back(rowId);
+	}
+
+	Stmt done(db, "INSERT OR REPLACE INTO speech_segments(path, size, state, lines, error, updated)"
+		      " VALUES (?,?,'done',?,NULL,?)");
+	done.Bind(1, segment).Bind(2, size).Bind(3, (int)added.size()).Bind(4, Now()).Run();
+	Exec("COMMIT");
+	return added;
+}
+
+void Store::MarkSpeechFailed(const QString &segment, long long size, const QString &error)
+{
+	Stmt s(db, "INSERT OR REPLACE INTO speech_segments(path, size, state, lines, error, updated)"
+		   " VALUES (?,?,'failed',0,?,?)");
+	s.Bind(1, segment).Bind(2, size).Bind(3, error).Bind(4, Now()).Run();
+}
+
+std::optional<SpeechSegment> Store::GetSpeechSegment(const QString &segment)
+{
+	Stmt s(db, "SELECT path, size, state, lines, error FROM speech_segments WHERE path=?");
+	s.Bind(1, segment);
+	if (s.Step() != SQLITE_ROW) {
+		return std::nullopt;
+	}
+	return SpeechSegment{s.Text(0), s.Int(1), s.Text(2), (int)s.Int(3), s.Text(4)};
 }
 
 void Store::Touch(WindowLine &hit, const QString &body, double score, long long frameTs, double now)
