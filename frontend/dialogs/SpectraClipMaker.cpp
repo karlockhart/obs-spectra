@@ -2765,6 +2765,7 @@ std::shared_ptr<SpectraClipMaker::ExportState> SpectraClipMaker::StartJob(const 
 {
 	exportState = std::make_shared<ExportState>();
 	exportButton->setEnabled(false);
+	uploadButton->setEnabled(false);
 	transcribeButton->setEnabled(false);
 
 	progressDialog = new QProgressDialog(label, QTStr("Cancel"), 0, 1000, this);
