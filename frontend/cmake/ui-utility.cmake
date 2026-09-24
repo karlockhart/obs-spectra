@@ -23,6 +23,8 @@ target_sources(
     utility/GoLiveAPI_Network.hpp
     utility/GoLiveAPI_PostData.cpp
     utility/GoLiveAPI_PostData.hpp
+    utility/ClipCaptions.cpp
+    utility/ClipCaptions.hpp
     utility/LoopCapture.cpp
     utility/LoopCapture.hpp
     utility/LoopRecorder.cpp

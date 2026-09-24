@@ -11,10 +11,11 @@
  *   track 1  the full mix (what clips keep)
  *   track 2  me: microphones and the Starling voice
  *   track 3  TeamSpeak
- *   track 4  the game
+ *   track 4  the game, and every other sound
  *
- * Every audio source stays in track 1; tracks 2-4 are only recorded by the
- * loop, never by normal recordings unless they were set up to.
+ * Every audio source stays in track 1 and is also in exactly one of tracks
+ * 2-4, so transcribing those three misses nothing. They are only recorded
+ * by the loop, never by normal recordings unless they were set up to.
  */
 namespace SpectraSpeakerTracks {
 

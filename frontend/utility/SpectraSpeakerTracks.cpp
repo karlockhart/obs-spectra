@@ -10,13 +10,11 @@ namespace SpectraSpeakerTracks {
 
 namespace {
 
-/* Output channels 3-6 are the microphone/aux devices; Spectra puts the
- * Starling voice on 7 */
+/* Output channels 1-2 are desktop audio, 3-6 the microphone/aux devices;
+ * Spectra puts the Starling voice on 7 */
+constexpr int kFirstChannel = 1;
 constexpr int kFirstMicChannel = 3;
 constexpr int kLastMicChannel = 7;
-
-/* LoopCapture's tag on the game and window captures it manages */
-constexpr const char *kCaptureTag = "spectra_capture";
 
 bool IsTeamSpeak(obs_source_t *source)
 {
@@ -29,12 +27,6 @@ bool IsTeamSpeak(obs_source_t *source)
 	return window.endsWith(QStringLiteral("ts3client_win64.exe")) ||
 	       window.endsWith(QStringLiteral("ts3client_win32.exe")) ||
 	       window.endsWith(QStringLiteral("teamspeak.exe"));
-}
-
-bool IsGameCapture(obs_source_t *source)
-{
-	OBSDataAutoRelease priv = obs_source_get_private_settings(source);
-	return *obs_data_get_string(priv, kCaptureTag) != '\0';
 }
 
 void Route(obs_source_t *source, Speaker speaker)
@@ -61,31 +53,26 @@ bool Enabled(config_t *profile)
 
 void Apply()
 {
-	std::set<obs_source_t *> mics;
-	for (int channel = kFirstMicChannel; channel <= kLastMicChannel; channel++) {
+	std::set<obs_source_t *> global;
+	for (int channel = kFirstChannel; channel <= kLastMicChannel; channel++) {
 		OBSSourceAutoRelease source = obs_get_output_source(channel);
 		if (source) {
-			mics.insert(source.Get());
-			Route(source, Speaker::Me);
+			global.insert(source.Get());
+			Route(source, channel >= kFirstMicChannel ? Speaker::Me : Speaker::Game);
 		}
 	}
 
 	obs_enum_sources(
 		[](void *param, obs_source_t *source) {
-			auto &mics = *static_cast<std::set<obs_source_t *> *>(param);
-			if (mics.count(source)) {
+			auto &global = *static_cast<std::set<obs_source_t *> *>(param);
+			if (global.count(source)) {
 				return true;
 			}
-			if (IsGameCapture(source)) {
-				Route(source, Speaker::Game);
-			} else if (IsTeamSpeak(source)) {
-				Route(source, Speaker::TeamSpeak);
-			} else {
-				Route(source, Speaker::Mix);
-			}
+			/* Everything that isn't TeamSpeak counts as the game */
+			Route(source, IsTeamSpeak(source) ? Speaker::TeamSpeak : Speaker::Game);
 			return true;
 		},
-		&mics);
+		&global);
 }
 
 const char *Label(Speaker speaker)

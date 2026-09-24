@@ -38,6 +38,9 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QHeaderView>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -160,7 +163,7 @@ SpectraClipMaker::SpectraClipMaker(OBSBasic *main_, LoopRecorder *recorder_)
 	QSplitter *top = new QSplitter(Qt::Horizontal);
 	top->addWidget(BuildLibrary());
 	top->addWidget(BuildPreview());
-	top->addWidget(BuildLayerPanel());
+	top->addWidget(BuildSidePanel());
 	top->setStretchFactor(0, 0);
 	top->setStretchFactor(1, 1);
 	top->setStretchFactor(2, 0);
@@ -241,6 +244,11 @@ SpectraClipMaker::~SpectraClipMaker()
 		if (player.source) {
 			obs_source_dec_showing(player.source);
 		}
+	}
+	if (captionTexture) {
+		obs_enter_graphics();
+		gs_texture_destroy(captionTexture);
+		obs_leave_graphics();
 	}
 }
 
@@ -641,6 +649,166 @@ QWidget *SpectraClipMaker::BuildLayerPanel()
 	return panel;
 }
 
+QWidget *SpectraClipMaker::BuildSidePanel()
+{
+	QTabWidget *tabs = new QTabWidget();
+	tabs->addTab(BuildLayerPanel(), QTStr("Spectra.ClipMaker.CensorTab"));
+	tabs->addTab(BuildCaptionPanel(), QTStr("Spectra.ClipMaker.CaptionsTab"));
+	return tabs;
+}
+
+enum CaptionColumn { kCaptionTime, kCaptionWho, kCaptionText };
+
+QWidget *SpectraClipMaker::BuildCaptionPanel()
+{
+	QWidget *panel = new QWidget();
+	QVBoxLayout *layout = new QVBoxLayout(panel);
+	layout->setContentsMargins(0, 0, 0, 0);
+
+	transcribeButton = new QPushButton(QTStr("Spectra.ClipMaker.Captions.Transcribe"));
+	transcribeButton->setToolTip(QTStr("Spectra.ClipMaker.Captions.TranscribeTip"));
+	connect(transcribeButton, &QPushButton::clicked, this, &SpectraClipMaker::Transcribe);
+	layout->addWidget(transcribeButton);
+
+	captionInfo = new QLabel(QTStr("Spectra.ClipMaker.Captions.Info"));
+	captionInfo->setWordWrap(true);
+	layout->addWidget(captionInfo);
+
+	captionTable = new QTableWidget(0, 3);
+	captionTable->setHorizontalHeaderLabels({QTStr("Spectra.ClipMaker.Captions.Time"),
+						 QTStr("Spectra.ClipMaker.Captions.Who"),
+						 QTStr("Spectra.ClipMaker.Captions.Text")});
+	captionTable->horizontalHeader()->setSectionResizeMode(kCaptionTime, QHeaderView::ResizeToContents);
+	captionTable->horizontalHeader()->setSectionResizeMode(kCaptionWho, QHeaderView::ResizeToContents);
+	captionTable->horizontalHeader()->setStretchLastSection(true);
+	captionTable->verticalHeader()->setVisible(false);
+	captionTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+	captionTable->setSelectionMode(QAbstractItemView::SingleSelection);
+	captionTable->setWordWrap(true);
+	layout->addWidget(captionTable, 1);
+
+	connect(captionTable, &QTableWidget::currentCellChanged, this, [this](int row) {
+		if (updatingUI) {
+			return;
+		}
+		if (row >= 0 && row < (int)captions.size()) {
+			Seek(captions[row].start);
+		}
+		UpdateCaptionProps();
+	});
+	connect(captionTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *item) {
+		if (updatingUI || item->column() != kCaptionText || item->row() >= (int)captions.size()) {
+			return;
+		}
+		captions[item->row()].text = item->text().simplified();
+		shownCaption = -2;
+		UpdateCaptionPreview();
+	});
+
+	QHBoxLayout *edit = new QHBoxLayout();
+	QPushButton *add =
+		ToolButton(QTStr("Spectra.ClipMaker.Captions.Add"), QTStr("Spectra.ClipMaker.Captions.AddTip"));
+	QPushButton *remove = ToolButton(QTStr("Remove"), QTStr("Spectra.ClipMaker.Captions.DeleteTip"));
+	edit->addWidget(add);
+	edit->addWidget(remove);
+	edit->addStretch();
+	layout->addLayout(edit);
+
+	captionStart = new QDoubleSpinBox();
+	captionEnd = new QDoubleSpinBox();
+	for (QDoubleSpinBox *box : {captionStart, captionEnd}) {
+		box->setDecimals(2);
+		box->setSingleStep(0.1);
+		box->setRange(0.0, 1e7);
+		box->setSuffix(QStringLiteral(" s"));
+	}
+	QPushButton *startHere = ToolButton(QTStr("Spectra.ClipMaker.Captions.StartHere"),
+					    QTStr("Spectra.ClipMaker.Captions.StartHereTip"));
+	QPushButton *endHere =
+		ToolButton(QTStr("Spectra.ClipMaker.Captions.EndHere"), QTStr("Spectra.ClipMaker.Captions.EndHereTip"));
+	QFormLayout *times = new QFormLayout();
+	QHBoxLayout *startRow = new QHBoxLayout();
+	startRow->addWidget(captionStart, 1);
+	startRow->addWidget(startHere);
+	QHBoxLayout *endRow = new QHBoxLayout();
+	endRow->addWidget(captionEnd, 1);
+	endRow->addWidget(endHere);
+	times->addRow(QTStr("Spectra.ClipMaker.Captions.Start"), startRow);
+	times->addRow(QTStr("Spectra.ClipMaker.Captions.End"), endRow);
+	layout->addLayout(times);
+
+	speakerCheck = new QCheckBox(QTStr("Spectra.ClipMaker.Captions.ShowSpeaker"));
+	burnCaptionsCheck = new QCheckBox(QTStr("Spectra.ClipMaker.Captions.Burn"));
+	burnCaptionsCheck->setChecked(true);
+	srtCheck = new QCheckBox(QTStr("Spectra.ClipMaker.Captions.Srt"));
+	srtCheck->setChecked(true);
+	layout->addWidget(speakerCheck);
+	layout->addWidget(burnCaptionsCheck);
+	layout->addWidget(srtCheck);
+
+	connect(speakerCheck, &QCheckBox::toggled, this, [this]() {
+		shownCaption = -2;
+		UpdateCaptionPreview();
+	});
+	connect(add, &QPushButton::clicked, this, [this]() {
+		ClipCaptions::Cue cue;
+		cue.start = playhead;
+		cue.end = std::min(playhead + 3.0, std::max(Duration(), playhead + 0.1));
+		cue.text = QTStr("Spectra.ClipMaker.Captions.NewText");
+		auto at = std::upper_bound(captions.begin(), captions.end(), cue.start,
+					   [](double t, const ClipCaptions::Cue &c) { return t < c.start; });
+		const int row = (int)(at - captions.begin());
+		captions.insert(at, cue);
+		CaptionsChanged();
+		captionTable->setCurrentCell(row, kCaptionText);
+		captionTable->editItem(captionTable->item(row, kCaptionText));
+	});
+	connect(remove, &QPushButton::clicked, this, [this]() {
+		const int row = SelectedCaption();
+		if (row >= 0) {
+			captions.erase(captions.begin() + row);
+			CaptionsChanged();
+		}
+	});
+	auto setTimes = [this](double start, double end) {
+		const int row = SelectedCaption();
+		if (row < 0) {
+			return;
+		}
+		ClipCaptions::Cue &cue = captions[row];
+		cue.start = std::max(0.0, start);
+		cue.end = std::max(cue.start + 0.1, end);
+		CaptionsChanged();
+	};
+	connect(captionStart, &QDoubleSpinBox::valueChanged, this, [this, setTimes](double v) {
+		const int row = SelectedCaption();
+		if (!updatingUI && row >= 0) {
+			setTimes(v, captions[row].end);
+		}
+	});
+	connect(captionEnd, &QDoubleSpinBox::valueChanged, this, [this, setTimes](double v) {
+		const int row = SelectedCaption();
+		if (!updatingUI && row >= 0) {
+			setTimes(captions[row].start, v);
+		}
+	});
+	connect(startHere, &QPushButton::clicked, this, [this, setTimes]() {
+		const int row = SelectedCaption();
+		if (row >= 0) {
+			setTimes(playhead, captions[row].end);
+		}
+	});
+	connect(endHere, &QPushButton::clicked, this, [this, setTimes]() {
+		const int row = SelectedCaption();
+		if (row >= 0) {
+			setTimes(captions[row].start, playhead);
+		}
+	});
+
+	UpdateCaptionProps();
+	return panel;
+}
+
 void SpectraClipMaker::BuildShortcuts()
 {
 	auto add = [this](const QKeySequence &key, auto fn) {
@@ -676,11 +844,13 @@ void SpectraClipMaker::ResetEditing()
 	UnloadSegment(players[1]);
 	segments.clear();
 	layers.clear();
+	captions.clear();
 	selectedLayer = -1;
 	inPoint = outPoint = -1.0;
 	playhead = 0.0;
 	timeline->SetSegments({});
 	LayersChanged();
+	CaptionsChanged();
 	InOutChanged();
 	PlayheadChanged();
 }
@@ -690,7 +860,7 @@ void SpectraClipMaker::SetMode(Mode newMode)
 	if (mode == newMode) {
 		return;
 	}
-	if (!layers.empty() || inPoint >= 0.0) {
+	if (!layers.empty() || !captions.empty() || inPoint >= 0.0) {
 		QMessageBox::StandardButton answer = OBSMessageBox::question(this, QTStr("Spectra.ClipMaker.Title"),
 									     QTStr("Spectra.ClipMaker.DiscardEdits"));
 		if (answer != QMessageBox::Yes) {
@@ -744,7 +914,7 @@ void SpectraClipMaker::OpenClip(const QString &path)
 	if (cleaned == clipFile) {
 		return;
 	}
-	if (!layers.empty()) {
+	if (!layers.empty() || !captions.empty()) {
 		QMessageBox::StandardButton answer = OBSMessageBox::question(this, QTStr("Spectra.ClipMaker.Title"),
 									     QTStr("Spectra.ClipMaker.DiscardEdits"));
 		if (answer != QMessageBox::Yes) {
@@ -915,6 +1085,13 @@ void SpectraClipMaker::ScanFinished(int generation, const std::vector<ScannedFil
 		l.layer.start = std::clamp(l.layer.start + shift, 0.0, duration);
 		l.layer.end = std::clamp(l.layer.end + shift, 0.0, duration);
 	}
+	if (shift != 0.0 && !captions.empty()) {
+		for (ClipCaptions::Cue &cue : captions) {
+			cue.start = std::clamp(cue.start + shift, 0.0, duration);
+			cue.end = std::clamp(cue.end + shift, 0.0, duration);
+		}
+		CaptionsChanged();
+	}
 	if (firstScan && mode == Mode::Clips && !segments.empty()) {
 		/* Trimming: the handles start at the ends of the clip */
 		playhead = 0.0;
@@ -970,13 +1147,15 @@ void SpectraClipMaker::ShowMoment(const QString &segment, double offset, double 
 	const QString path = QDir::cleanPath(segment);
 	const QString dir = QDir::cleanPath(QFileInfo(path).absolutePath());
 	if (mode != Mode::Loop || dir.compare(folder, Qt::CaseInsensitive) != 0) {
-		if (!layers.empty() || inPoint >= 0.0) {
+		if (!layers.empty() || !captions.empty() || inPoint >= 0.0) {
 			QMessageBox::StandardButton answer = OBSMessageBox::question(
 				this, QTStr("Spectra.ClipMaker.Title"), QTStr("Spectra.ClipMaker.DiscardEdits"));
 			if (answer != QMessageBox::Yes) {
 				return;
 			}
 			layers.clear();
+			captions.clear();
+			CaptionsChanged();
 			inPoint = outPoint = -1.0;
 		}
 		if (mode != Mode::Loop) {
@@ -1340,6 +1519,7 @@ void SpectraClipMaker::PlayheadChanged()
 						 .arg(recorded.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
 				       : QString());
 	UpdateOverlay();
+	UpdateCaptionPreview();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1746,6 +1926,40 @@ void SpectraClipMaker::DrawPreview(void *data, uint32_t cx, uint32_t cy)
 		gs_blend_state_pop();
 	}
 
+	/* The caption at the playhead, as it will be burned in */
+	QImage caption;
+	bool captionChanged = false;
+	{
+		std::lock_guard lock(window->overlayMutex);
+		if (window->captionImageChanged) {
+			caption = window->captionImage;
+			window->captionImageChanged = false;
+			captionChanged = true;
+		}
+	}
+	if (captionChanged) {
+		if (window->captionTexture) {
+			gs_texture_destroy(window->captionTexture);
+			window->captionTexture = nullptr;
+		}
+		if (!caption.isNull()) {
+			const QImage argb = caption.convertToFormat(QImage::Format_ARGB32);
+			const uint8_t *bits = argb.constBits();
+			window->captionTexture = gs_texture_create(argb.width(), argb.height(), GS_BGRA, 1, &bits, 0);
+		}
+	}
+	if (window->captionTexture) {
+		gs_blend_state_push();
+		gs_enable_blending(true);
+		gs_blend_function(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA);
+		gs_effect_t *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"), window->captionTexture);
+		while (gs_effect_loop(effect, "Draw")) {
+			gs_draw_sprite(window->captionTexture, 0, sourceCX, sourceCY);
+		}
+		gs_blend_state_pop();
+	}
+
 	gs_projection_pop();
 	gs_viewport_pop();
 }
@@ -1981,6 +2195,184 @@ bool SpectraClipMaker::eventFilter(QObject *object, QEvent *event)
 /* ------------------------------------------------------------------------- */
 /* Export                                                                    */
 
+/* ------------------------------------------------------------------------- */
+/* Captions                                                                  */
+
+QSize SpectraClipMaker::VideoSize() const
+{
+	obs_source_t *src = ActiveSource();
+	const uint32_t cx = src ? obs_source_get_width(src) : 0;
+	const uint32_t cy = src ? obs_source_get_height(src) : 0;
+	return cx && cy ? QSize((int)cx, (int)cy) : QSize(1920, 1080);
+}
+
+void SpectraClipMaker::Transcribe()
+{
+	if (exportState || segments.empty()) {
+		return;
+	}
+	if (inPoint < 0.0 || outPoint <= inPoint) {
+		OBSMessageBox::information(this, QTStr("Spectra.ClipMaker.Title"),
+					   QTStr("Spectra.ClipMaker.NeedRange"));
+		return;
+	}
+	ClipCaptions::Settings settings;
+	QString error;
+	if (!ClipCaptions::LoadSettings(main->Config(), settings, error)) {
+		OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"), error);
+		return;
+	}
+	if (!captions.empty() &&
+	    OBSMessageBox::question(this, QTStr("Spectra.ClipMaker.Title"),
+				    QTStr("Spectra.ClipMaker.Captions.Replace")) != QMessageBox::Yes) {
+		return;
+	}
+	if (playing) {
+		SetPlaying(false);
+	}
+
+	const int first = SegmentAt(inPoint);
+	const int last = SegmentAt(std::max(outPoint - 0.001, inPoint));
+	std::vector<ClipCaptions::Source> sources;
+	QStringList paths;
+	for (int i = first; i <= last; i++) {
+		const Segment &s = segments[i];
+		ClipCaptions::Source source;
+		source.path = s.path;
+		source.from = std::max(inPoint - s.start, 0.0);
+		source.to = std::min(outPoint - s.start, s.duration);
+		source.at = s.start + source.from;
+		if (source.to > source.from) {
+			sources.push_back(source);
+			paths << s.path;
+		}
+	}
+	blog(LOG_INFO, "[Spectra] Clip maker: transcribing %.2f s from %d segment(s)", outPoint - inPoint,
+	     (int)sources.size());
+
+	if (recorder) {
+		recorder->Lock(paths);
+	}
+	std::shared_ptr<ExportState> state = StartJob(QTStr("Spectra.ClipMaker.Captions.Transcribing"));
+
+	QPointer<SpectraClipMaker> self(this);
+	QPointer<LoopRecorder> rec = recorder;
+	std::thread([self, rec, state, sources, settings, paths]() {
+		std::vector<ClipCaptions::Cue> cues;
+		QString error;
+		const bool ok = ClipCaptions::Transcribe(
+			sources, settings, cues,
+			[state](float p) {
+				state->progress = p;
+				return !state->cancel;
+			},
+			error);
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, rec, paths, ok, cues, error]() {
+				if (rec) {
+					rec->Unlock(paths);
+				}
+				if (self) {
+					self->TranscribeFinished(ok, cues, error);
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
+}
+
+void SpectraClipMaker::TranscribeFinished(bool ok, const std::vector<ClipCaptions::Cue> &cues, const QString &error)
+{
+	const bool cancelled = EndJob();
+	if (!ok) {
+		if (!cancelled) {
+			blog(LOG_WARNING, "[Spectra] Clip maker: transcription failed: %s", QT_TO_UTF8(error));
+			OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"),
+					       QTStr("Spectra.ClipMaker.Captions.Failed").arg(error));
+		}
+		return;
+	}
+	blog(LOG_INFO, "[Spectra] Clip maker: %zu caption(s)", cues.size());
+	captions = cues;
+	CaptionsChanged();
+	captionInfo->setText(cues.empty() ? QTStr("Spectra.ClipMaker.Captions.None")
+					  : QTStr("Spectra.ClipMaker.Captions.Count").arg(cues.size()));
+}
+
+int SpectraClipMaker::SelectedCaption() const
+{
+	const int row = captionTable->currentRow();
+	return row >= 0 && row < (int)captions.size() ? row : -1;
+}
+
+void SpectraClipMaker::CaptionsChanged()
+{
+	UpdateCaptionTable();
+	UpdateCaptionProps();
+	shownCaption = -2;
+	UpdateCaptionPreview();
+}
+
+void SpectraClipMaker::UpdateCaptionTable()
+{
+	updatingUI = true;
+	const int current = captionTable->currentRow();
+	captionTable->setRowCount((int)captions.size());
+	for (int row = 0; row < (int)captions.size(); row++) {
+		const ClipCaptions::Cue &cue = captions[row];
+		auto readOnly = [](const QString &text) {
+			QTableWidgetItem *item = new QTableWidgetItem(text);
+			item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+			return item;
+		};
+		captionTable->setItem(row, kCaptionTime, readOnly(ClipTimeline::FormatTime(cue.start)));
+		captionTable->setItem(row, kCaptionWho, readOnly(ClipCaptions::SpeakerName(cue.speaker)));
+		captionTable->setItem(row, kCaptionText, new QTableWidgetItem(cue.text));
+	}
+	if (current >= 0 && current < (int)captions.size()) {
+		captionTable->setCurrentCell(current, kCaptionText);
+	}
+	captionTable->resizeRowsToContents();
+	updatingUI = false;
+}
+
+void SpectraClipMaker::UpdateCaptionProps()
+{
+	updatingUI = true;
+	const int row = SelectedCaption();
+	captionStart->setEnabled(row >= 0);
+	captionEnd->setEnabled(row >= 0);
+	if (row >= 0) {
+		captionStart->setValue(captions[row].start);
+		captionEnd->setValue(captions[row].end);
+	}
+	updatingUI = false;
+}
+
+void SpectraClipMaker::UpdateCaptionPreview()
+{
+	int active = -1;
+	for (int i = 0; i < (int)captions.size(); i++) {
+		if (playhead >= captions[i].start && playhead < captions[i].end) {
+			active = i;
+		}
+	}
+	if (active == shownCaption) {
+		return;
+	}
+	shownCaption = active;
+
+	QImage image;
+	if (active >= 0) {
+		const QSize size = VideoSize();
+		image = ClipCaptions::Render(ClipCaptions::Display(captions[active], speakerCheck->isChecked()),
+					     size.width(), size.height());
+	}
+	std::lock_guard lock(overlayMutex);
+	captionImage = image;
+	captionImageChanged = true;
+}
+
 void SpectraClipMaker::Export()
 {
 	if (exportState || segments.empty()) {
@@ -2015,7 +2407,27 @@ void SpectraClipMaker::Export()
 			burn.push_back(shifted);
 		}
 	}
-	const bool render = reencodeCheck->isChecked() || !burn.empty();
+
+	std::vector<ClipCaptions::Cue> clipCaptions;
+	for (const ClipCaptions::Cue &cue : captions) {
+		if (cue.end > inPoint && cue.start < outPoint && !cue.text.trimmed().isEmpty()) {
+			clipCaptions.push_back(cue);
+		}
+	}
+	const bool showSpeaker = speakerCheck->isChecked();
+	const bool saveSrt = !clipCaptions.empty() && srtCheck->isChecked();
+	std::vector<ClipRender::Overlay> overlays;
+	if (burnCaptionsCheck->isChecked()) {
+		const QSize size = VideoSize();
+		for (const ClipCaptions::Cue &cue : clipCaptions) {
+			overlays.push_back(
+				ClipCaptions::ToOverlay(ClipCaptions::Render(ClipCaptions::Display(cue, showSpeaker),
+									     size.width(), size.height()),
+							cue.start - base, cue.end - base));
+		}
+	}
+	/* Captions are timed from the In point, which only a re-encode starts on */
+	const bool render = reencodeCheck->isChecked() || !burn.empty() || !clipCaptions.empty();
 
 	QString clipsDir = recorder ? recorder->ClipsDirectory() : folder;
 	QDir().mkpath(clipsDir);
@@ -2043,38 +2455,22 @@ void SpectraClipMaker::Export()
 	}
 
 	const double start = inPoint - base, end = outPoint - base;
-	blog(LOG_INFO, "[Spectra] Clip maker: exporting %.2f s from %d segment(s) to '%s' (%s, %zu censor layer(s))",
-	     outPoint - inPoint, (int)inputs.size(), QT_TO_UTF8(path), render ? "re-encoded" : "lossless", burn.size());
+	blog(LOG_INFO,
+	     "[Spectra] Clip maker: exporting %.2f s from %d segment(s) to '%s' (%s, %zu censor layer(s), %zu caption(s)%s)",
+	     outPoint - inPoint, (int)inputs.size(), QT_TO_UTF8(path), render ? "re-encoded" : "lossless", burn.size(),
+	     clipCaptions.size(), overlays.empty() ? "" : " burned in");
 
 	if (recorder) {
 		recorder->Lock(paths);
 	}
 
-	exportState = std::make_shared<ExportState>();
-	exportButton->setEnabled(false);
-
-	progressDialog = new QProgressDialog(QTStr("Spectra.ClipMaker.Exporting"), QTStr("Cancel"), 0, 1000, this);
-	progressDialog->setWindowTitle(QTStr("Spectra.ClipMaker.Title"));
-	progressDialog->setWindowModality(Qt::WindowModal);
-	progressDialog->setMinimumDuration(0);
-	progressDialog->setAutoClose(false);
-	progressDialog->setAutoReset(false);
-	progressDialog->setValue(0);
-	std::shared_ptr<ExportState> state = exportState;
-	connect(progressDialog, &QProgressDialog::canceled, this, [state]() { state->cancel = true; });
-
-	progressTimer.setInterval(100);
-	disconnect(&progressTimer, nullptr, nullptr, nullptr);
-	connect(&progressTimer, &QTimer::timeout, this, [this]() {
-		if (exportState && progressDialog) {
-			progressDialog->setValue((int)(exportState->progress * 1000.0f));
-		}
-	});
-	progressTimer.start();
+	std::shared_ptr<ExportState> state = StartJob(QTStr("Spectra.ClipMaker.Exporting"));
+	const double clipStart = inPoint, clipLength = outPoint - inPoint;
 
 	QPointer<SpectraClipMaker> self(this);
 	QPointer<LoopRecorder> rec = recorder;
-	std::thread([self, rec, state, inputs, paths, start, end, burn, render, path]() {
+	std::thread([self, rec, state, inputs, paths, start, end, burn, overlays, render, path, saveSrt, clipCaptions,
+		     clipStart, clipLength, showSpeaker]() {
 		auto progress = [state](float p) {
 			state->progress = p;
 			return !state->cancel;
@@ -2085,7 +2481,7 @@ void SpectraClipMaker::Export()
 		auto run = [&](const QString &target) {
 			error.clear();
 			return render ? ClipRender::Export(inputs, start, end, target.toStdString(), burn, error,
-							   progress)
+							   progress, overlays)
 				      : ClipExport::Export(inputs, start, end, target.toStdString(), error, progress);
 		};
 		bool ok = run(outPath);
@@ -2097,6 +2493,16 @@ void SpectraClipMaker::Export()
 		}
 
 		QString qerror = QString::fromStdString(error);
+		if (ok && saveSrt) {
+			/* Next to the clip with the same name, so players pick it up */
+			const QString srt =
+				QFileInfo(outPath).dir().filePath(QFileInfo(outPath).completeBaseName() + ".srt");
+			QString srtError;
+			if (!ClipCaptions::WriteSrt(srt, clipCaptions, clipStart, clipLength, showSpeaker, srtError)) {
+				blog(LOG_WARNING, "[Spectra] Clip maker: could not save '%s': %s", QT_TO_UTF8(srt),
+				     QT_TO_UTF8(srtError));
+			}
+		}
 		QMetaObject::invokeMethod(
 			qApp,
 			[self, rec, paths, ok, outPath, qerror]() {
@@ -2117,16 +2523,50 @@ void SpectraClipMaker::Export()
 	}).detach();
 }
 
-void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QString &error)
+std::shared_ptr<SpectraClipMaker::ExportState> SpectraClipMaker::StartJob(const QString &label)
 {
-	bool cancelled = exportState && exportState->cancel;
+	exportState = std::make_shared<ExportState>();
+	exportButton->setEnabled(false);
+	transcribeButton->setEnabled(false);
+
+	progressDialog = new QProgressDialog(label, QTStr("Cancel"), 0, 1000, this);
+	progressDialog->setWindowTitle(QTStr("Spectra.ClipMaker.Title"));
+	progressDialog->setWindowModality(Qt::WindowModal);
+	progressDialog->setMinimumDuration(0);
+	progressDialog->setAutoClose(false);
+	progressDialog->setAutoReset(false);
+	progressDialog->setValue(0);
+	std::shared_ptr<ExportState> state = exportState;
+	connect(progressDialog, &QProgressDialog::canceled, this, [state]() { state->cancel = true; });
+
+	progressTimer.setInterval(100);
+	disconnect(&progressTimer, nullptr, nullptr, nullptr);
+	connect(&progressTimer, &QTimer::timeout, this, [this]() {
+		if (exportState && progressDialog) {
+			progressDialog->setValue((int)(exportState->progress * 1000.0f));
+		}
+	});
+	progressTimer.start();
+	return state;
+}
+
+bool SpectraClipMaker::EndJob()
+{
+	const bool cancelled = exportState && exportState->cancel;
 	progressTimer.stop();
 	exportState.reset();
 	if (progressDialog) {
 		progressDialog->close();
 		progressDialog->deleteLater();
 	}
+	transcribeButton->setEnabled(true);
 	InOutChanged();
+	return cancelled;
+}
+
+void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QString &error)
+{
+	const bool cancelled = EndJob();
 
 	if (ok) {
 		QMessageBox box(QMessageBox::Information, QTStr("Spectra.ClipMaker.Title"),

@@ -38,6 +38,18 @@ struct Planes {
 	bool bt709 = true;
 };
 
+/* A picture drawn over the whole frame for a span of time, e.g. a caption:
+ * straight-alpha BGRA, scaled to the frame if its size differs. Only the
+ * box [x0, x1) x [y0, y1) (in picture pixels) has anything drawn. */
+struct Overlay {
+	double start = 0.0, end = 0.0; /* on the joined timeline, end exclusive */
+	int width = 0, height = 0;
+	std::vector<uint8_t> bgra;
+	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+
+	bool ActiveAt(double t) const { return t >= start && t < end; }
+};
+
 /* Pixelate block edge / blur radius in luma pixels for a frame height */
 int PixelateBlockSize(int strength, int height);
 int BlurRadius(int strength, int height);
@@ -45,13 +57,17 @@ int BlurRadius(int strength, int height);
 /* Draws the layers active at `t` into `image`, in order. */
 void Apply(const Planes &image, const std::vector<Layer> &layers, double t);
 
+/* Blends an overlay over `image` */
+void Blend(const Planes &image, const Overlay &overlay);
+
 /*
  * Like ClipExport::Export, but decodes and re-encodes the video so the cut is
- * frame accurate and `layers` are burned in. Audio is copied as is. Layer
- * times are on the same joined timeline as `startSec` / `endSec`.
+ * frame accurate and `layers` are burned in, then `overlays` over them.
+ * Audio is copied as is. Layer and overlay times are on the same joined
+ * timeline as `startSec` / `endSec`.
  */
 bool Export(const std::vector<std::string> &inputs, double startSec, double endSec, const std::string &output,
 	    const std::vector<Layer> &layers, std::string &error,
-	    const ClipExport::ProgressCallback &progress = nullptr);
+	    const ClipExport::ProgressCallback &progress = nullptr, const std::vector<Overlay> &overlays = {});
 
 } // namespace ClipRender

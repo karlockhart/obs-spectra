@@ -246,6 +246,68 @@ void Apply(const Planes &image, const std::vector<Layer> &layers, double t)
 	}
 }
 
+void Blend(const Planes &image, const Overlay &overlay)
+{
+	if (overlay.width <= 0 || overlay.height <= 0 || overlay.x1 <= overlay.x0 || overlay.y1 <= overlay.y0 ||
+	    overlay.bgra.size() < (size_t)overlay.width * overlay.height * 4) {
+		return;
+	}
+
+	/* Overlay pixels -> frame pixels (nearest), only over the drawn box */
+	const double sx = (double)image.width / overlay.width, sy = (double)image.height / overlay.height;
+	const int fx0 = std::clamp((int)std::floor(overlay.x0 * sx), 0, image.width);
+	const int fx1 = std::clamp((int)std::ceil(overlay.x1 * sx), 0, image.width);
+	const int fy0 = std::clamp((int)std::floor(overlay.y0 * sy), 0, image.height);
+	const int fy1 = std::clamp((int)std::ceil(overlay.y1 * sy), 0, image.height);
+
+	auto sample = [&](int fx, int fy) -> const uint8_t * {
+		const int ox = std::min((int)(fx / sx), overlay.width - 1);
+		const int oy = std::min((int)(fy / sy), overlay.height - 1);
+		return overlay.bgra.data() + ((size_t)oy * overlay.width + ox) * 4;
+	};
+	auto toYuv = [&](const uint8_t *px, uint8_t out[3]) {
+		Layer colour;
+		colour.b = px[0];
+		colour.g = px[1];
+		colour.r = px[2];
+		SolidColor(colour, image.fullRange, image.bt709, out);
+	};
+	auto mix = [](uint8_t dst, uint8_t src, int alpha) {
+		return (uint8_t)((src * alpha + dst * (255 - alpha) + 127) / 255);
+	};
+
+	for (int y = fy0; y < fy1; y++) {
+		uint8_t *row = image.data[0] + (ptrdiff_t)y * image.linesize[0];
+		for (int x = fx0; x < fx1; x++) {
+			const uint8_t *px = sample(x, y);
+			if (px[3] == 0) {
+				continue;
+			}
+			uint8_t yuv[3];
+			toYuv(px, yuv);
+			row[x] = mix(row[x], yuv[0], px[3]);
+		}
+	}
+
+	/* Chroma is half size: one overlay sample per 2x2 block */
+	const int cw = (image.width + 1) / 2, ch = (image.height + 1) / 2;
+	for (int cy = fy0 / 2; cy < std::min((fy1 + 1) / 2, ch); cy++) {
+		uint8_t *u = image.data[1] + (ptrdiff_t)cy * image.linesize[1];
+		uint8_t *v = image.data[2] + (ptrdiff_t)cy * image.linesize[2];
+		for (int cx = fx0 / 2; cx < std::min((fx1 + 1) / 2, cw); cx++) {
+			const uint8_t *px =
+				sample(std::min(cx * 2, image.width - 1), std::min(cy * 2, image.height - 1));
+			if (px[3] == 0) {
+				continue;
+			}
+			uint8_t yuv[3];
+			toYuv(px, yuv);
+			u[cx] = mix(u[cx], yuv[1], px[3]);
+			v[cx] = mix(v[cx], yuv[2], px[3]);
+		}
+	}
+}
+
 /* ------------------------------------------------------------------------- */
 /* Export                                                                    */
 
@@ -457,7 +519,8 @@ AVRational StreamFrameRate(const AVStream *st)
 } // namespace
 
 bool Export(const std::vector<std::string> &inputs, double startSec, double endSec, const std::string &output,
-	    const std::vector<Layer> &layers, std::string &error, const ClipExport::ProgressCallback &progress)
+	    const std::vector<Layer> &layers, std::string &error, const ClipExport::ProgressCallback &progress,
+	    const std::vector<Overlay> &overlays)
 {
 	if (inputs.empty()) {
 		error = "Nothing to export";
@@ -696,6 +759,11 @@ bool Export(const std::vector<std::string> &inputs, double startSec, double endS
 		planes.bt709 = frame->colorspace != AVCOL_SPC_BT470BG && frame->colorspace != AVCOL_SPC_SMPTE170M &&
 			       (frame->colorspace == AVCOL_SPC_BT709 || frame->height >= 720);
 		Apply(planes, layers, t);
+		for (const Overlay &overlay : overlays) {
+			if (overlay.ActiveAt(t)) {
+				Blend(planes, overlay);
+			}
+		}
 
 		AVFrame *send = work.get();
 		if (encFrame) {
