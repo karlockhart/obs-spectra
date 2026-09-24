@@ -431,15 +431,68 @@ AVPixelFormat PickPixelFormat(AVCodecContext *ctx, const AVCodec *codec)
  * Opens the first working H.264 encoder, preferring hardware. Hardware
  * encoders fail to open when the GPU doesn't have them, so each is tried.
  */
-CodecPtr OpenEncoder(const AVCodecParameters *in, AVRational frameRate, bool globalHeader, std::string &error)
+CodecPtr OpenEncoder(const AVCodecParameters *in, AVRational frameRate, bool globalHeader, Quality quality,
+		     std::string &error)
 {
 	static const char *names[] = {"h264_nvenc", "h264_amf",    "h264_qsv", "libx264",
 				      "h264_mf",    "libopenh264", "mpeg4"};
 
+	/* Bitrate-driven encoders get a target in bits per pixel; the rest
+	 * are driven by a constant quality (CRF / CQ) at roughly the same
+	 * level. High is ~0.12 bits per pixel: 15 Mbps for 1080p60, a little
+	 * above typical loop recordings so the re-encode doesn't visibly
+	 * lose quality. Medium halves that and Small quarters it. */
+	int64_t bitsPerHundredPixels = 12;
+	int64_t minBitrate = 4000000;
+	const char *crf = "18";
+	const char *cq = "19";
+	int mpeg4Qscale = 3;
+	switch (quality) {
+	case Quality::High:
+	case Quality::YouTube1080p:
+		break;
+	case Quality::Medium:
+		bitsPerHundredPixels = 6;
+		minBitrate = 2000000;
+		crf = "22";
+		cq = "24";
+		mpeg4Qscale = 5;
+		break;
+	case Quality::Small:
+		bitsPerHundredPixels = 3;
+		minBitrate = 1000000;
+		crf = "26";
+		cq = "29";
+		mpeg4Qscale = 8;
+		break;
+	}
+	const double fps = frameRate.num / (double)std::max(frameRate.den, 1);
 	const int64_t pixelsPerSecond = (int64_t)in->width * in->height * frameRate.num / std::max(frameRate.den, 1);
-	/* ~0.12 bits per pixel: 15 Mbps for 1080p60, a little above typical
-	 * loop recordings so the re-encode doesn't visibly lose quality. */
-	const int64_t bitrate = std::max<int64_t>(pixelsPerSecond * 12 / 100, 4000000);
+	int64_t bitrate = std::max<int64_t>(pixelsPerSecond * bitsPerHundredPixels / 100, minBitrate);
+	int width = in->width, height = in->height;
+	int gop = std::max((int)std::lround(2.0 * fps), 1);
+	/* Constant quality capped at the bitrate, rather than a bitrate target */
+	bool capped = false;
+	const char *profile = nullptr;
+	if (quality == Quality::YouTube1080p) {
+		if (height > 1080) {
+			width = ((in->width * 1080 / in->height) + 1) & ~1;
+			height = 1080;
+		}
+		const bool highFps = fps > 40.0;
+		if (height >= 1080) {
+			bitrate = highFps ? 12000000 : 8000000;
+		} else if (height >= 720) {
+			bitrate = highFps ? 7500000 : 5000000;
+		} else {
+			bitrate = highFps ? 4000000 : 2500000;
+		}
+		crf = "19";
+		cq = nullptr;
+		capped = true;
+		profile = "high";
+		gop = std::max((int)std::lround(fps / 2.0), 1);
+	}
 
 	for (const char *name : names) {
 		const AVCodec *codec = avcodec_find_encoder_by_name(name);
@@ -455,13 +508,13 @@ CodecPtr OpenEncoder(const AVCodecParameters *in, AVRational frameRate, bool glo
 			continue;
 		}
 
-		enc->width = in->width;
-		enc->height = in->height;
+		enc->width = width;
+		enc->height = height;
 		enc->sample_aspect_ratio = in->sample_aspect_ratio;
 		enc->pix_fmt = format;
 		enc->framerate = frameRate;
 		enc->time_base = av_inv_q(frameRate);
-		enc->gop_size = std::max(2 * frameRate.num / std::max(frameRate.den, 1), 1);
+		enc->gop_size = gop;
 		enc->max_b_frames = 0;
 		enc->color_range = in->color_range;
 		enc->color_primaries = in->color_primaries;
@@ -473,23 +526,34 @@ CodecPtr OpenEncoder(const AVCodecParameters *in, AVRational frameRate, bool glo
 		}
 
 		AVDictionary *opts = nullptr;
-		if (strcmp(name, "libx264") == 0) {
+		const bool isX264 = strcmp(name, "libx264") == 0;
+		const bool isNvenc = strcmp(name, "h264_nvenc") == 0;
+		if (profile && (isX264 || isNvenc || strcmp(name, "h264_amf") == 0 || strcmp(name, "h264_qsv") == 0)) {
+			av_dict_set(&opts, "profile", profile, 0);
+		}
+		if (isX264) {
 			av_dict_set(&opts, "preset", "veryfast", 0);
-			av_dict_set(&opts, "crf", "18", 0);
+			av_dict_set(&opts, "crf", crf, 0);
+			if (capped) {
+				enc->rc_max_rate = bitrate;
+				enc->rc_buffer_size = (int)std::min<int64_t>(bitrate * 2, INT32_MAX);
+			}
 		} else {
 			enc->bit_rate = bitrate;
-			enc->rc_max_rate = bitrate * 2;
+			enc->rc_max_rate = capped ? bitrate * 3 / 2 : bitrate * 2;
 			enc->rc_buffer_size = (int)std::min<int64_t>(bitrate * 2, INT32_MAX);
-			if (strcmp(name, "h264_nvenc") == 0) {
+			if (isNvenc) {
 				av_dict_set(&opts, "preset", "p5", 0);
 				av_dict_set(&opts, "rc", "vbr", 0);
-				av_dict_set(&opts, "cq", "19", 0);
+				if (cq) {
+					av_dict_set(&opts, "cq", cq, 0);
+				}
 			} else if (strcmp(name, "h264_amf") == 0) {
 				av_dict_set(&opts, "quality", "quality", 0);
 				av_dict_set(&opts, "rc", "vbr_peak", 0);
 			} else if (strcmp(name, "mpeg4") == 0) {
 				enc->flags |= AV_CODEC_FLAG_QSCALE;
-				enc->global_quality = FF_QP2LAMBDA * 3;
+				enc->global_quality = FF_QP2LAMBDA * mpeg4Qscale;
 			}
 		}
 
@@ -499,7 +563,9 @@ CodecPtr OpenEncoder(const AVCodecParameters *in, AVRational frameRate, bool glo
 			blog(LOG_INFO, "[ClipRender] Encoder '%s' unavailable: %s", name, AvError(ret).c_str());
 			continue;
 		}
-		blog(LOG_INFO, "[ClipRender] Encoding with '%s'", name);
+		static const char *qualityNames[] = {"high", "medium", "small", "youtube"};
+		blog(LOG_INFO, "[ClipRender] Encoding with '%s' (%s quality, %dx%d, %lld kbps target)", name,
+		     qualityNames[(int)quality], width, height, (long long)(bitrate / 1000));
 		return enc;
 	}
 
@@ -520,7 +586,7 @@ AVRational StreamFrameRate(const AVStream *st)
 
 bool Export(const std::vector<std::string> &inputs, double startSec, double endSec, const std::string &output,
 	    const std::vector<Layer> &layers, std::string &error, const ClipExport::ProgressCallback &progress,
-	    const std::vector<Overlay> &overlays)
+	    const std::vector<Overlay> &overlays, Quality quality)
 {
 	if (inputs.empty()) {
 		error = "Nothing to export";
@@ -583,7 +649,8 @@ bool Export(const std::vector<std::string> &inputs, double startSec, double endS
 	const AVStream *vst = in->streams[videoIndex];
 	const AVRational frameRate = StreamFrameRate(vst);
 
-	CodecPtr enc = OpenEncoder(vst->codecpar, frameRate, (oc->oformat->flags & AVFMT_GLOBALHEADER) != 0, error);
+	CodecPtr enc =
+		OpenEncoder(vst->codecpar, frameRate, (oc->oformat->flags & AVFMT_GLOBALHEADER) != 0, quality, error);
 	if (!enc) {
 		return false;
 	}

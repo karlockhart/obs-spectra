@@ -25,6 +25,8 @@ target_sources(
     utility/GoLiveAPI_PostData.hpp
     utility/ClipCaptions.cpp
     utility/ClipCaptions.hpp
+    utility/YouTubeUpload.cpp
+    utility/YouTubeUpload.hpp
     utility/LoopCapture.cpp
     utility/LoopCapture.hpp
     utility/LoopRecorder.cpp

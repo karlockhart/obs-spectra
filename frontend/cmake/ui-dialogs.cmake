@@ -49,4 +49,6 @@ target_sources(
     dialogs/SpectraClipMaker.hpp
     dialogs/SpectraLoopSettings.cpp
     dialogs/SpectraLoopSettings.hpp
+    dialogs/SpectraYouTubeUpload.cpp
+    dialogs/SpectraYouTubeUpload.hpp
 )
