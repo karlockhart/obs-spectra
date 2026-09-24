@@ -63,6 +63,13 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	folderPreview = new QLabel();
 	folderPreview->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
+	/* A running loop keeps recording to its folders until it stops */
+	if (FoldersLocked()) {
+		baseFolder->setEnabled(false);
+		browse->setEnabled(false);
+		baseFolder->setToolTip(QTStr("Spectra.Loop.FoldersLocked"));
+	}
+
 	processes = new SpectraAppPicker();
 	processes->SetPatterns(QString::fromUtf8(config_get_string(config, "SpectraLoop", "Processes")));
 	processes->SetAnyFullscreen(config_get_bool(config, "SpectraLoop", "AnyFullscreen"));
@@ -119,8 +126,19 @@ AutoConfigSpectraPage::AutoConfigSpectraPage(QWidget *parent) : QWizardPage(pare
 	UpdatePreview();
 }
 
+bool AutoConfigSpectraPage::FoldersLocked()
+{
+	LoopRecorder *recorder = OBSBasic::Get()->GetLoopRecorder();
+	return recorder && recorder->Active();
+}
+
 void AutoConfigSpectraPage::UpdatePreview()
 {
+	if (FoldersLocked()) {
+		folderPreview->setText(QTStr("Spectra.Loop.FoldersLocked"));
+		return;
+	}
+
 	QDir base(baseFolder->text().trimmed());
 	QStringList lines;
 	for (const char *folder : spectraFolders) {
@@ -143,12 +161,13 @@ bool AutoConfigSpectraPage::validatePage()
 	}
 
 	QString base = baseFolder->text().trimmed();
-	if (base.isEmpty() || !QDir().mkpath(base)) {
+	if (!FoldersLocked() && (base.isEmpty() || !QDir().mkpath(base))) {
 		OBSMessageBox::warning(this, QTStr("Spectra.Wizard.Title"),
 				       QTStr("Spectra.Loop.Error.Folder").arg(base));
 		return false;
 	}
-	Save();
+	/* Saved when the wizard finishes (AutoConfig::done), so cancelling it
+	 * later keeps the current folders */
 	return true;
 }
 
@@ -164,13 +183,16 @@ void AutoConfigSpectraPage::Save()
 		return QDir::toNativeSeparators(path);
 	};
 
-	config_set_string(config, "Spectra", "BaseFolder", QT_TO_UTF8(QDir::toNativeSeparators(base.path())));
-	config_set_string(config, "Spectra", "ScreenshotsPath", QT_TO_UTF8(folder("Screenshots")));
-	config_set_string(config, "Spectra", "LucidaPath", QT_TO_UTF8(folder("Lucida")));
-	config_set_string(config, "Spectra", "ObscuraPath", QT_TO_UTF8(folder("Obscura")));
+	const bool foldersLocked = FoldersLocked();
+	if (!foldersLocked) {
+		config_set_string(config, "Spectra", "BaseFolder", QT_TO_UTF8(QDir::toNativeSeparators(base.path())));
+		config_set_string(config, "Spectra", "ScreenshotsPath", QT_TO_UTF8(folder("Screenshots")));
+		config_set_string(config, "Spectra", "LucidaPath", QT_TO_UTF8(folder("Lucida")));
+		config_set_string(config, "Spectra", "ObscuraPath", QT_TO_UTF8(folder("Obscura")));
 
-	config_set_string(config, "SpectraLoop", "Path", QT_TO_UTF8(folder("Loop")));
-	config_set_string(config, "SpectraLoop", "ClipsPath", QT_TO_UTF8(folder("Clips")));
+		config_set_string(config, "SpectraLoop", "Path", QT_TO_UTF8(folder("Loop")));
+		config_set_string(config, "SpectraLoop", "ClipsPath", QT_TO_UTF8(folder("Clips")));
+	}
 	config_set_string(config, "SpectraLoop", "Processes", QT_TO_UTF8(processes->Patterns()));
 	config_set_bool(config, "SpectraLoop", "AnyFullscreen", processes->AnyFullscreen());
 	config_set_uint(config, "SpectraLoop", "QuotaGB", (uint64_t)quotaGB->value());
@@ -188,7 +210,11 @@ void AutoConfigSpectraPage::Save()
 	config_set_string(config, "SpectraLoop", "Quality", QT_TO_UTF8(quality->currentData().toString()));
 	config_save_safe(config, "tmp", nullptr);
 
-	blog(LOG_INFO, "[Spectra] Setup wizard: base folder '%s'", QT_TO_UTF8(base.path()));
+	if (foldersLocked) {
+		blog(LOG_INFO, "[Spectra] Setup wizard: folders kept, loop recording is running");
+	} else {
+		blog(LOG_INFO, "[Spectra] Setup wizard: base folder '%s'", QT_TO_UTF8(base.path()));
+	}
 
 	if (LoopRecorder *recorder = main->GetLoopRecorder()) {
 		recorder->SettingsChanged();

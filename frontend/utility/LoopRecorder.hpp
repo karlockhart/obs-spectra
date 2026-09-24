@@ -58,9 +58,27 @@ public:
 	void SetArmed(bool armed);
 	bool Armed() const { return armed; }
 
+	/* While held (the setup wizard is open) the loop doesn't start, by
+	 * itself or by hand. Holds nest; the last release checks for the game
+	 * again right away. */
+	void HoldStart(bool hold);
+	bool StartHeld() const { return startHolds > 0; }
+
+	/* Why the loop stopped, for telling the user */
+	enum class StopCause { Unexpected, User, GameExited };
+
 	bool Start(const QString &label = QString());
-	void Stop();
+	void Stop(StopCause cause = StopCause::User);
 	bool Active() const;
+
+	/* Why the last loop recording stopped (read after it stopped) */
+	StopCause LastStopCause() const { return lastStopCause; }
+
+	/* True while the segment being written hasn't grown on disk for
+	 * StallWarnSeconds, e.g. the muxer hung or the drive went away.
+	 * Matroska writes a cluster at least every ~5 s. */
+	static constexpr int StallWarnSeconds = 20;
+	bool WritingStalled() const { return stalled; }
 
 	/* Saves the last `seconds` of the loop as one file in the clips folder. */
 	void ClipLast(int seconds);
@@ -70,6 +88,10 @@ public:
 
 	/* Segment being written right now (empty when not recording) */
 	QString CurrentSegment() const { return Active() ? currentSegment : QString(); }
+
+	/* Which file is being written and how much has been recorded, since
+	 * Explorer shows the open segment as 0 KB (empty when not recording) */
+	QString RecordingStatusText() const;
 
 	/* Why the last start attempt failed (empty after a successful start) */
 	QString LastStartError() const { return lastStartError; }
@@ -94,6 +116,11 @@ signals:
 	void clipFailed(const QString &error);
 	/* A segment was finished or deleted */
 	void segmentsChanged();
+	/* RecordingStatusText changed; every few seconds while recording */
+	void recordingStatusChanged();
+	/* The segment stopped growing on disk / started growing again */
+	void writingStalled();
+	void writingResumed();
 
 private:
 	struct PendingClip {
@@ -105,12 +132,23 @@ private:
 	QTimer processTimer;
 	QTimer splitTimeout;
 	QTimer captureTimer;
+	QTimer statusTimer;
 	LoopCapture *capture;
 	StarlingLink *starling;
 
 	QString label;
 	QString fullscreenExe;
 	QString currentSegment;
+	/* Output bytes when currentSegment began, to size the open segment */
+	quint64 segmentStartBytes = 0;
+	QDateTime startedAt;
+	/* Stall watchdog: last on-disk size of currentSegment and when it
+	 * last changed */
+	qint64 diskSize = -1;
+	QDateTime diskSizeChanged;
+	bool stalled = false;
+	StopCause stopCause = StopCause::Unexpected;
+	StopCause lastStopCause = StopCause::Unexpected;
 	QStringList sessionSegments;
 	std::vector<PendingClip> pendingClips;
 	QHash<QString, int> lockedSegments;
@@ -118,11 +156,13 @@ private:
 	bool armed = false;
 	bool autoStarted = false;
 	bool suppressAutoStart = false;
+	int startHolds = 0;
 	int missingPolls = 0;
 	QDateTime retryAutoStartAt;
 	QString lastStartError;
 
 	void CheckProcesses();
+	void CheckWriting();
 	void UpdateCapture();
 	void EnforceQuota();
 	void ProcessPendingClips(bool segmentJustFinalized = true);

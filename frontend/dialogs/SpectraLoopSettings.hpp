@@ -28,6 +28,8 @@ private:
 
 	QLineEdit *loopPath;
 	QLineEdit *clipsPath;
+	QWidget *loopPathRow;
+	QWidget *clipsPathRow;
 	QSpinBox *quotaGB;
 	QSpinBox *segmentSec;
 	QSpinBox *clipSec;
@@ -47,4 +49,6 @@ private:
 	QList<SpectraHotkeyEdit *> shortcuts;
 
 	QWidget *PathRow(QLineEdit *edit);
+	/* The folders can't change while the loop records into them */
+	void LockFolders();
 };

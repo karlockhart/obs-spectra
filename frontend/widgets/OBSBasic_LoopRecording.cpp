@@ -69,6 +69,9 @@ void OBSBasic::InitSpectra()
 
 	captureStatusAction = spectraMenu->addAction(loopRecorder->Capture()->StatusText());
 	captureStatusAction->setEnabled(false);
+	loopStatusAction = spectraMenu->addAction(QString());
+	loopStatusAction->setEnabled(false);
+	loopStatusAction->setVisible(false);
 	spectraMenu->addSeparator();
 
 	loopArmAction = spectraMenu->addAction(QTStr("Spectra.Loop.ArmedMenu"));
@@ -105,8 +108,27 @@ void OBSBasic::InitSpectra()
 	connect(loopRecorder, &LoopRecorder::activeChanged, this, &OBSBasic::UpdateLoopRecordingUI);
 	connect(loopRecorder, &LoopRecorder::armedChanged, this,
 		[this]() { UpdateLoopRecordingUI(loopRecorder->Active()); });
+	connect(loopRecorder, &LoopRecorder::recordingStatusChanged, this, &OBSBasic::UpdateLoopRecordingStatus);
+	connect(loopRecorder, &LoopRecorder::writingStalled, this, [this]() {
+		UpdateLoopRecordingUI(loopRecorder->Active());
+		QString msg = QTStr("Spectra.Loop.Stalled");
+		ShowStatusBarMessage(msg);
+		SysTrayNotify(msg, QSystemTrayIcon::Warning);
+		SpectraToast(SpectraOverlay::Kind::Error, QTStr("Spectra.Overlay.LoopStalled"),
+			     QTStr("Spectra.Overlay.LoopStalledText").arg(LoopRecorder::StallWarnSeconds), "loop");
+	});
+	connect(loopRecorder, &LoopRecorder::writingResumed, this, [this]() {
+		UpdateLoopRecordingUI(loopRecorder->Active());
+		QString msg = QTStr("Spectra.Loop.Resumed");
+		ShowStatusBarMessage(msg);
+		SysTrayNotify(msg, QSystemTrayIcon::Information);
+		SpectraToast(SpectraOverlay::Kind::Loop, QTStr("Spectra.Overlay.LoopResumed"), QString(), "loop");
+	});
 	/* The output handler is recreated when output settings change */
-	connect(spectraMenu, &QMenu::aboutToShow, this, [this]() { UpdateLoopRecordingUI(loopRecorder->Active()); });
+	connect(spectraMenu, &QMenu::aboutToShow, this, [this]() {
+		UpdateLoopRecordingUI(loopRecorder->Active());
+		UpdateLoopRecordingStatus();
+	});
 	connect(loopRecorder, &LoopRecorder::clipStarted, this, [this](int seconds) {
 		ShowStatusBarMessage(QTStr("Spectra.Loop.Clipping").arg(FormatClipLength(seconds)));
 		SpectraToast(SpectraOverlay::Kind::Clip,
@@ -228,8 +250,24 @@ void OBSBasic::UpdateLoopRecordingUI(bool active)
 	if (loopArmAction) {
 		loopArmAction->setChecked(armed);
 	}
-	emit LoopRecordingStateChanged(active ? 2 : (armed ? 1 : 0));
+	int state = armed ? 1 : 0;
+	if (active) {
+		state = loopRecorder->WritingStalled() ? 3 : 2;
+	}
+	emit LoopRecordingStateChanged(state);
 	emit LoopRecordingEnabled(available);
+}
+
+void OBSBasic::UpdateLoopRecordingStatus()
+{
+	const QString status = loopRecorder ? loopRecorder->RecordingStatusText() : QString();
+	if (loopStatusAction) {
+		/* One menu line; '&' would be taken as a mnemonic */
+		QString line = status;
+		loopStatusAction->setText(line.replace('&', "&&").replace('\n', QStringLiteral("  |  ")));
+		loopStatusAction->setVisible(!status.isEmpty());
+	}
+	emit LoopRecordingStatusChanged(status);
 }
 
 void OBSBasic::LoopArmActionTriggered()
@@ -385,6 +423,11 @@ bool OBSBasic::LoopRecordingActive() const
 	return outputHandler && outputHandler->LoopRecordingActive();
 }
 
+uint64_t OBSBasic::LoopRecordingTotalBytes() const
+{
+	return LoopRecordingActive() ? obs_output_get_total_bytes(outputHandler->loopOutput) : 0;
+}
+
 bool OBSBasic::SplitLoopRecording()
 {
 	if (!LoopRecordingActive()) {
@@ -417,15 +460,32 @@ void OBSBasic::LoopRecordingStop(int code, QString lastError)
 		loopRecorder->OnStopped(code, lastError);
 	}
 
-	if (code == OBS_OUTPUT_NO_SPACE) {
+	/* Every stop is announced with its reason, so a recording never ends
+	 * without anyone noticing */
+	if (isClosing()) {
+		/* Shutting down: nothing to warn about */
+	} else if (code == OBS_OUTPUT_NO_SPACE) {
+		ShowStatusBarMessage(QTStr("Output.RecordNoSpace.Msg"));
 		SysTrayNotify(QTStr("Output.RecordNoSpace.Msg"), QSystemTrayIcon::Warning);
 		SpectraToast(SpectraOverlay::Kind::Error, QTStr("Spectra.Overlay.LoopFailed"),
 			     QTStr("Output.RecordNoSpace.Msg"), "loop");
 	} else if (code != OBS_OUTPUT_SUCCESS) {
+		ShowStatusBarMessage(QTStr("Spectra.Loop.Error.Start").arg(lastError));
 		SysTrayNotify(QTStr("Spectra.Loop.Error.Start").arg(lastError), QSystemTrayIcon::Warning);
 		SpectraToast(SpectraOverlay::Kind::Error, QTStr("Spectra.Overlay.LoopFailed"), lastError, "loop");
 	} else {
-		SpectraToast(SpectraOverlay::Kind::LoopStop, QTStr("Spectra.Overlay.LoopStopped"), QString(), "loop");
+		const LoopRecorder::StopCause cause = loopRecorder ? loopRecorder->LastStopCause()
+								   : LoopRecorder::StopCause::Unexpected;
+		const char *reason = cause == LoopRecorder::StopCause::User         ? "Spectra.Loop.Stopped.User"
+				     : cause == LoopRecorder::StopCause::GameExited ? "Spectra.Loop.Stopped.GameExited"
+										    : "Spectra.Loop.Stopped.Unexpected";
+		const QString msg = QTStr("Spectra.Overlay.LoopStopped") + ": " + QTStr(reason);
+		ShowStatusBarMessage(msg);
+		SysTrayNotify(msg, cause == LoopRecorder::StopCause::Unexpected ? QSystemTrayIcon::Warning
+										: QSystemTrayIcon::Information);
+		SpectraToast(cause == LoopRecorder::StopCause::Unexpected ? SpectraOverlay::Kind::Error
+									  : SpectraOverlay::Kind::LoopStop,
+			     QTStr("Spectra.Overlay.LoopStopped"), QTStr(reason), "loop");
 	}
 
 	OnDeactivate();
