@@ -216,6 +216,7 @@ SpectraClipMaker::SpectraClipMaker(OBSBasic *main_, LoopRecorder *recorder_)
 		connect(recorder, &LoopRecorder::segmentsChanged, this, &SpectraClipMaker::Rescan);
 		connect(recorder, &LoopRecorder::activeChanged, this, &SpectraClipMaker::UpdateStatus);
 		connect(recorder, &LoopRecorder::armedChanged, this, &SpectraClipMaker::UpdateStatus);
+		connect(recorder, &LoopRecorder::recordingStatusChanged, this, &SpectraClipMaker::UpdateStatus);
 	}
 
 	UpdateStatus();
@@ -1108,6 +1109,10 @@ void SpectraClipMaker::UpdateStatus()
 	QString text;
 	if (recorder->Active()) {
 		text = QTStr("Spectra.ClipMaker.Status.Recording").arg(std::max(recorder->SegmentSeconds() / 60, 1));
+		const QString status = recorder->RecordingStatusText();
+		if (!status.isEmpty()) {
+			text += "\n\n" + status;
+		}
 	} else if (recorder->Armed()) {
 		QStringList patterns = recorder->ProcessPatterns();
 		text = patterns.isEmpty() ? QTStr("Spectra.ClipMaker.Status.NoGames")

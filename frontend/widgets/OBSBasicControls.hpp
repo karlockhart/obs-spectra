@@ -21,6 +21,9 @@ class OBSBasicControls : public QFrame {
 	QPointer<QPushButton> loopClipButton;
 	QTimer loopFlashTimer;
 	bool loopFlashOn = false;
+	QString loopFlashStyle;
+	bool loopRecording = false;
+	QString loopStatus;
 
 	QScopedPointer<QMenu> streamButtonMenu;
 	QPointer<QAction> startStreamAction;
@@ -48,6 +51,7 @@ private slots:
 	void ReplayBufferStopped();
 
 	void LoopRecordingStateChanged(int state);
+	void LoopRecordingStatusChanged(const QString &status);
 	void EnableLoopRecordingButtons(bool enabled);
 
 	void VirtualCamStarted();

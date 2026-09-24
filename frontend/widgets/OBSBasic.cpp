@@ -1316,7 +1316,16 @@ void OBSBasic::OBSInit()
 	}
 
 	if (!first_run && !has_last_version && !Active()) {
-		QMetaObject::invokeMethod(this, &OBSBasic::on_autoConfigure_triggered, Qt::QueuedConnection);
+		/* The wizard opens after the loop's first check for the game, so
+		 * hold the loop now or it starts recording to the default folders */
+		loopRecorder->HoldStart(true);
+		QMetaObject::invokeMethod(
+			this,
+			[this]() {
+				on_autoConfigure_triggered();
+				loopRecorder->HoldStart(false);
+			},
+			Qt::QueuedConnection);
 	}
 
 #if (defined(_WIN32) || defined(__APPLE__)) && (OBS_RELEASE_CANDIDATE > 0 || OBS_BETA > 0)

@@ -1060,10 +1060,12 @@ private:
 	QPointer<QAction> loopToggleAction;
 	QPointer<QAction> loopArmAction;
 	QPointer<QAction> captureStatusAction;
+	QPointer<QAction> loopStatusAction;
 	QPointer<SpectraClipMaker> clipMaker;
 
 	void InitSpectra();
 	void UpdateLoopRecordingUI(bool active);
+	void UpdateLoopRecordingStatus();
 	void OpenLoopSettings();
 	void OpenClipMaker();
 	void OpenAudioSetup();
@@ -1073,6 +1075,8 @@ public:
 	bool StartLoopRecording(const QString &directory, int segmentSeconds, QString *error = nullptr);
 	void StopLoopRecording();
 	bool LoopRecordingActive() const;
+	/* Bytes written since the loop started, across all its segments */
+	uint64_t LoopRecordingTotalBytes() const;
 	bool SplitLoopRecording();
 	/* Opens the Clip Maker on a moment of the loop recording (see SpectraClipMaker::ShowMoment) */
 	void OpenClipMakerAt(const QString &segment, double offset, double before, double after);
@@ -1124,9 +1128,12 @@ signals:
 	void ReplayBufStarted();
 	void ReplayBufStopping();
 	void ReplayBufStopped();
-	/* 0: disarmed, 1: armed and waiting for a game, 2: recording */
+	/* 0: disarmed, 1: armed and waiting for a game, 2: recording,
+	 * 3: recording but the segment isn't growing on disk */
 	void LoopRecordingStateChanged(int state);
 	void LoopRecordingEnabled(bool enabled);
+	/* LoopRecorder::RecordingStatusText, empty when not recording */
+	void LoopRecordingStatusChanged(const QString &status);
 
 	/* -------------------------------------
 	 * MARK: - OBSBasic_SceneCollections

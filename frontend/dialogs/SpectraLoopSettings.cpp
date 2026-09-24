@@ -89,9 +89,12 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	double usedGB = (double)recorder->UsedBytes() / (1024.0 * 1024.0 * 1024.0);
 	usage = new QLabel(QTStr("Spectra.Loop.Settings.Usage").arg(usedGB, 0, 'f', 1));
 
+	loopPathRow = PathRow(loopPath);
+	clipsPathRow = PathRow(clipsPath);
+
 	auto *form = new QFormLayout();
-	form->addRow(QTStr("Spectra.Loop.Settings.LoopPath"), PathRow(loopPath));
-	form->addRow(QTStr("Spectra.Loop.Settings.ClipsPath"), PathRow(clipsPath));
+	form->addRow(QTStr("Spectra.Loop.Settings.LoopPath"), loopPathRow);
+	form->addRow(QTStr("Spectra.Loop.Settings.ClipsPath"), clipsPathRow);
 	form->addRow(QTStr("Spectra.Loop.Settings.Quota"), quotaGB);
 	form->addRow(QString(), usage);
 	form->addRow(QTStr("Spectra.Loop.Settings.Segment"), segmentSec);
@@ -179,6 +182,18 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 		QLabel *note = new QLabel(QTStr("Spectra.Loop.Settings.ActiveNote"));
 		note->setWordWrap(true);
 		layout->insertWidget(1, note);
+		LockFolders();
+	}
+}
+
+void SpectraLoopSettings::LockFolders()
+{
+	config_t *config = main->Config();
+	loopPath->setText(QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Path")));
+	clipsPath->setText(QString::fromUtf8(config_get_string(config, LOOP_SECTION, "ClipsPath")));
+	for (QWidget *row : {loopPathRow, clipsPathRow}) {
+		row->setEnabled(false);
+		row->setToolTip(QTStr("Spectra.Loop.FoldersLocked"));
 	}
 }
 
@@ -213,6 +228,22 @@ void SpectraLoopSettings::accept()
 {
 	config_t *config = main->Config();
 
+	/* The loop can start by itself while the dialog is open */
+	const bool foldersLocked = recorder->Active();
+	if (foldersLocked && loopPathRow->isEnabled()) {
+		const bool changed =
+			loopPath->text().trimmed() !=
+				QString::fromUtf8(config_get_string(config, LOOP_SECTION, "Path")).trimmed() ||
+			clipsPath->text().trimmed() !=
+				QString::fromUtf8(config_get_string(config, LOOP_SECTION, "ClipsPath")).trimmed();
+		LockFolders();
+		if (changed) {
+			OBSMessageBox::warning(this, QTStr("Spectra.Loop.Settings.Title"),
+					       QTStr("Spectra.Loop.FoldersLockedNotSaved"));
+			return;
+		}
+	}
+
 	int cx = 0, cy = 0;
 	if (!SpectraDefaults::ParseResolution(resolution->currentText(), cx, cy)) {
 		OBSMessageBox::warning(this, QTStr("Spectra.Loop.Settings.Title"),
@@ -226,8 +257,10 @@ void SpectraLoopSettings::accept()
 	config_set_int(config, LOOP_SECTION, "CanvasCX", cx);
 	config_set_int(config, LOOP_SECTION, "CanvasCY", cy);
 	config_set_string(config, LOOP_SECTION, "Quality", QT_TO_UTF8(quality->currentData().toString()));
-	config_set_string(config, LOOP_SECTION, "Path", QT_TO_UTF8(loopPath->text().trimmed()));
-	config_set_string(config, LOOP_SECTION, "ClipsPath", QT_TO_UTF8(clipsPath->text().trimmed()));
+	if (!foldersLocked) {
+		config_set_string(config, LOOP_SECTION, "Path", QT_TO_UTF8(loopPath->text().trimmed()));
+		config_set_string(config, LOOP_SECTION, "ClipsPath", QT_TO_UTF8(clipsPath->text().trimmed()));
+	}
 	config_set_uint(config, LOOP_SECTION, "QuotaGB", (uint64_t)quotaGB->value());
 	config_set_int(config, LOOP_SECTION, "SegmentSec", segmentSec->value());
 	config_set_int(config, LOOP_SECTION, "ClipSec", clipSec->value());
