@@ -60,7 +60,7 @@ private:
 
 	/* Log tab: filters and results */
 	QLineEdit *search;
-	QComboBox *channel, *label, *period;
+	QComboBox *channel, *label, *region, *period;
 	QCheckBox *withShot;
 	QLabel *frameFilter;
 	QPushButton *clearFrameFilter;
@@ -104,6 +104,8 @@ private:
 	void ShowVideo(const std::optional<LogLine> &line);
 	void LoadFrame(long long id);
 	void ClearImage(const QString &message);
+	/* Carnivore mode: a dashed, named box around each region's lines */
+	void OutlineRegions();
 	void LoadLearner();
 	void Suggest();
 

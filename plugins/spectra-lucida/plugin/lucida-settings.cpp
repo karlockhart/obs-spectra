@@ -1,4 +1,5 @@
 #include "lucida-settings.hpp"
+#include "lucida-regions.hpp"
 
 #include <obs-module.h>
 
@@ -155,6 +156,8 @@ QWidget *SettingsDialog::SamplingPage(const Settings &s)
 	adaptive->setToolTip(T("Lucida.Settings.Adaptive.Tip"));
 	readHud = Check("Lucida.Settings.ReadHud", r.readHud);
 	readHud->setToolTip(T("Lucida.Settings.ReadHud.Tip"));
+	carnivore = Check("Lucida.Settings.Carnivore", r.carnivore);
+	carnivore->setToolTip(T("Lucida.Settings.Carnivore.Tip"));
 	gateThreshold = new QDoubleSpinBox();
 	gateThreshold->setRange(0.0, 1.0);
 	gateThreshold->setDecimals(3);
@@ -184,6 +187,15 @@ QWidget *SettingsDialog::SamplingPage(const Settings &s)
 	};
 
 	QFormLayout *form = new QFormLayout();
+	form->addRow(carnivore);
+	form->addRow(Note(T("Lucida.Settings.Carnivore.Note")));
+	QPushButton *regions = new QPushButton(T("Lucida.Settings.Regions"));
+	regions->setAutoDefault(false);
+	connect(regions, &QPushButton::clicked, this, [this] {
+		RegionEditor editor(controller, this);
+		editor.exec();
+	});
+	form->addRow(regions);
 	form->addRow(T("Lucida.Settings.Interval"), interval);
 	form->addRow(adaptive);
 	form->addRow(T("Lucida.Settings.MinInterval"), minInterval);
@@ -381,6 +393,7 @@ Settings SettingsDialog::Collect() const
 	r.idleInterval = idleInterval->value();
 	r.adaptive = adaptive->isChecked();
 	r.readHud = readHud->isChecked();
+	r.carnivore = carnivore->isChecked();
 	r.gateThreshold = gateThreshold->value();
 	s.ocrThreads = ocrThreads->value();
 	r.chatRegion = {chat[0]->value(), chat[1]->value(), chat[2]->value(), chat[3]->value()};

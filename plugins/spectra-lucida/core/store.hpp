@@ -47,6 +47,7 @@ struct LogLine {
 	std::optional<std::array<double, 13>> colour; /* for Obscura's learner */
 	double firstSeen = 0.0;                       /* wall clock, s */
 	std::optional<VideoSpot> video;               /* loop segment when first seen */
+	QString region;                               /* carnivore mode: screen region */
 
 	QString When() const;
 };
@@ -64,6 +65,7 @@ struct Query {
 	QString text;
 	QString channel;
 	QString label;
+	QString region;
 	std::optional<long long> from; /* sort_ts range */
 	std::optional<long long> to;
 	std::optional<long long> frameId;
@@ -93,6 +95,16 @@ struct Stats {
 	long long sessions = 0;
 	long long bytes = 0;
 	std::vector<std::pair<QString, long long>> channels;
+};
+
+/* A part of the screen that carnivore mode found text in, e.g. "chat" or
+ * "top-right"; lines read from it carry its name */
+struct ScreenRegion {
+	long long id = 0;
+	QString name;
+	spectra::Region area; /* fractions of the frame */
+	double firstSeen = 0.0;
+	double lastSeen = 0.0;
 };
 
 struct RepairResult {
@@ -145,6 +157,13 @@ public:
 	std::vector<LogLine> Find(const Query &q);
 	QStringList Channels();
 	QStringList Labels();
+	/* Names of the screen regions lines were read from, most used first */
+	QStringList RegionNames();
+
+	/* Carnivore mode's regions, oldest first */
+	std::vector<ScreenRegion> ScreenRegions();
+	/* Inserts (id 0; sets the id) or updates a region */
+	void SaveScreenRegion(ScreenRegion &region);
 	/* Kept screenshots, newest first */
 	std::vector<FrameInfo> Frames(int limit = 200, std::optional<long long> from = {},
 				      std::optional<long long> to = {});

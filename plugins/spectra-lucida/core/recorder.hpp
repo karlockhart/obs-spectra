@@ -1,5 +1,6 @@
 #pragma once
 
+#include "carnivore.hpp"
 #include "store.hpp"
 
 #include <spectra-vision/chat.hpp>
@@ -9,6 +10,7 @@
 #include <QString>
 
 #include <functional>
+#include <memory>
 #include <optional>
 
 namespace lucida {
@@ -23,6 +25,13 @@ struct RecorderConfig {
 	spectra::Region chatRegion = spectra::kDefaultChatRegion;
 	spectra::Region hudRegion = spectra::kDefaultHudRegion;
 	bool readHud = true;
+	/* Carnivore mode: read every block of text on screen, not just the chat
+	 * box (which becomes the region named "chat") */
+	bool carnivore = false;
+	/* Carnivore mode: regions drawn in the region editor, and whether text
+	 * outside them is "other" instead of new regions */
+	std::vector<RegionRule> regions;
+	bool onlyDrawn = false;
 	double gateThreshold = 0.06;
 	bool keepFrames = false;
 	QString framesDir;
@@ -47,6 +56,8 @@ struct Tick {
 	QString tsSource;
 	double ocrMs = 0.0;
 	bool turnover = false;
+	int regions = 0; /* carnivore mode: text blocks read */
+	QString profile; /* the game profile in use, if any */
 
 	QString Describe() const;
 };
@@ -54,12 +65,19 @@ struct Tick {
 /* A frame from the game plus a description of where it came from */
 struct GrabbedFrame {
 	spectra::Image image;
-	QString target; /* e.g. the capture source's name */
+	QString target;     /* e.g. the capture source's name */
+	QString executable; /* the process it is hooked onto, for game profiles */
 };
 
 /* Which rows begin a new chat entry: a timestamped row always does; any
  * other row does unless the row above ran to the wrap point of the box */
 std::vector<int> EntryStarts(const std::vector<spectra::Row> &rows, int x0, int x1);
+
+/* Rows into chat entries, a new entry at each index in starts (Obscura's
+ * parsing per entry; an untimed line that reads like a message in its own
+ * right is labelled by its content) */
+std::vector<spectra::ChatEntry> BuildChat(const spectra::Image &img, const std::vector<spectra::Row> &rows,
+					  const std::vector<spectra::Rect> &rects, const std::vector<int> &starts);
 
 /* Chat entries in one frame (Obscura's parsing with Lucida's wrap, relabel
  * and clipped-top-row rules) */
@@ -90,8 +108,12 @@ public:
 	/* Where the loop recording was at a wall-clock time; lines are tagged
 	 * with it as they are added (unset: no video metadata) */
 	std::function<std::optional<VideoSpot>(double wallTs)> locateVideo;
+	/* The game profile for an executable; its Lucida section replaces the
+	 * config's reading settings while that game is captured */
+	std::function<std::optional<GameProfile>(const QString &executable)> profileFor;
 
 private:
+	RecorderConfig base; /* as given, before any game profile */
 	RecorderConfig config;
 	Store &store;
 	spectra::OcrEngine &ocr;
@@ -102,6 +124,12 @@ private:
 	int lastHeight = 0;
 	std::optional<long long> sessionId;
 	QString sessionTarget;
+	std::unique_ptr<RegionTracker> regions; /* carnivore mode */
+	std::optional<QString> profileExe;      /* executable the profile was chosen for */
+	QString profileName;
+
+	void UseProfile(const std::optional<GameProfile> &profile);
+	void Configure();
 
 	std::pair<long long, QString> FrameTimestamp(const spectra::Image &img);
 	void Adapt(int added, bool turnover);

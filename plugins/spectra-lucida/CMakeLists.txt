@@ -32,6 +32,10 @@ add_library(lucida-core STATIC)
 target_sources(
   lucida-core
   PRIVATE
+    core/carnivore.cpp
+    core/carnivore.hpp
+    core/profiles.cpp
+    core/profiles.hpp
     core/recorder.cpp
     core/recorder.hpp
     core/store.cpp
@@ -53,7 +57,7 @@ set_target_properties(lucida-tests PROPERTIES FOLDER spectra)
 set_target_properties_obs(lucida-tests)
 
 # Replays screenshots through the recorder and checks each kept screenshot's boxes:
-# lucida-replay [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...
+# lucida-replay [--carnivore] [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...
 add_executable(lucida-replay tools/lucida-replay.cpp)
 target_link_libraries(lucida-replay PRIVATE lucida-core)
 set_target_properties(lucida-replay PROPERTIES FOLDER spectra)
@@ -71,6 +75,8 @@ target_sources(
     plugin/lucida-dock.cpp
     plugin/lucida-dock.hpp
     plugin/lucida-plugin.cpp
+    plugin/lucida-regions.cpp
+    plugin/lucida-regions.hpp
     plugin/lucida-settings.cpp
     plugin/lucida-settings.hpp
     plugin/lucida-viewer.cpp

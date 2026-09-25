@@ -68,6 +68,17 @@ CREATE TABLE IF NOT EXISTS frame_lines (
     PRIMARY KEY (frame_id, line_id)
 );
 CREATE INDEX IF NOT EXISTS frame_lines_line ON frame_lines(line_id);
+-- Spectra: carnivore mode's screen regions, as fractions of the frame
+CREATE TABLE IF NOT EXISTS regions (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    x0          REAL NOT NULL,
+    y0          REAL NOT NULL,
+    x1          REAL NOT NULL,
+    y1          REAL NOT NULL,
+    first_seen  REAL NOT NULL,
+    last_seen   REAL NOT NULL
+);
 )SQL";
 
 /* Columns added after Lucida 0.1.0; older databases are migrated on open */
@@ -79,7 +90,9 @@ const std::pair<const char *, const char *> kLaterColumns[] = {
 	{"colour", "TEXT"},
 	{"labels", "TEXT"},
 	{"video", "TEXT"},
-	{"video_offset", "REAL"}};
+	{"video_offset", "REAL"},
+	/* Spectra: the screen region carnivore mode read the line from */
+	{"region", "TEXT"}};
 
 constexpr double kFuzzyRatio = 0.9; /* below this, two readings are different lines */
 constexpr int kPrefixMin = 12;      /* shorter than this, a shared opening proves nothing */
@@ -239,6 +252,7 @@ LogLine RowToLine(const Stmt &s)
 	if (!video.isEmpty()) {
 		l.video = VideoSpot{video, s.Real(s.ColumnIndex("video_offset"))};
 	}
+	l.region = s.Text(s.ColumnIndex("region"));
 	return l;
 }
 
@@ -529,8 +543,8 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 			double now)
 {
 	Stmt s(db, "INSERT INTO lines(session_id, sort_ts, seq, ts_source, clock, channel, tags, body,"
-		   " dedup_key, score, frames, first_seen, last_seen, rect, colour, labels)"
-		   " VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)");
+		   " dedup_key, score, frames, first_seen, last_seen, rect, colour, labels, region)"
+		   " VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?)");
 	s.Bind(1, sessionId)
 		.Bind(2, frameTs)
 		.Bind(3, seq)
@@ -546,6 +560,7 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 		.Bind(13, RectText(EntryRect(entry)))
 		.Bind(14, ColourJson(entry.colour))
 		.Bind(15, TagsJson(labeler ? labeler(body) : QStringList()))
+		.Bind(16, entry.region.isEmpty() ? std::nullopt : std::optional<QString>(entry.region))
 		.Run();
 	long long rowId = sqlite3_last_insert_rowid(db);
 	if (fts) {
@@ -822,6 +837,9 @@ std::vector<LogLine> Store::Find(const Query &q)
 	if (!q.label.isEmpty()) {
 		add("lines.labels LIKE ?");
 	}
+	if (!q.region.isEmpty()) {
+		add("lines.region = ?");
+	}
 	if (q.from) {
 		add("lines.sort_ts >= ?");
 	}
@@ -857,6 +875,9 @@ std::vector<LogLine> Store::Find(const Query &q)
 			const QString quoted =
 				QString::fromUtf8(QJsonDocument(QJsonArray{q.label}).toJson(QJsonDocument::Compact));
 			s.Bind(i++, QStringLiteral("%") + quoted.mid(1, quoted.size() - 2) + QStringLiteral("%"));
+		}
+		if (!q.region.isEmpty()) {
+			s.Bind(i++, q.region);
 		}
 		if (q.from) {
 			s.Bind(i++, *q.from);
@@ -918,6 +939,58 @@ QStringList Store::Labels()
 	}
 	out.sort(Qt::CaseInsensitive);
 	return out;
+}
+
+QStringList Store::RegionNames()
+{
+	QStringList out;
+	Stmt s(db, "SELECT region, COUNT(*) n FROM lines WHERE region IS NOT NULL AND region != ''"
+		   " GROUP BY region ORDER BY n DESC, region");
+	while (s.Step() == SQLITE_ROW) {
+		out << s.Text(0);
+	}
+	return out;
+}
+
+std::vector<ScreenRegion> Store::ScreenRegions()
+{
+	std::vector<ScreenRegion> out;
+	Stmt s(db, "SELECT id, name, x0, y0, x1, y1, first_seen, last_seen FROM regions ORDER BY id");
+	while (s.Step() == SQLITE_ROW) {
+		out.push_back(
+			{s.Int(0), s.Text(1), {s.Real(2), s.Real(3), s.Real(4), s.Real(5)}, s.Real(6), s.Real(7)});
+	}
+	return out;
+}
+
+void Store::SaveScreenRegion(ScreenRegion &r)
+{
+	if (!db) {
+		return;
+	}
+	if (r.id) {
+		Stmt s(db, "UPDATE regions SET name=?, x0=?, y0=?, x1=?, y1=?, last_seen=? WHERE id=?");
+		s.Bind(1, r.name)
+			.Bind(2, r.area.left)
+			.Bind(3, r.area.top)
+			.Bind(4, r.area.right)
+			.Bind(5, r.area.bottom)
+			.Bind(6, r.lastSeen)
+			.Bind(7, r.id)
+			.Run();
+		return;
+	}
+	Stmt s(db, "INSERT INTO regions(name, x0, y0, x1, y1, first_seen, last_seen) VALUES (?,?,?,?,?,?,?)");
+	s.Bind(1, r.name)
+		.Bind(2, r.area.left)
+		.Bind(3, r.area.top)
+		.Bind(4, r.area.right)
+		.Bind(5, r.area.bottom)
+		.Bind(6, r.firstSeen)
+		.Bind(7, r.lastSeen);
+	if (s.Run()) {
+		r.id = sqlite3_last_insert_rowid(db);
+	}
 }
 
 std::vector<FrameInfo> Store::Frames(int limit, std::optional<long long> from, std::optional<long long> to)
@@ -1121,7 +1194,7 @@ std::optional<RepairResult> Store::Repair(const QString &filePath, QString *erro
 			sqlite3_close(source);
 			return std::nullopt;
 		}
-		for (const char *table : {"sessions", "frames", "lines", "frame_lines"}) {
+		for (const char *table : {"sessions", "frames", "lines", "frame_lines", "regions"}) {
 			std::set<std::string> targetColumns;
 			{
 				Stmt ti(target.db, (std::string("PRAGMA table_info(") + table + ")").c_str());

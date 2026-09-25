@@ -5,6 +5,8 @@
  *   lucida-tests <scratch dir>
  */
 
+#include "../core/carnivore.hpp"
+#include "../core/profiles.hpp"
 #include "../core/recorder.hpp"
 #include "../core/store.hpp"
 #include "../core/tagger.hpp"
@@ -179,6 +181,104 @@ struct Rig {
 		});
 	}
 };
+
+/* ---- carnivore fixtures: text anywhere on a 1920x1080 screen ---- */
+
+constexpr int kScreenW = 1920, kScreenH = 1080, kLineH = 14, kLinePitch = 24;
+
+static spectra::OcrBox Box(const QString &text, float x0, float y0, float x1 = -1)
+{
+	spectra::OcrBox b;
+	b.text = text.toStdString();
+	b.score = 0.95f;
+	b.x0 = x0;
+	b.y0 = y0;
+	b.x1 = x1 >= 0 ? x1 : x0 + 8.f * text.size();
+	b.y1 = y0 + kLineH;
+	return b;
+}
+
+/* Lines left-aligned at x (a chat box) */
+static std::vector<spectra::OcrBox> LeftLines(const QStringList &lines, float x, float y)
+{
+	std::vector<spectra::OcrBox> out;
+	for (int i = 0; i < lines.size(); i++) {
+		out.push_back(Box(lines[i], x, y + i * kLinePitch));
+	}
+	return out;
+}
+
+/* Lines right-aligned at x1 (a kill feed) */
+static std::vector<spectra::OcrBox> RightLines(const QStringList &lines, float x1, float y)
+{
+	std::vector<spectra::OcrBox> out;
+	for (int i = 0; i < lines.size(); i++) {
+		out.push_back(Box(lines[i], x1 - 8.f * lines[i].size(), y + i * kLinePitch, x1));
+	}
+	return out;
+}
+
+static std::vector<spectra::OcrBox> Join(std::initializer_list<std::vector<spectra::OcrBox>> parts)
+{
+	std::vector<spectra::OcrBox> out;
+	for (const auto &p : parts) {
+		out.insert(out.end(), p.begin(), p.end());
+	}
+	return out;
+}
+
+static spectra::Image DrawBoxes(const std::vector<spectra::OcrBox> &boxes)
+{
+	QImage q(kScreenW, kScreenH, QImage::Format_RGB888);
+	q.fill(QColor(40, 60, 40));
+	QPainter p(&q);
+	p.setPen(QColor(235, 230, 230));
+	QFont f = p.font();
+	f.setPixelSize(12);
+	p.setFont(f);
+	for (const spectra::OcrBox &b : boxes) {
+		p.drawText((int)b.x0, (int)b.y1 - 2, QString::fromStdString(b.text));
+	}
+	p.end();
+	spectra::Image img(kScreenW, kScreenH, 3);
+	for (int y = 0; y < kScreenH; y++) {
+		const uchar *src = q.constScanLine(y);
+		uint8_t *dst = img.row(y);
+		for (int x = 0; x < kScreenW; x++) {
+			dst[x * 3 + 0] = src[x * 3 + 2];
+			dst[x * 3 + 1] = src[x * 3 + 1];
+			dst[x * 3 + 2] = src[x * 3 + 0];
+		}
+	}
+	return img;
+}
+
+/* Returns scripted boxes, one list per read */
+class BoxOcr : public spectra::OcrEngine {
+public:
+	explicit BoxOcr(std::vector<std::vector<spectra::OcrBox>> s) : script(std::move(s)) {}
+	std::vector<std::vector<spectra::OcrBox>> script;
+	int reads = 0;
+
+	std::vector<spectra::OcrBox> Read(const spectra::Image &, float) override
+	{
+		return script[std::min<size_t>(reads++, script.size() - 1)];
+	}
+	std::string RecognizeLine(const spectra::Image &) override { return "30 | 1789231305"; }
+};
+
+static QStringList EntryBodies(const std::vector<spectra::ChatEntry> &entries, const QString &region)
+{
+	QStringList out;
+	for (const spectra::ChatEntry &e : entries) {
+		if (e.region == region) {
+			out << e.body;
+		}
+	}
+	return out;
+}
+
+static const QStringList kFeed{"Alice killed Bob", "Carl killed Dave with a pistol", "Erin killed Frank"};
 
 /* Sightings of lines without positions, for tests that only need the links */
 static std::vector<Sighting> Seen(const std::vector<long long> &ids)
@@ -811,6 +911,279 @@ int main(int argc, char **argv)
 		Query q;
 		q.frameId = frameId;
 		CHECK(s.Find(q).size() == 2);
+	});
+
+	/* ---- Spectra: carnivore mode ---- */
+
+	Test("carnivore_finds_each_block_of_text", [] {
+		const auto boxes = Join({LeftLines(kChat, 10, 20),
+					 RightLines(kFeed, 1900, 20),
+					 {Box("100", 1800, 1000), Box("Vinewood", 20, 1040)}});
+		std::vector<TextBlock> blocks = FindTextBlocks(boxes);
+		CHECK(blocks.size() == 4);
+		/* screen order: the two top blocks left to right, then the bottom ones */
+		CHECK(blocks.size() == 4 && blocks[0].boxes.size() == 3 && blocks[0].rect.x0 == 10);
+		CHECK(blocks.size() == 4 && blocks[1].boxes.size() == 3 && blocks[1].rect.x1 == 1900);
+	});
+
+	Test("carnivore_reads_chat_feeds_and_labels_but_not_hud_numbers", [] {
+		const auto boxes =
+			Join({LeftLines(kChat, 10, 20),
+			      RightLines(kFeed, 1900, 20),
+			      {Box("100", 1800, 1000), Box("Vinewood", 20, 1040), Box("30 | 1789231305", 900, 2)}});
+		BoxOcr ocr({boxes});
+		RegionTracker tracker({}, {{"chat", spectra::kDefaultChatRegion, RegionMode::Read}});
+		int blocks = 0;
+		const spectra::Rect hud = spectra::kDefaultHudRegion.ToPixels(kScreenW, kScreenH);
+		auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0, {hud}, &blocks);
+		CHECK(blocks == 2);
+		CHECK(EntryBodies(entries, "chat").size() == 3);
+		/* untimed feed rows of similar width are still one line each */
+		CHECK(EntryBodies(entries, "top-right") == kFeed);
+		/* street names and other labels are kept, as "other" */
+		CHECK(EntryBodies(entries, "other") == QStringList{"Vinewood"});
+		CHECK(entries.size() == 7);
+		for (size_t i = 0; i < entries.size(); i++) {
+			CHECK(entries[i].index == (int)i && !entries[i].rects.empty());
+		}
+		/* only the feed is learned: the chat box is drawn, "other" is no region */
+		auto dirty = tracker.TakeDirty();
+		CHECK(dirty.size() == 1 && dirty[0]->name == "top-right");
+		CHECK(tracker.TakeDirty().empty());
+	});
+
+	Test("carnivore_joins_a_wrapped_sentence", [] {
+		const auto boxes = LeftLines({"Server restarts in ten minutes, please find a safe place to park your",
+					      "vehicle before then", "Next announcement follows"},
+					     700, 500);
+		BoxOcr ocr({boxes});
+		RegionTracker tracker;
+		auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+		CHECK(entries.size() == 2);
+		CHECK(entries.size() == 2 && entries[0].body.endsWith("your vehicle before then"));
+		CHECK(entries.size() == 2 && entries[0].region == "centre");
+	});
+
+	Test("carnivore_regions_keep_their_names", [] {
+		CHECK(RegionTracker::PlaceName({0.0, 0.0, 0.2, 0.1}) == "top-left");
+		CHECK(RegionTracker::PlaceName({0.4, 0.4, 0.6, 0.6}) == "centre");
+		CHECK(RegionTracker::PlaceName({0.4, 0.8, 0.6, 0.9}) == "bottom");
+		CHECK(RegionTracker::PlaceName({0.8, 0.4, 0.9, 0.6}) == "right");
+
+		std::vector<spectra::Row> numbers{spectra::Row::FromBox(Box("100", 0, 0)),
+						  spectra::Row::FromBox(Box("$ 12,500", 0, 24))};
+		std::vector<spectra::Row> labels{spectra::Row::FromBox(Box("Carcer Way", 0, 0)),
+						 spectra::Row::FromBox(Box("Vinewood Blvd", 0, 24))};
+		std::vector<spectra::Row> text{spectra::Row::FromBox(Box("Alice killed Bob", 0, 0))};
+		CHECK(Classify(numbers) == BlockKind::None);
+		CHECK(Classify(labels) == BlockKind::Labels);
+		CHECK(Classify(text) == BlockKind::Text);
+
+		RegionTracker t({}, {{"chat", spectra::kDefaultChatRegion, RegionMode::Read}});
+		CHECK(t.Assign({10, 20, 400, 82}, kScreenW, kScreenH, 1).name == "chat");
+		CHECK(t.Assign({1650, 20, 1900, 82}, kScreenW, kScreenH, 1).name == "top-right");
+		CHECK(t.Assign({1650, 200, 1900, 262}, kScreenW, kScreenH, 1).name == "top-right 2");
+		/* a feed that grows stays the same region, which widens */
+		CHECK(t.Assign({1600, 20, 1900, 130}, kScreenW, kScreenH, 2).name == "top-right");
+		const ScreenRegion &feed = t.Regions()[0];
+		CHECK(std::fabs(feed.area.left - 1600.0 / kScreenW) < 1e-9 && feed.lastSeen == 2 &&
+		      feed.firstSeen == 1);
+		CHECK(t.Regions().size() == 2);
+	});
+
+	Test("carnivore_mode_logs_lines_with_their_region", [] {
+		const auto first = Join({LeftLines(kChat.mid(0, 2), 10, 20), RightLines(kFeed.mid(0, 2), 1900, 20)});
+		const auto second = Join({LeftLines(kChat, 10, 20), RightLines(kFeed.mid(1, 2), 1900, 20)});
+		Store store(NewDb());
+		CHECK(store.Open());
+		BoxOcr ocr({first, second});
+		std::vector<spectra::Image> frames{DrawBoxes(first), DrawBoxes(second)};
+		size_t next = 0;
+		RecorderConfig cfg;
+		cfg.carnivore = true;
+		cfg.keepFrames = true;
+		cfg.framesDir = QFileInfo(store.Path()).absoluteDir().filePath("frames");
+		auto grab = [&]() -> std::optional<GrabbedFrame> {
+			if (next >= frames.size()) {
+				return std::nullopt;
+			}
+			return GrabbedFrame{frames[next++], QStringLiteral("test")};
+		};
+		{
+			Recorder recorder(cfg, store, ocr, grab);
+			Tick a = recorder.Step();
+			CHECK(a.added == 4 && a.regions == 2 && a.frameTs == 1789231305LL);
+			Tick b = recorder.Step();
+			CHECK(b.added == 2 && b.regions == 2);
+			recorder.Close();
+		}
+		CHECK(store.Recent().size() == 6);
+		Query q;
+		q.region = "top-right";
+		CHECK(Bodies(store.Find(q)) == kFeed);
+		q.region = "chat";
+		CHECK(store.Find(q).size() == 3);
+		CHECK((store.RegionNames() == QStringList{"chat", "top-right"}));
+		auto regions = store.ScreenRegions();
+		/* the chat box is drawn, so only the feed is a learned region */
+		CHECK(regions.size() == 1 && regions[0].id > 0 && regions[0].name == "top-right");
+
+		/* screenshots list every line, each with its region */
+		auto shots = store.Frames();
+		CHECK(shots.size() == 2);
+		if (!shots.empty()) {
+			auto lines = store.FrameLines(shots[0].frame.id);
+			CHECK(lines.size() == 5);
+			CHECK(std::all_of(lines.begin(), lines.end(),
+					  [](const LogLine &l) { return !l.region.isEmpty() && l.rect.has_value(); }));
+		}
+
+		/* after a restart the regions keep their names */
+		const auto third = Join(
+			{RightLines({"Gina killed Hank"}, 1900, 20),
+			 LeftLines({"Welcome to the server", "Press F1 for help", "Have fun out there"}, 1500, 600)});
+		BoxOcr again({third});
+		frames = {DrawBoxes(third)};
+		next = 0;
+		Recorder recorder(cfg, store, again, grab);
+		Tick c = recorder.Step();
+		CHECK(c.added == 4);
+		q.region = "top-right";
+		CHECK(store.Find(q).size() == 4);
+		CHECK(store.ScreenRegions().size() == 2);
+	});
+
+	Test("drawn_regions_name_ignore_and_other_text", [] {
+		const auto feed = RightLines(kFeed, 1900, 20);
+		const auto map = LeftLines({"Carcer Way", "Vinewood Blvd"}, 60, 900);
+		const auto ad = LeftLines({"Buy the new Pegassi Zentorno today"}, 800, 500);
+		const auto news = LeftLines({"Weazel News says the port is closed"}, 60, 400);
+		const auto boxes = Join({feed, map, ad, news});
+		const std::vector<RegionRule> drawn{{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read},
+						    {"minimap", {0.0, 0.8, 0.25, 1.0}, RegionMode::Ignore},
+						    {"ads", {0.4, 0.4, 0.7, 0.55}, RegionMode::Other}};
+		{
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, drawn);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK(EntryBodies(entries, "kill feed") == kFeed);
+			CHECK(EntryBodies(entries, "other") == QStringList{"Buy the new Pegassi Zentorno today"});
+			/* the minimap is ignored; the news, outside every drawn region, is learned */
+			CHECK(entries.size() == 5);
+			CHECK(tracker.Regions().size() == 1 && tracker.Regions()[0].name == "left");
+		}
+		{
+			/* only the drawn regions: nothing is learned, the rest is "other" */
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, drawn, true);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK(EntryBodies(entries, "other").size() == 2);
+			CHECK(tracker.Regions().empty() && tracker.TakeDirty().empty());
+		}
+		{
+			/* labels inside a drawn region take its name */
+			std::vector<RegionRule> named = drawn;
+			named[1].mode = RegionMode::Read;
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, named);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK((EntryBodies(entries, "minimap") == QStringList{"Carcer Way", "Vinewood Blvd"}));
+		}
+		/* a drawn region replaces the learned one of the same name */
+		RegionTracker tracker(
+			{{1, "kill feed", {0.0, 0.0, 0.1, 0.1}, 1, 1}, {2, "left", {0.0, 0.3, 0.2, 0.4}, 1, 1}}, drawn);
+		CHECK(tracker.Regions().size() == 1 && tracker.Regions()[0].name == "left");
+		CHECK(WithChatBox(drawn, spectra::kDefaultChatRegion).size() == 4);
+		CHECK(WithChatBox({{"chat", {0, 0, 1, 1}}}, spectra::kDefaultChatRegion).size() == 1);
+	});
+
+	Test("game_profiles_round_trip_and_match", [] {
+		const QString path = QFileInfo(NewDb()).absoluteDir().filePath("game-profiles.json");
+		GameProfiles missing;
+		CHECK(missing.Load(path) && missing.profiles.empty() && missing.AnyExecutable().isEmpty());
+
+		LucidaProfile l;
+		l.carnivore = true;
+		l.onlyDrawn = true;
+		l.readHud = false;
+		l.chatRegion = {0.01, 0.02, 0.4, 0.3};
+		l.regions = {{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read},
+			     {"minimap", {0.0, 0.8, 0.25, 1.0}, RegionMode::Ignore}};
+		GameProfile fivem;
+		fivem.name = "FiveM";
+		fivem.executable = "FiveM.*GTAProcess\\.exe";
+		fivem.SetLucida(l);
+		/* another feature's section is kept as it is */
+		fivem.sections.insert("loop", QJsonObject{{"quotaGb", 100}});
+		GameProfile other;
+		other.name = "No pattern";
+		GameProfiles saved;
+		saved.profiles = {fivem, other};
+		CHECK(saved.Save(path));
+
+		GameProfiles loaded;
+		CHECK(loaded.Load(path) && loaded.profiles.size() == 2);
+		const GameProfile *p = loaded.Match("FiveM_b3095_GTAProcess.exe");
+		CHECK(p && p->name == "FiveM");
+		CHECK(loaded.Match("fivem_b3095_gtaprocess.EXE") == p);
+		CHECK(!loaded.Match("notepad.exe"));
+		CHECK(!other.Matches("anything.exe"));
+		CHECK(p && p->sections.value("loop").toObject().value("quotaGb").toInt() == 100);
+		auto back = p ? p->Lucida() : std::nullopt;
+		CHECK(back && back->carnivore && back->onlyDrawn && !back->readHud);
+		CHECK(back && back->regions == l.regions && back->chatRegion.right == 0.4);
+		CHECK(!other.Lucida());
+		CHECK(loaded.AnyExecutable() == "(?:FiveM.*GTAProcess\\.exe)");
+		CHECK(ModeFromKey(ModeKey(RegionMode::Ignore)) == RegionMode::Ignore &&
+		      ModeFromKey("nonsense") == RegionMode::Read);
+	});
+
+	Test("the_recorder_reads_each_game_with_its_profile", [] {
+		const auto screen = Join({LeftLines(kChat, 10, 20), RightLines(kFeed, 1900, 20)});
+		Store store(NewDb());
+		CHECK(store.Open());
+		BoxOcr ocr({screen});
+		const spectra::Image img = DrawBoxes(screen);
+		std::vector<GrabbedFrame> frames{{img, "Game", "FiveM_GTAProcess.exe"},
+						 {DrawBoxes(RightLines(kFeed, 1900, 40)), "Game", "notepad.exe"}};
+		size_t next = 0;
+		RecorderConfig cfg; /* the settings: chat box mode */
+		cfg.readHud = false;
+		Recorder recorder(cfg, store, ocr, [&]() -> std::optional<GrabbedFrame> {
+			if (next >= frames.size()) {
+				return std::nullopt;
+			}
+			return frames[next++];
+		});
+		LucidaProfile l;
+		l.carnivore = true;
+		l.readHud = false;
+		l.regions = {{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read}};
+		GameProfile fivem;
+		fivem.name = "FiveM";
+		fivem.executable = "GTAProcess";
+		fivem.SetLucida(l);
+		recorder.profileFor = [&](const QString &exe) -> std::optional<GameProfile> {
+			return fivem.Matches(exe) ? std::optional<GameProfile>(fivem) : std::nullopt;
+		};
+		Tick a = recorder.Step();
+		CHECK(a.profile == "FiveM" && recorder.Config().carnivore && a.regions == 2);
+		Query q;
+		q.region = "kill feed";
+		CHECK(Bodies(store.Find(q)) == kFeed);
+		q.region = "chat";
+		CHECK(store.Find(q).size() == 3);
+		/* another game: back to the settings */
+		recorder.Step();
+		CHECK(!recorder.Config().carnivore && recorder.Config().regions.empty());
+	});
+
+	Test("the_chat_box_mode_leaves_region_empty", [] {
+		Rig rig({kChat});
+		rig.recorder->Step();
+		auto lines = rig.store.Recent();
+		CHECK(lines.size() == 3 && lines[0].region.isEmpty());
+		CHECK(rig.store.RegionNames().isEmpty() && rig.store.ScreenRegions().empty());
 	});
 
 	/* ---- Spectra: loop recording lookup ---- */
