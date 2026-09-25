@@ -58,6 +58,8 @@ struct ChatEntry {
 	QStringList tags;
 	QString channel = QStringLiteral("other");
 	std::array<float, 13> colour{};
+	/* Lucida's carnivore mode: the screen region it was read from */
+	QString region;
 
 	/* The first line scrolled off the top, so there is no timestamp */
 	bool Partial() const { return !time.has_value(); }

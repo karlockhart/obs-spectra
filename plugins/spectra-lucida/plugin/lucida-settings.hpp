@@ -33,7 +33,7 @@ private:
 
 	/* Sampling */
 	QDoubleSpinBox *interval, *minInterval, *maxInterval, *idleInterval, *gateThreshold;
-	QCheckBox *adaptive, *readHud;
+	QCheckBox *adaptive, *readHud, *carnivore;
 	QSpinBox *ocrThreads;
 	QDoubleSpinBox *chat[4], *hud[4];
 

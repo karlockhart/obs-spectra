@@ -20,7 +20,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGraphicsRectItem>
 #include <QGraphicsScene>
+#include <QGraphicsSimpleTextItem>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QImageReader>
@@ -55,7 +57,7 @@ constexpr double kClipPadding = 15.0; /* s either side of the line in the clip e
 constexpr int kRoleLine = Qt::UserRole;
 constexpr int kRoleFrame = Qt::UserRole + 1;
 
-enum Column { kTime, kClock, kChannel, kTags, kText, kVideo, kColumns };
+enum Column { kTime, kClock, kChannel, kRegion, kTags, kText, kVideo, kColumns };
 
 QString T(const char *key)
 {
@@ -221,6 +223,8 @@ QWidget *Viewer::BuildLogTab()
 	channel->setToolTip(T("Lucida.Viewer.Channel"));
 	label = new QComboBox();
 	label->setToolTip(T("Lucida.Viewer.Tag"));
+	region = new QComboBox();
+	region->setToolTip(T("Lucida.Viewer.Region.Tip"));
 	period = new QComboBox();
 	FillPeriods(period);
 	withShot = new QCheckBox(T("Lucida.Viewer.WithShot"));
@@ -234,7 +238,7 @@ QWidget *Viewer::BuildLogTab()
 		}
 	});
 	connect(find, &QPushButton::clicked, this, &Viewer::Reload);
-	for (QComboBox *combo : {channel, label, period}) {
+	for (QComboBox *combo : {channel, label, region, period}) {
 		connect(combo, &QComboBox::currentIndexChanged, this, &Viewer::Reload);
 	}
 	connect(withShot, &QCheckBox::toggled, this, &Viewer::Reload);
@@ -245,6 +249,8 @@ QWidget *Viewer::BuildLogTab()
 	filters->addWidget(channel, 1);
 	filters->addWidget(new QLabel(T("Lucida.Viewer.Tag")));
 	filters->addWidget(label, 1);
+	filters->addWidget(new QLabel(T("Lucida.Viewer.Region")));
+	filters->addWidget(region, 1);
 	filters->addWidget(period);
 	filters->addWidget(withShot);
 	filters->addWidget(find);
@@ -266,14 +272,15 @@ QWidget *Viewer::BuildLogTab()
 	results = new QTreeWidget();
 	results->setColumnCount(kColumns);
 	results->setHeaderLabels({T("Lucida.Viewer.Col.Time"), T("Lucida.Viewer.Col.Clock"),
-				  T("Lucida.Viewer.Col.Channel"), T("Lucida.Viewer.Col.Tags"),
-				  T("Lucida.Viewer.Col.Text"), T("Lucida.Viewer.Col.Video")});
+				  T("Lucida.Viewer.Col.Channel"), T("Lucida.Viewer.Col.Region"),
+				  T("Lucida.Viewer.Col.Tags"), T("Lucida.Viewer.Col.Text"),
+				  T("Lucida.Viewer.Col.Video")});
 	results->setRootIsDecorated(false);
 	results->setUniformRowHeights(true);
 	results->setAlternatingRowColors(true);
 	results->setSelectionMode(QAbstractItemView::SingleSelection);
 	results->header()->setStretchLastSection(false);
-	for (int c : {kTime, kClock, kChannel, kTags, kVideo}) {
+	for (int c : {kTime, kClock, kChannel, kRegion, kTags, kVideo}) {
 		results->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
 	}
 	results->header()->setSectionResizeMode(kText, QHeaderView::Stretch);
@@ -390,6 +397,11 @@ void Viewer::RefreshFilters()
 	FillChoices(channel, "Lucida.Viewer.AllChannels", s ? s->Channels() : QStringList());
 	const QStringList labels = s ? s->Labels() : QStringList();
 	FillChoices(label, "Lucida.Viewer.AllTags", labels);
+	const QStringList regions = s ? s->RegionNames() : QStringList();
+	FillChoices(region, "Lucida.Viewer.AllRegions", regions);
+	/* the column and filter only matter once carnivore mode has read something */
+	region->setEnabled(!regions.isEmpty());
+	results->setColumnHidden(kRegion, regions.isEmpty());
 	FillChoices(galleryLabel, "Lucida.Viewer.AllTags", labels);
 }
 
@@ -399,6 +411,7 @@ Query Viewer::CurrentQuery() const
 	q.text = search->text().trimmed();
 	q.channel = channel->currentData().toString();
 	q.label = label->currentData().toString();
+	q.region = region->currentData().toString();
 	q.from = PeriodStart(period);
 	q.withShot = withShot->isChecked();
 	q.frameId = onlyFrame;
@@ -434,6 +447,7 @@ void Viewer::Reload()
 			      QDateTime::fromSecsSinceEpoch(l.sortTs).toString(QStringLiteral("MM-dd HH:mm:ss")));
 		item->setText(kClock, l.clock.value_or(QStringLiteral("--:--:--")));
 		item->setText(kChannel, l.channel);
+		item->setText(kRegion, l.region);
 		item->setText(kTags, l.labels.join(QStringLiteral(", ")));
 		item->setText(kText, l.body);
 		item->setToolTip(kText, l.body);
@@ -472,7 +486,7 @@ void Viewer::ShowLine(long long lineId)
 {
 	tabs->setCurrentIndex(0);
 	if (!ItemFor(lineId)) {
-		for (QComboBox *combo : {channel, label, period}) {
+		for (QComboBox *combo : {channel, label, region, period}) {
 			combo->blockSignals(true);
 			combo->setCurrentIndex(0);
 			combo->blockSignals(false);
@@ -580,6 +594,7 @@ void Viewer::LoadFrame(long long id)
 	image->SetImage(q);
 	items.clear();
 	manual.clear();
+	OutlineRegions();
 	for (const LogLine &l : frameLines) {
 		QString tip = QStringLiteral("[%1] %2").arg(l.clock.value_or(QStringLiteral("--:--:--")), l.body);
 		auto *item = new EntryItem((int)l.id, {*l.rect}, tip,
@@ -597,6 +612,36 @@ void Viewer::LoadFrame(long long id)
 			     QDateTime::fromSecsSinceEpoch(f->sortTs).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
 			     QStringLiteral("%1x%2").arg(f->width).arg(f->height))
 			.arg(frameLines.size()));
+}
+
+void Viewer::OutlineRegions()
+{
+	std::map<QString, QRect> areas;
+	for (const LogLine &l : frameLines) {
+		if (!l.region.isEmpty() && l.rect) {
+			const QRect r(QPoint(l.rect->x0, l.rect->y0), QPoint(l.rect->x1 - 1, l.rect->y1 - 1));
+			areas[l.region] = areas[l.region].united(r);
+		}
+	}
+	const QColor colour(255, 190, 40);
+	for (const auto &[name, area] : areas) {
+		QPen pen(colour, 2, Qt::DashLine);
+		pen.setCosmetic(true);
+		auto *box = new QGraphicsRectItem(area.adjusted(-4, -4, 4, 4));
+		box->setPen(pen);
+		box->setAcceptedMouseButtons(Qt::NoButton);
+		box->setZValue(-1);
+		image->scene()->addItem(box);
+		auto *label = new QGraphicsSimpleTextItem(name);
+		label->setBrush(colour);
+		label->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+		label->setAcceptedMouseButtons(Qt::NoButton);
+		/* above the box's corner at any zoom */
+		label->setPos(area.left() - 4, area.top() - 4);
+		label->setTransform(QTransform::fromTranslate(0, -label->boundingRect().height()));
+		label->setZValue(-1);
+		image->scene()->addItem(label);
+	}
 }
 
 void Viewer::ClearImage(const QString &message)

@@ -3,6 +3,7 @@
 #include <spectra-grab/frame-grabber.hpp>
 #include "recorder.hpp"
 #include "store.hpp"
+#include "profiles.hpp"
 #include "tagger.hpp"
 
 #include <QObject>
@@ -35,6 +36,9 @@ struct Settings {
 	static QString DefaultFolder();
 };
 
+/* The per-game profiles file (see GameProfiles) */
+QString ProfilesPath();
+
 /* Spectra's loop recording folder and state */
 QString LoopDirectory();
 bool LoopRecordingActive();
@@ -55,6 +59,12 @@ public:
 	bool Paused() const { return paused; }
 	void SampleNow();
 
+	/* Carnivore mode: read all the text on screen, not just the chat box */
+	void SetCarnivore(bool on);
+	/* Restarts sampling so edited game profiles apply */
+	void ReloadProfiles();
+	bool Carnivore() const { return settings.recorder.carnivore; }
+
 	const Settings &CurrentSettings() const { return settings; }
 	void ApplySettings(const Settings &settings);
 
@@ -74,6 +84,7 @@ signals:
 	void statusChanged(const QString &status);
 	void failed(const QString &message);
 	void relabelled(int changed);
+	void carnivoreChanged(bool on);
 
 private:
 	Settings settings;
@@ -88,6 +99,7 @@ private:
 	bool paused = false;
 	QString status;
 	long long logged = 0;
+	int regionsRead = 0; /* text blocks in carnivore mode's last reading */
 	QTimer loopPoll;
 	QString loopDir; /* guarded by mutex; read by the worker */
 
