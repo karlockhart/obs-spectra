@@ -68,12 +68,12 @@ CREATE TABLE IF NOT EXISTS frame_lines (
     PRIMARY KEY (frame_id, line_id)
 );
 CREATE INDEX IF NOT EXISTS frame_lines_line ON frame_lines(line_id);
--- Spectra: carnivore mode's screen regions, as fractions of the frame
 -- Spectra: small settings kept with the log (e.g. where it is backed up to)
 CREATE TABLE IF NOT EXISTS meta (
     key         TEXT PRIMARY KEY,
     value       TEXT
 );
+-- Spectra: carnivore mode's screen regions, as fractions of the frame
 CREATE TABLE IF NOT EXISTS regions (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
