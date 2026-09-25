@@ -611,7 +611,7 @@ void Viewer::SearchCloud(const Query &q)
 		PrismaResult r;
 		QJsonArray lines;
 		if (!q.text.isEmpty()) {
-			params.addQueryItem("q", q.text);
+			params.addQueryItem("q", q.text.left(256)); /* Prisma's limit */
 			params.addQueryItem("order", "newest");
 			params.addQueryItem("limit", QString::number(kCloudSearchLimit));
 			if (!q.label.isEmpty()) {

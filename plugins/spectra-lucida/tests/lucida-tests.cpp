@@ -1375,6 +1375,19 @@ int main(int argc, char **argv)
 		fake.failNext = 1;
 		const PrismaResult busy = client.Put("/v1/lucida/sources/me", QJsonObject());
 		CHECK(busy.status == 503 && busy.Describe() == "HTTP 503: busy");
+		/* the other error shapes: a 422's issues, OAuth's and API Gateway's */
+		auto describe = [](int status, const char *json) {
+			PrismaResult r;
+			r.status = status;
+			r.body = QJsonDocument::fromJson(json).object();
+			return r.Describe();
+		};
+		CHECK(describe(422, R"({"detail": [{"loc": ["body", "lines", 7, "tags"], "msg": "too many"}]})") ==
+		      "HTTP 422: too many (body.lines.7.tags)");
+		CHECK(describe(401, R"({"error": "invalid_client", "error_description": "unknown kid"})") ==
+		      "HTTP 401: unknown kid");
+		CHECK(describe(429, R"({"message": "Too Many Requests"})") == "HTTP 429: Too Many Requests");
+		CHECK(describe(500, "{}") == "HTTP 500");
 		PrismaClient down(TestCredentials(),
 				  [](const HttpRequest &) { return HttpResponse{0, {}, "unreachable"}; });
 		CHECK(down.Get("/v1/lucida/sources").Describe() == "unreachable");

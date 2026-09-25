@@ -294,8 +294,23 @@ QString PrismaResult::Describe() const
 	}
 	QString detail;
 	if (body.isObject()) {
-		const QJsonValue d = body.toObject().value("detail");
-		detail = d.isString() ? d.toString() : QString::fromUtf8(Json(d));
+		/* FastAPI: {"detail": "..."} or a 422's [{loc, msg}, ...]; /v1/token: OAuth's
+		 * {"error", "error_description"}; API Gateway itself: {"message"} */
+		const QJsonObject o = body.toObject();
+		const QJsonValue d = o.value("detail");
+		if (d.isString()) {
+			detail = d.toString();
+		} else if (d.isArray() && !d.toArray().isEmpty()) {
+			const QJsonObject first = d.toArray().first().toObject();
+			QStringList where;
+			for (const QJsonValue &part : first.value("loc").toArray()) {
+				where << (part.isDouble() ? QString::number(part.toInt()) : part.toString());
+			}
+			detail = QStringLiteral("%1 (%2)").arg(first.value("msg").toString(), where.join('.'));
+		} else {
+			detail = o.value("error_description")
+					 .toString(o.value("error").toString(o.value("message").toString()));
+		}
 	} else if (body.isString()) {
 		detail = body.toString().left(300);
 	}
