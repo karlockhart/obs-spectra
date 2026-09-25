@@ -3,7 +3,7 @@
  * a fresh log, then checks every kept screenshot: each line listed on it is
  * read again from its box on that image and compared with the line's text.
  *
- *   lucida-replay [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...
+ *   lucida-replay [--carnivore] [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...
  *
  * Images are replayed in file-name order; a name that is a unix time (as
  * Lucida names its screenshots) is used as the wall clock.
@@ -85,7 +85,9 @@ int main(int argc, char **argv)
 	QStringList positional;
 	const QStringList args = app.arguments();
 	for (int i = 1; i < args.size(); i++) {
-		if (args[i] == "--chat" && i + 1 < args.size()) {
+		if (args[i] == "--carnivore") {
+			cfg.carnivore = true;
+		} else if (args[i] == "--chat" && i + 1 < args.size()) {
 			ParseRegion(args[++i], cfg.chatRegion);
 		} else if (args[i] == "--hud" && i + 1 < args.size()) {
 			ParseRegion(args[++i], cfg.hudRegion);
@@ -97,7 +99,8 @@ int main(int argc, char **argv)
 	}
 	if (positional.size() < 2) {
 		fprintf(stderr,
-			"usage: lucida-replay [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> image...\n");
+			"usage: lucida-replay [--carnivore] [--chat L,T,R,B] [--hud L,T,R,B] [--annotate DIR] <out dir> "
+			"image...\n");
 		return 2;
 	}
 	const QString out = positional.takeFirst();
@@ -140,8 +143,11 @@ int main(int argc, char **argv)
 	};
 	while (next < files.size()) {
 		Tick t = recorder.Step();
-		printf("%s: %d entries, %d new\n", qPrintable(QFileInfo(files[next - 1]).fileName()), t.entries,
-		       t.added);
+		printf("%s: %d entries, %d new", qPrintable(QFileInfo(files[next - 1]).fileName()), t.entries, t.added);
+		if (cfg.carnivore) {
+			printf(", %d region(s)", t.regions);
+		}
+		printf(", ocr %d ms\n", (int)t.ocrMs);
 	}
 	recorder.Close();
 
@@ -183,8 +189,9 @@ int main(int argc, char **argv)
 			const bool ok = found >= 0.6;
 			checked++;
 			bad += ok ? 0 : 1;
-			printf("  %s %3.0f%%  [%d,%d-%d,%d]  %s\n", ok ? "ok " : "BAD", found * 100, r.x0, r.y0, r.x1,
-			       r.y1, qPrintable(l.body.left(70)));
+			const QString where = l.region.isEmpty() ? QString() : QStringLiteral("{%1} ").arg(l.region);
+			printf("  %s %3.0f%%  [%d,%d-%d,%d]  %s%s\n", ok ? "ok " : "BAD", found * 100, r.x0, r.y0, r.x1,
+			       r.y1, qPrintable(where), qPrintable(l.body.left(70)));
 			if (!ok) {
 				printf("           box reads: %s\n", qPrintable(text.trimmed().left(90)));
 			}

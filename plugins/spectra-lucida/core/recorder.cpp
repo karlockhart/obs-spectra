@@ -73,6 +73,9 @@ QString Tick::Describe() const
 			    .arg(tsSource)
 			    .arg((int)ocrMs)
 			    .arg(distance, 0, 'f', 3);
+	if (regions) {
+		s += QStringLiteral(", %1 region(s)").arg(regions);
+	}
 	if (turnover) {
 		s += QStringLiteral(" TURNOVER");
 	}
@@ -120,10 +123,21 @@ std::vector<spectra::ChatEntry> ReadChat(const spectra::Image &img, const spectr
 		}
 	}
 	std::vector<spectra::Rect> rects = spectra::RowRects(rows, rect.x0, rect.y0, rect.y1);
+	std::vector<spectra::ChatEntry> entries = BuildChat(img, rows, rects, EntryStarts(rows, rect.x0, rect.x1));
+	/* The top row may be half scrolled off the box; drop it only when the
+	 * region edge actually clips it */
+	if (!entries.empty() && entries[0].Partial() && !entries[0].rows.empty() &&
+	    entries[0].rows[0].y0 <= rect.y0 + kClippedMargin) {
+		entries.erase(entries.begin());
+	}
+	return entries;
+}
 
+std::vector<spectra::ChatEntry> BuildChat(const spectra::Image &img, const std::vector<spectra::Row> &rows,
+					  const std::vector<spectra::Rect> &rects, const std::vector<int> &starts)
+{
 	/* Obscura's BuildEntries does the parsing and colour work, one group of
 	 * rows at a time, so the entry boundaries are the ones decided here */
-	std::vector<int> starts = EntryStarts(rows, rect.x0, rect.x1);
 	std::vector<spectra::ChatEntry> entries;
 	for (size_t n = 0; n < starts.size(); n++) {
 		size_t begin = (size_t)starts[n];
@@ -147,12 +161,6 @@ std::vector<spectra::ChatEntry> ReadChat(const spectra::Image &img, const spectr
 			}
 		}
 	}
-	/* The top row may be half scrolled off the box; drop it only when the
-	 * region edge actually clips it */
-	if (!entries.empty() && entries[0].Partial() && !entries[0].rows.empty() &&
-	    entries[0].rows[0].y0 <= rect.y0 + kClippedMargin) {
-		entries.erase(entries.begin());
-	}
 	return entries;
 }
 
@@ -169,7 +177,8 @@ QString DatedPath(const QString &folder, long long frameTs, const QString &suffi
 }
 
 Recorder::Recorder(RecorderConfig config_, Store &store_, spectra::OcrEngine &ocr_, Grab grab_)
-	: config(std::move(config_)),
+	: base(config_),
+	  config(std::move(config_)),
 	  store(store_),
 	  ocr(ocr_),
 	  grab(std::move(grab_)),
@@ -178,6 +187,36 @@ Recorder::Recorder(RecorderConfig config_, Store &store_, spectra::OcrEngine &oc
 	wallClock = [] {
 		return (long long)Now();
 	};
+	Configure();
+}
+
+void Recorder::Configure()
+{
+	regions.reset();
+	signature.reset();
+	if (!config.carnivore) {
+		return;
+	}
+	regions = std::make_unique<RegionTracker>(store.ScreenRegions(), WithChatBox(config.regions, config.chatRegion),
+						  config.onlyDrawn);
+}
+
+void Recorder::UseProfile(const std::optional<GameProfile> &profile)
+{
+	config = base;
+	profileName.clear();
+	if (profile) {
+		profileName = profile->name;
+		if (std::optional<LucidaProfile> p = profile->Lucida()) {
+			config.carnivore = p->carnivore;
+			config.chatRegion = p->chatRegion;
+			config.hudRegion = p->hudRegion;
+			config.readHud = p->readHud;
+			config.onlyDrawn = p->onlyDrawn;
+			config.regions = p->regions;
+		}
+	}
+	Configure();
 }
 
 Tick Recorder::Step()
@@ -194,6 +233,11 @@ Tick Recorder::Step()
 	}
 	const spectra::Image &img = frame->image;
 	tick.foundWindow = true;
+	if (profileFor && profileExe != frame->executable) {
+		profileExe = frame->executable;
+		UseProfile(profileFor(frame->executable));
+	}
+	tick.profile = profileName;
 
 	if (!sessionId || frame->target != sessionTarget) {
 		if (sessionId) {
@@ -203,8 +247,11 @@ Tick Recorder::Step()
 		sessionId = store.StartSession(frame->target, img.width, img.height);
 	}
 
-	spectra::Rect r = config.chatRegion.ToPixels(img.width, img.height);
-	spectra::Image crop = spectra::Crop(img, r.x0, r.y0, r.x1, r.y1);
+	/* carnivore mode gates on (and reads) the whole frame */
+	const spectra::Rect r = config.carnivore ? spectra::Rect{0, 0, img.width, img.height}
+						 : config.chatRegion.ToPixels(img.width, img.height);
+	const spectra::Image crop = config.carnivore ? spectra::Image() : spectra::Crop(img, r.x0, r.y0, r.x1, r.y1);
+	const spectra::Image &area = config.carnivore ? img : crop;
 	if (img.width != lastWidth || img.height != lastHeight) {
 		/* a resolution change invalidates the signature */
 		signature.reset();
@@ -212,7 +259,7 @@ Tick Recorder::Step()
 		lastHeight = img.height;
 	}
 
-	std::vector<float> sig = spectra::Signature(spectra::TextMask(crop), crop.width, crop.height);
+	std::vector<float> sig = spectra::Signature(spectra::TextMask(area), area.width, area.height);
 	auto [changed, distance] =
 		spectra::SignatureChanged(signature ? &*signature : nullptr, sig, config.gateThreshold);
 	signature = std::move(sig);
@@ -225,7 +272,19 @@ Tick Recorder::Step()
 	tick.changed = true;
 
 	auto began = std::chrono::steady_clock::now();
-	std::vector<spectra::ChatEntry> entries = ReadChat(img, crop, r, ocr);
+	std::vector<spectra::ChatEntry> entries;
+	if (regions) {
+		std::vector<spectra::Rect> exclude;
+		if (config.readHud) {
+			exclude.push_back(config.hudRegion.ToPixels(img.width, img.height));
+		}
+		entries = ReadScreen(img, ocr, *regions, tick.at, exclude, &tick.regions);
+		for (ScreenRegion *region : regions->TakeDirty()) {
+			store.SaveScreenRegion(*region);
+		}
+	} else {
+		entries = ReadChat(img, crop, r, ocr);
+	}
 	auto [frameTs, tsSource] = FrameTimestamp(img);
 	tick.ocrMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
 
@@ -242,7 +301,7 @@ Tick Recorder::Step()
 	if (added && config.keepFrames) {
 		KeepFrame(img, frameTs, seen);
 	}
-	if (added && config.keepCrops) {
+	if (added && config.keepCrops && !config.carnivore) {
 		SaveCrop(crop, frameTs);
 	}
 

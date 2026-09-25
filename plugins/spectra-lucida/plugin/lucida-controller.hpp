@@ -3,6 +3,8 @@
 #include <spectra-grab/frame-grabber.hpp>
 #include "recorder.hpp"
 #include "store.hpp"
+#include "cloud.hpp"
+#include "profiles.hpp"
 #include "tagger.hpp"
 
 #include <QObject>
@@ -50,12 +52,22 @@ struct Settings {
 	QList<TagRule> tagRules = DefaultTagRules();
 	bool tolerateTypos = true;
 	SpeechSettings speech;
+	/* Backing up to Prisma */
+	bool cloudEnabled = false;
+	QString cloudCredentials; /* empty: found automatically */
+	bool cloudFrames = true;
+
+	/* The Prisma credentials file in use (see CloudCredentialsPath) */
+	QString CloudCredentialsFile() const;
 
 	static Settings Load();
 	void Save() const;
 	/* Folder for the log, screenshots and crops (Spectra's Lucida folder) */
 	static QString DefaultFolder();
 };
+
+/* The per-game profiles file (see GameProfiles) */
+QString ProfilesPath();
 
 /* Spectra's loop recording folder and state */
 QString LoopDirectory();
@@ -79,6 +91,12 @@ public:
 	bool Paused() const { return paused; }
 	void SampleNow();
 
+	/* Carnivore mode: read all the text on screen, not just the chat box */
+	void SetCarnivore(bool on);
+	/* Restarts sampling so edited game profiles apply */
+	void ReloadProfiles();
+	bool Carnivore() const { return settings.recorder.carnivore; }
+
 	const Settings &CurrentSettings() const { return settings; }
 	void ApplySettings(const Settings &settings);
 
@@ -96,11 +114,19 @@ public:
 
 	QString Status() const { return status; }
 
+	/* Backing up to Prisma, on its own thread */
+	QString CloudStatus() const { return cloudStatus; }
+	/* A client for reading the cloud (the viewer's Cloud toggle); null
+	 * without credentials */
+	std::shared_ptr<PrismaClient> CloudClient();
+
 signals:
 	void ticked(int added, double interval, bool foundWindow);
 	void statusChanged(const QString &status);
 	void failed(const QString &message);
 	void relabelled(int changed);
+	void carnivoreChanged(bool on);
+	void cloudStatusChanged(const QString &status);
 
 private:
 	Settings settings;
@@ -115,9 +141,24 @@ private:
 	bool paused = false;
 	QString status;
 	long long logged = 0;
+	int regionsRead = 0; /* text blocks in carnivore mode's last reading */
 	QTimer loopPoll;
 	QString loopDir; /* guarded by mutex; read by the worker */
 	SpeechController *speech = nullptr;
+
+	std::thread cloudWorker;
+	std::condition_variable cloudWakeup;
+	bool cloudStop = false;
+	bool cloudWake = false;
+	QString cloudStatus;
+	std::shared_ptr<PrismaClient> cloudClient;
+	QString cloudClientPath;
+
+	void StartCloud();
+	void StopCloud();
+	void WakeCloud();
+	void RunCloud(Settings s);
+	void SetCloudStatus(const QString &text);
 
 	bool OpenReader();
 	void PollLoop();

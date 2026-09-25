@@ -1,5 +1,6 @@
 #include "lucida-dock.hpp"
 #include "lucida-controller.hpp"
+#include "lucida-regions.hpp"
 #include "lucida-settings.hpp"
 #include "lucida-speech.hpp"
 #include "lucida-viewer.hpp"
@@ -14,6 +15,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 namespace lucida {
@@ -42,9 +44,11 @@ constexpr int kShownLines = 300;
 QString LineLabel(const LogLine &l)
 {
 	QString time = QDateTime::fromSecsSinceEpoch(l.sortTs).toString(QStringLiteral("HH:mm:ss"));
+	/* carnivore mode: where on screen the line was */
+	const QString channel = l.region.isEmpty() ? l.channel : QStringLiteral("%1/%2").arg(l.region, l.channel);
 	QString text = QStringLiteral("%1  [%2] %3  %4")
-			       .arg(time, l.clock.value_or(QStringLiteral("--:--:--")),
-				    l.channel.leftJustified(18, ' '), l.body);
+			       .arg(time, l.clock.value_or(QStringLiteral("--:--:--")), channel.leftJustified(18, ' '),
+				    l.body);
 	for (const QString &tag : l.labels) {
 		text += QStringLiteral("  #") + tag;
 	}
@@ -59,6 +63,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	speechStatus = new QLabel(controller->Speech()->Status());
 	speechStatus->setWordWrap(true);
 	speechStatus->setVisible(!speechStatus->text().isEmpty());
+	cloud = new QLabel(controller->CloudStatus());
+	cloud->setWordWrap(true);
+	cloud->setVisible(!cloud->text().isEmpty());
 
 	search = new QLineEdit();
 	search->setPlaceholderText(obs_module_text("Lucida.Dock.Search"));
@@ -70,6 +77,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	QPushButton *settings = new QPushButton(obs_module_text("Lucida.Dock.Settings"));
 	pause = new QCheckBox(obs_module_text("Lucida.Dock.Pause"));
 	pause->setChecked(controller->Paused());
+	carnivore = new QCheckBox(obs_module_text("Lucida.Dock.Carnivore"));
+	carnivore->setToolTip(obs_module_text("Lucida.Dock.Carnivore.Tip"));
+	carnivore->setChecked(controller->Carnivore());
 
 	list = new QListWidget();
 	list->setAlternatingRowColors(true);
@@ -86,11 +96,13 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	row->addWidget(open);
 	row->addWidget(settings);
 	row->addWidget(pause);
+	row->addWidget(carnivore);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(status);
 	layout->addWidget(speechStatus);
+	layout->addWidget(cloud);
 	layout->addLayout(row);
 	layout->addWidget(list, 1);
 
@@ -107,7 +119,16 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	connect(list, &QListWidget::itemDoubleClicked, this,
 		[this](QListWidgetItem *item) { OpenViewer(item->data(Qt::UserRole).toLongLong()); });
 	connect(pause, &QCheckBox::toggled, controller, &Controller::SetPaused);
+	connect(carnivore, &QCheckBox::toggled, controller, &Controller::SetCarnivore);
+	connect(controller, &Controller::carnivoreChanged, this, [this](bool on) {
+		QSignalBlocker block(carnivore);
+		carnivore->setChecked(on);
+	});
 	connect(controller, &Controller::statusChanged, status, &QLabel::setText);
+	connect(controller, &Controller::cloudStatusChanged, this, [this](const QString &text) {
+		cloud->setText(text);
+		cloud->setVisible(!text.isEmpty());
+	});
 	connect(controller, &Controller::ticked, this, [this](int added, double, bool) {
 		if (added > 0 && search->text().isEmpty()) {
 			Reload();
@@ -134,7 +155,7 @@ void Dock::OpenViewer(long long lineId)
 				    [c](const LogLine &line) {
 					    return c ? c->VideoFor(line) : std::optional<VideoSpot>();
 				    },
-				    EditClip};
+				    EditClip, [c]() { return c ? c->CloudClient() : nullptr; }};
 		viewer = new Viewer(std::move(source), window());
 		viewer->setWindowFlag(Qt::Window);
 	}
@@ -155,6 +176,15 @@ void Dock::OpenSettings()
 	if (dialog.exec() == QDialog::Accepted) {
 		Reload();
 	}
+}
+
+void Dock::OpenRegions()
+{
+	if (!controller) {
+		return;
+	}
+	RegionEditor editor(controller, window());
+	editor.exec();
 }
 
 void Dock::Reload()

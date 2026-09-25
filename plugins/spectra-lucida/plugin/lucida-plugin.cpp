@@ -16,6 +16,7 @@
 #include <QAction>
 #include <QMainWindow>
 #include <QPointer>
+#include <QTimer>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("spectra-lucida", "en-US")
@@ -62,6 +63,13 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 				dock->OpenSettings();
 			}
 		});
+		auto *regions = static_cast<QAction *>(
+			obs_frontend_add_tools_menu_qaction(obs_module_text("Lucida.Menu.Regions")));
+		QObject::connect(regions, &QAction::triggered, [] {
+			if (dock) {
+				dock->OpenRegions();
+			}
+		});
 		QObject::connect(controller, &lucida::Controller::failed, [](const QString &message) {
 			blog(LOG_WARNING, "[Lucida] %s", message.toUtf8().constData());
 		});
@@ -69,6 +77,13 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		/* Developer aid: open the viewer straight away */
 		if (qEnvironmentVariableIsSet("SPECTRA_LUCIDA_VIEWER")) {
 			dock->OpenViewer();
+		}
+		if (qEnvironmentVariableIsSet("SPECTRA_LUCIDA_REGIONS")) {
+			QTimer::singleShot(0, dock, [] {
+				if (dock) {
+					dock->OpenRegions();
+				}
+			});
 		}
 		blog(LOG_INFO, "[Lucida] Started (log: %s)", controller->CurrentSettings().dbPath.toUtf8().constData());
 		break;

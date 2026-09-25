@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 class QCheckBox;
+class QJsonArray;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -60,12 +61,17 @@ private:
 
 	/* Log tab: filters and results */
 	QLineEdit *search;
-	QComboBox *channel, *label, *period;
-	QCheckBox *withShot;
+	QComboBox *channel, *label, *region, *period;
+	QCheckBox *withShot, *cloud;
 	QLabel *frameFilter;
 	QPushButton *clearFrameFilter;
 	QTreeWidget *results;
 	std::optional<long long> onlyFrame;
+
+	/* Cloud toggle: other installs' lines from Prisma, merged in */
+	int cloudGeneration = 0;
+	int cloudShotGeneration = 0;
+	std::map<QString, QString> sourceNames;
 
 	/* Log tab: screenshot and censoring */
 	spectra::censor::ImageView *image;
@@ -99,11 +105,16 @@ private:
 	void RefreshFilters();
 	Query CurrentQuery() const;
 	QTreeWidgetItem *ItemFor(long long lineId) const;
+	void SearchCloud(const Query &q);
+	void AddCloudLines(int generation, const Query &q, const QJsonArray &lines, const QString &error);
+	void ShowCloudLine(QTreeWidgetItem *item);
 
 	void CurrentChanged();
 	void ShowVideo(const std::optional<LogLine> &line);
 	void LoadFrame(long long id);
 	void ClearImage(const QString &message);
+	/* Carnivore mode: a dashed, named box around each region's lines */
+	void OutlineRegions();
 	void LoadLearner();
 	void Suggest();
 

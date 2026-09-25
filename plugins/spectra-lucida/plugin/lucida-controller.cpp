@@ -14,6 +14,7 @@
 #include <QImage>
 #include <QPointer>
 #include <QStandardPaths>
+#include <QSysInfo>
 
 #include <chrono>
 
@@ -71,6 +72,7 @@ void SetDefaults(config_t *c)
 	config_set_default_double(c, SECTION, "IdleInterval", r.idleInterval);
 	config_set_default_int(c, SECTION, "OcrThreads", d.ocrThreads);
 	config_set_default_bool(c, SECTION, "ReadHud", r.readHud);
+	config_set_default_bool(c, SECTION, "Carnivore", r.carnivore);
 	config_set_default_double(c, SECTION, "GateThreshold", r.gateThreshold);
 	config_set_default_string(c, SECTION, "DbPath", QDir(folder).filePath("chatlog.db").toUtf8().constData());
 	config_set_default_int(c, SECTION, "RetentionDays", d.retentionDays);
@@ -99,6 +101,9 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "SpeechGame", sp.game);
 	config_set_default_string(c, SECTION, "SpeechPrompt", "");
 	config_set_default_double(c, SECTION, "SpeechSince", 0.0);
+	config_set_default_bool(c, SECTION, "CloudEnabled", d.cloudEnabled);
+	config_set_default_string(c, SECTION, "CloudCredentials", "");
+	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -148,6 +153,7 @@ Settings Settings::Load()
 	r.idleInterval = config_get_double(c, SECTION, "IdleInterval");
 	s.ocrThreads = (int)config_get_int(c, SECTION, "OcrThreads");
 	r.readHud = config_get_bool(c, SECTION, "ReadHud");
+	r.carnivore = config_get_bool(c, SECTION, "Carnivore");
 	r.gateThreshold = config_get_double(c, SECTION, "GateThreshold");
 	s.dbPath = ConfigString(c, SECTION, "DbPath");
 	s.retentionDays = (int)config_get_int(c, SECTION, "RetentionDays");
@@ -177,6 +183,9 @@ Settings Settings::Load()
 	sp.game = config_get_bool(c, SECTION, "SpeechGame");
 	sp.prompt = ConfigString(c, SECTION, "SpeechPrompt");
 	sp.since = config_get_double(c, SECTION, "SpeechSince");
+	s.cloudEnabled = config_get_bool(c, SECTION, "CloudEnabled");
+	s.cloudCredentials = ConfigString(c, SECTION, "CloudCredentials");
+	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -197,6 +206,7 @@ void Settings::Save() const
 	config_set_double(c, SECTION, "IdleInterval", r.idleInterval);
 	config_set_int(c, SECTION, "OcrThreads", ocrThreads);
 	config_set_bool(c, SECTION, "ReadHud", r.readHud);
+	config_set_bool(c, SECTION, "Carnivore", r.carnivore);
 	config_set_double(c, SECTION, "GateThreshold", r.gateThreshold);
 	config_set_string(c, SECTION, "DbPath", dbPath.toUtf8().constData());
 	config_set_int(c, SECTION, "RetentionDays", retentionDays);
@@ -223,12 +233,39 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "SpeechGame", speech.game);
 	config_set_string(c, SECTION, "SpeechPrompt", speech.prompt.toUtf8().constData());
 	config_set_double(c, SECTION, "SpeechSince", speech.since);
+	config_set_bool(c, SECTION, "CloudEnabled", cloudEnabled);
+	config_set_string(c, SECTION, "CloudCredentials", cloudCredentials.toUtf8().constData());
+	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
 }
 
+QString Settings::CloudCredentialsFile() const
+{
+	return CloudCredentialsPath(cloudCredentials, {QFileInfo(dbPath).absolutePath(), DefaultFolder()});
+}
+
 /* ------------------------------------------------------------------------- */
+
+QString ProfilesPath()
+{
+	/* next to the plugins' own settings, shared by Spectra's features:
+	 * <config>/plugin_config/spectra/game-profiles.json */
+	char *own = obs_module_config_path("");
+	const QString path =
+		QDir::cleanPath(QString::fromUtf8(own ? own : "") + QStringLiteral("/../spectra/game-profiles.json"));
+	bfree(own);
+	return path;
+}
+
+void Controller::ReloadProfiles()
+{
+	if (running) {
+		Stop();
+		Start();
+	}
+}
 
 QString LoopDirectory()
 {
@@ -260,11 +297,13 @@ Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Lo
 
 	speech = new SpeechController(this);
 	speech->Apply(settings);
+	StartCloud();
 }
 
 Controller::~Controller()
 {
 	Stop();
+	StopCloud();
 }
 
 void Controller::SetStatus(const QString &text)
@@ -377,13 +416,31 @@ void Controller::SampleNow()
 	wakeup.notify_all();
 }
 
+void Controller::SetCarnivore(bool on)
+{
+	if (on == settings.recorder.carnivore) {
+		return;
+	}
+	Settings s = settings;
+	s.recorder.carnivore = on;
+	ApplySettings(s);
+	blog(LOG_INFO, "[Lucida] Carnivore mode %s", on ? "on" : "off");
+}
+
 void Controller::ApplySettings(const Settings &s)
 {
 	bool wasRunning = running;
+	const bool wasCarnivore = settings.recorder.carnivore;
 	Stop();
+	StopCloud();
 	settings = s;
 	settings.Save();
 	speech->Apply(settings);
+	StartCloud();
+	if (settings.recorder.carnivore != wasCarnivore) {
+		regionsRead = 0;
+		emit carnivoreChanged(settings.recorder.carnivore);
+	}
 	if ((wasRunning || !paused) && settings.enabled) {
 		Start();
 	} else if (!settings.enabled) {
@@ -419,15 +476,26 @@ void Controller::Run(Settings s)
 		return tagger.Tags(body);
 	};
 
+	/* per-game profiles: their games are read too, each its own way */
+	GameProfiles profiles;
+	QString profilesError;
+	if (!profiles.Load(ProfilesPath(), &profilesError)) {
+		blog(LOG_WARNING, "[Lucida] Could not read the game profiles %s: %s",
+		     ProfilesPath().toUtf8().constData(), profilesError.toUtf8().constData());
+	}
 	spectra::FrameGrabber grabber;
-	grabber.SetTargetProcess(s.targetProcess);
+	const QString profiled = profiles.AnyExecutable();
+	/* (an empty target already reads any game) */
+	grabber.SetTargetProcess(profiled.isEmpty() || s.targetProcess.isEmpty()
+					 ? s.targetProcess
+					 : QStringLiteral("(?:%1)|%2").arg(s.targetProcess, profiled));
 	/* Troubleshooting: SPECTRA_LUCIDA_DUMP=<folder> saves every grabbed frame */
 	const QString dumpDir = qEnvironmentVariable("SPECTRA_LUCIDA_DUMP");
 	int dumped = 0;
 	Recorder recorder(s.recorder, store, *ocr, [&grabber, &dumpDir, &dumped]() {
 		std::optional<GrabbedFrame> frame;
 		if (std::optional<spectra::SourceFrame> f = grabber.Grab()) {
-			frame = GrabbedFrame{std::move(f->image), f->source};
+			frame = GrabbedFrame{std::move(f->image), f->source, f->executable};
 		}
 		if (frame && !dumpDir.isEmpty()) {
 			QDir().mkpath(dumpDir);
@@ -454,6 +522,19 @@ void Controller::Run(Settings s)
 			dir = loopDir;
 		}
 		return LocateVideo(dir, wallTs, LoopRecordingActive());
+	};
+
+	QString profileInUse;
+	recorder.profileFor = [&profiles, &profileInUse](const QString &exe) -> std::optional<GameProfile> {
+		const GameProfile *p = profiles.Match(exe);
+		const QString name = p ? p->name : QString();
+		if (name != profileInUse) {
+			blog(LOG_INFO, "[Lucida] %s: %s", exe.toUtf8().constData(),
+			     p ? QStringLiteral("game profile \"%1\"").arg(name).toUtf8().constData()
+			       : "no game profile, using the Lucida settings");
+			profileInUse = name;
+		}
+		return p ? std::optional<GameProfile>(*p) : std::nullopt;
 	};
 
 	recorder.PruneImages();
@@ -484,14 +565,32 @@ void Controller::Run(Settings s)
 		const int added = tick.added;
 		const double interval = tick.interval;
 		const bool found = tick.foundWindow;
+		const int regions = tick.changed ? tick.regions : -1;
+		const bool carnivore = recorder.Config().carnivore;
+		const QString profile = tick.profile;
 		QMetaObject::invokeMethod(
 			this,
-			[this, added, interval, found]() {
+			[this, added, interval, found, regions, carnivore, profile]() {
 				logged += added;
-				QString text = !found ? QString::fromUtf8(obs_module_text("Lucida.Status.Waiting"))
-						      : QString::fromUtf8(obs_module_text("Lucida.Status.Running"))
-								.arg(logged)
-								.arg(interval, 0, 'f', 1);
+				if (added > 0) {
+					WakeCloud();
+				}
+				if (regions >= 0) {
+					regionsRead = regions;
+				}
+				QString text =
+					!found ? QString::fromUtf8(obs_module_text("Lucida.Status.Waiting"))
+					: carnivore
+						? QString::fromUtf8(obs_module_text("Lucida.Status.RunningCarnivore"))
+							  .arg(logged)
+							  .arg(interval, 0, 'f', 1)
+							  .arg(regionsRead)
+						: QString::fromUtf8(obs_module_text("Lucida.Status.Running"))
+							  .arg(logged)
+							  .arg(interval, 0, 'f', 1);
+				if (found && !profile.isEmpty()) {
+					text = QStringLiteral("[%1] %2").arg(profile, text);
+				}
 				status = text;
 				emit statusChanged(text);
 				emit ticked(added, interval, found);
@@ -551,6 +650,159 @@ void Controller::Relabel()
 			},
 			Qt::QueuedConnection);
 	}).detach();
+}
+
+/* ------------------------------------------------------------------------- */
+/* Backing up to Prisma */
+
+namespace {
+constexpr int kCloudIdle = 30;      /* s between passes with nothing waiting */
+constexpr int kCloudBusy = 2;       /* s between passes while catching up */
+constexpr int kCloudRetry = 30;     /* s before retrying a failure, doubling... */
+constexpr int kCloudRetryMax = 600; /* ...up to this */
+constexpr int kCloudFramesPerPass = 5;
+constexpr int kCloudBatchesPerPass = 10;
+} // namespace
+
+void Controller::SetCloudStatus(const QString &text)
+{
+	QMetaObject::invokeMethod(
+		this,
+		[this, text]() {
+			cloudStatus = text;
+			emit cloudStatusChanged(text);
+		},
+		Qt::QueuedConnection);
+}
+
+void Controller::StartCloud()
+{
+	if (!settings.cloudEnabled) {
+		cloudStatus.clear();
+		emit cloudStatusChanged(cloudStatus);
+		return;
+	}
+	if (cloudWorker.joinable()) {
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudStop = false;
+		cloudWake = false;
+	}
+	cloudWorker = std::thread(&Controller::RunCloud, this, settings);
+}
+
+void Controller::StopCloud()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudStop = true;
+	}
+	cloudWakeup.notify_all();
+	if (cloudWorker.joinable()) {
+		cloudWorker.join();
+	}
+}
+
+void Controller::WakeCloud()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudWake = true;
+	}
+	cloudWakeup.notify_all();
+}
+
+std::shared_ptr<PrismaClient> Controller::CloudClient()
+{
+	const QString path = settings.CloudCredentialsFile();
+	if (path.isEmpty()) {
+		return nullptr;
+	}
+	if (!cloudClient || cloudClientPath != path) {
+		std::optional<PrismaCredentials> creds = PrismaCredentials::FromFile(path);
+		cloudClient = creds ? std::make_shared<PrismaClient>(*creds) : nullptr;
+		cloudClientPath = path;
+	}
+	return cloudClient;
+}
+
+void Controller::RunCloud(Settings s)
+{
+	LowerThreadPriority();
+	auto wait = [this](int seconds, bool wakeable) {
+		std::unique_lock<std::mutex> lock(mutex);
+		cloudWakeup.wait_for(lock, std::chrono::seconds(seconds),
+				     [this, wakeable] { return cloudStop || (wakeable && cloudWake); });
+		cloudWake = false;
+		return !cloudStop;
+	};
+
+	const QString path = s.CloudCredentialsFile();
+	QString error;
+	std::optional<PrismaCredentials> creds = path.isEmpty() ? std::nullopt
+								: PrismaCredentials::FromFile(path, &error);
+	if (!creds) {
+		SetCloudStatus(path.isEmpty()
+				       ? QString::fromUtf8(obs_module_text("Lucida.Cloud.NoCredentials"))
+				       : QString::fromUtf8(obs_module_text("Lucida.Cloud.BadCredentials")).arg(error));
+		blog(LOG_WARNING, "[Lucida] Cloud backup is on but has no usable credentials (%s)",
+		     path.isEmpty() ? "no prisma-*.json found" : error.toUtf8().constData());
+		return;
+	}
+	Store store(s.dbPath);
+	if (!store.Open(&error) || !store.IsOpen()) {
+		SetCloudStatus(QString::fromUtf8(obs_module_text("Lucida.Cloud.Failed")).arg(error));
+		return;
+	}
+	PrismaClient client(*creds);
+	CloudSync sync(store, client);
+	sync.frames = s.cloudFrames;
+	sync.machine = QSysInfo::machineHostName();
+	sync.version = QString::fromUtf8(obs_get_version_string());
+	blog(LOG_INFO, "[Lucida] Backing up to %s as %s", creds->url.toUtf8().constData(),
+	     creds->clientId.toUtf8().constData());
+
+	long long lines = 0, frames = 0;
+	int retry = kCloudRetry;
+	bool failing = false;
+	while (true) {
+		SyncReport r = sync.Step(kCloudFramesPerPass, kCloudBatchesPerPass);
+		lines += r.lines;
+		frames += r.frames;
+		if (r.refused) {
+			blog(LOG_WARNING, "[Lucida] Prisma refused %d item(s); they will not be sent again", r.refused);
+		}
+		const SyncBacklog left = store.Unsynced();
+		const long long waiting = left.lines + (s.cloudFrames ? left.frames : 0);
+		if (!r.error.isEmpty()) {
+			if (!failing) {
+				blog(LOG_WARNING, "[Lucida] Cloud backup failed: %s", r.error.toUtf8().constData());
+			}
+			failing = true;
+			SetCloudStatus(QString::fromUtf8(obs_module_text("Lucida.Cloud.Retrying"))
+					       .arg(r.error)
+					       .arg(retry)
+					       .arg(waiting));
+			if (!wait(retry, false)) {
+				break;
+			}
+			retry = std::min(retry * 2, kCloudRetryMax);
+			continue;
+		}
+		if (failing) {
+			blog(LOG_INFO, "[Lucida] Cloud backup working again");
+		}
+		failing = false;
+		retry = kCloudRetry;
+		SetCloudStatus(
+			QString::fromUtf8(obs_module_text("Lucida.Cloud.Status")).arg(lines).arg(frames).arg(waiting));
+		/* new lines wake it early (see the ticked handler) */
+		if (!wait(r.more ? kCloudBusy : kCloudIdle, !r.more)) {
+			break;
+		}
+	}
 }
 
 } // namespace lucida

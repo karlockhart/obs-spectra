@@ -24,13 +24,15 @@ public:
 	/* Opens the viewer, optionally at a line */
 	void OpenViewer(long long lineId = 0);
 	void OpenSettings();
+	/* Game profiles and carnivore mode's regions */
+	void OpenRegions();
 
 private:
 	QPointer<Controller> controller;
-	QLabel *status;
+	QLabel *status, *cloud;
 	QLabel *speechStatus;
 	QLineEdit *search;
-	QCheckBox *pause;
+	QCheckBox *pause, *carnivore;
 	QListWidget *list;
 	QPointer<Viewer> viewer;
 };

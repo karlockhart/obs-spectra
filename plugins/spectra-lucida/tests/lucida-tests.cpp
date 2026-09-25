@@ -5,11 +5,16 @@
  *   lucida-tests <scratch dir>
  */
 
+#include "../core/carnivore.hpp"
+#include "../core/cloud.hpp"
+#include "../core/prisma.hpp"
+#include "../core/profiles.hpp"
 #include "../core/recorder.hpp"
 #include "../core/store.hpp"
 #include "../core/tagger.hpp"
 #include "../core/video.hpp"
 
+#include <monocypher-ed25519.h>
 #include <sqlite3.h>
 
 #include <QDateTime>
@@ -18,6 +23,9 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QUrl>
 #include <QPainter>
 
 #include <cmath>
@@ -177,6 +185,219 @@ struct Rig {
 			}
 			return GrabbedFrame{frames[next++], QStringLiteral("test")};
 		});
+	}
+};
+
+/* ---- carnivore fixtures: text anywhere on a 1920x1080 screen ---- */
+
+constexpr int kScreenW = 1920, kScreenH = 1080, kLineH = 14, kLinePitch = 24;
+
+static spectra::OcrBox Box(const QString &text, float x0, float y0, float x1 = -1)
+{
+	spectra::OcrBox b;
+	b.text = text.toStdString();
+	b.score = 0.95f;
+	b.x0 = x0;
+	b.y0 = y0;
+	b.x1 = x1 >= 0 ? x1 : x0 + 8.f * text.size();
+	b.y1 = y0 + kLineH;
+	return b;
+}
+
+/* Lines left-aligned at x (a chat box) */
+static std::vector<spectra::OcrBox> LeftLines(const QStringList &lines, float x, float y)
+{
+	std::vector<spectra::OcrBox> out;
+	for (int i = 0; i < lines.size(); i++) {
+		out.push_back(Box(lines[i], x, y + i * kLinePitch));
+	}
+	return out;
+}
+
+/* Lines right-aligned at x1 (a kill feed) */
+static std::vector<spectra::OcrBox> RightLines(const QStringList &lines, float x1, float y)
+{
+	std::vector<spectra::OcrBox> out;
+	for (int i = 0; i < lines.size(); i++) {
+		out.push_back(Box(lines[i], x1 - 8.f * lines[i].size(), y + i * kLinePitch, x1));
+	}
+	return out;
+}
+
+static std::vector<spectra::OcrBox> Join(std::initializer_list<std::vector<spectra::OcrBox>> parts)
+{
+	std::vector<spectra::OcrBox> out;
+	for (const auto &p : parts) {
+		out.insert(out.end(), p.begin(), p.end());
+	}
+	return out;
+}
+
+static spectra::Image DrawBoxes(const std::vector<spectra::OcrBox> &boxes)
+{
+	QImage q(kScreenW, kScreenH, QImage::Format_RGB888);
+	q.fill(QColor(40, 60, 40));
+	QPainter p(&q);
+	p.setPen(QColor(235, 230, 230));
+	QFont f = p.font();
+	f.setPixelSize(12);
+	p.setFont(f);
+	for (const spectra::OcrBox &b : boxes) {
+		p.drawText((int)b.x0, (int)b.y1 - 2, QString::fromStdString(b.text));
+	}
+	p.end();
+	spectra::Image img(kScreenW, kScreenH, 3);
+	for (int y = 0; y < kScreenH; y++) {
+		const uchar *src = q.constScanLine(y);
+		uint8_t *dst = img.row(y);
+		for (int x = 0; x < kScreenW; x++) {
+			dst[x * 3 + 0] = src[x * 3 + 2];
+			dst[x * 3 + 1] = src[x * 3 + 1];
+			dst[x * 3 + 2] = src[x * 3 + 0];
+		}
+	}
+	return img;
+}
+
+/* Returns scripted boxes, one list per read */
+class BoxOcr : public spectra::OcrEngine {
+public:
+	explicit BoxOcr(std::vector<std::vector<spectra::OcrBox>> s) : script(std::move(s)) {}
+	std::vector<std::vector<spectra::OcrBox>> script;
+	int reads = 0;
+
+	std::vector<spectra::OcrBox> Read(const spectra::Image &, float) override
+	{
+		return script[std::min<size_t>(reads++, script.size() - 1)];
+	}
+	std::string RecognizeLine(const spectra::Image &) override { return "30 | 1789231305"; }
+};
+
+static QStringList EntryBodies(const std::vector<spectra::ChatEntry> &entries, const QString &region)
+{
+	QStringList out;
+	for (const spectra::ChatEntry &e : entries) {
+		if (e.region == region) {
+			out << e.body;
+		}
+	}
+	return out;
+}
+
+static const QStringList kFeed{"Alice killed Bob", "Carl killed Dave with a pistol", "Erin killed Frank"};
+
+/* ---- Prisma fixtures ---- */
+
+/* RFC 8032 test 1 key as PKCS#8, as Prisma's keygen writes it */
+static const char *kTestPem = "-----BEGIN PRIVATE KEY-----\n"
+			      "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g\n"
+			      "-----END PRIVATE KEY-----\n";
+static const char *kTestPublic = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+
+static PrismaCredentials TestCredentials(const QString &url = "https://prisma.test")
+{
+	QJsonObject o{{"url", url + "/"},
+		      {"client_id", "c_desktop"},
+		      {"kid", "k1"},
+		      {"audience", "prisma:test"},
+		      {"private_key", QString::fromLatin1(kTestPem)}};
+	return *PrismaCredentials::FromJson(QJsonDocument(o).toJson());
+}
+
+/* An in-process stand-in for Prisma's Lucida plugin */
+struct FakePrisma {
+	int tokens = 0;
+	int failNext = 0; /* answer this many requests with a 503 */
+	int rejectToken = 0;
+	bool plain422 = false;                /* a 422 without FastAPI's per-line detail */
+	std::map<QString, QJsonObject> lines; /* by local_id */
+	std::map<QString, QJsonObject> sessions;
+	std::map<QString, QByteArray> images;
+	std::map<QString, QJsonObject> frames;
+	QStringList calls;
+
+	HttpResponse Json(int status, const QJsonObject &o = {})
+	{
+		return {status, QJsonDocument(o).toJson(QJsonDocument::Compact), {}};
+	}
+
+	HttpResponse operator()(const HttpRequest &r)
+	{
+		const QUrl url(r.url);
+		const QString path = url.path();
+		calls << QString::fromLatin1(r.method) + ' ' + path;
+		if (path == "/v1/token") {
+			tokens++;
+			return Json(200, {{"access_token", QStringLiteral("t%1").arg(tokens)}, {"expires_in", 900}});
+		}
+		if (url.host() == "storage.test") {
+			/* the presigned POST: the file part is last */
+			const QByteArray marker = "filename=\"";
+			const int at = r.body.indexOf(marker);
+			const QString name = QString::fromUtf8(r.body.mid(
+				at + marker.size(), r.body.indexOf('"', at + marker.size()) - at - marker.size()));
+			const int start = r.body.indexOf("\r\n\r\n", at) + 4;
+			const int end = r.body.lastIndexOf("\r\n--");
+			images[name] = r.body.mid(start, end - start);
+			return {204, {}, {}};
+		}
+		if (failNext > 0) {
+			failNext--;
+			return Json(503, {{"detail", "busy"}});
+		}
+		const QByteArray auth = [&] {
+			for (const auto &[k, v] : r.headers) {
+				if (k == "Authorization") {
+					return v;
+				}
+			}
+			return QByteArray();
+		}();
+		if (rejectToken > 0 && auth == "Bearer t1") {
+			rejectToken--;
+			return Json(401, {{"detail", "token revoked"}});
+		}
+		const QJsonObject body = QJsonDocument::fromJson(r.body).object();
+		const QString base = "/v1/lucida/sources/me";
+		if (path == base) {
+			return Json(200, {{"source", "c_desktop"}});
+		}
+		if (path == base + "/lines") {
+			const QJsonArray list = body.value("lines").toArray();
+			QJsonArray detail;
+			for (int i = 0; i < list.size(); i++) {
+				if (list[i].toObject().value("body").toString().contains("REFUSE")) {
+					detail.append(QJsonObject{{"loc", QJsonArray{"body", "lines", i, "body"}},
+								  {"msg", "refused"}});
+				}
+			}
+			if (!detail.isEmpty()) {
+				return plain422 ? Json(422, {{"detail", "bad line"}}) : Json(422, {{"detail", detail}});
+			}
+			for (const QJsonValue &v : list) {
+				lines[QString::number(v.toObject().value("local_id").toInteger())] = v.toObject();
+			}
+			return Json(200, {{"written", list.size()}});
+		}
+		if (path.startsWith(base + "/sessions/")) {
+			sessions[path.section('/', -1)] = body;
+			return Json(200);
+		}
+		if (path.startsWith(base + "/frames/") && path.endsWith("/uploaded")) {
+			const QString key = path.section('/', -2, -2);
+			return images.count(key) ? Json(200, {{"uploaded", true}}) : Json(409, {{"detail", "not yet"}});
+		}
+		if (path.startsWith(base + "/frames/")) {
+			const QString key = path.section('/', -1);
+			frames[key] = body;
+			return Json(200,
+				    {{"frame", QJsonObject{}},
+				     {"upload", QJsonObject{{"url", "https://storage.test/bucket"},
+							    {"fields", QJsonObject{{"key", key},
+										   {"Content-Type",
+										    body.value("content_type")}}}}}});
+		}
+		return Json(404, {{"detail", "no route"}});
 	}
 };
 
@@ -811,6 +1032,475 @@ int main(int argc, char **argv)
 		Query q;
 		q.frameId = frameId;
 		CHECK(s.Find(q).size() == 2);
+	});
+
+	/* ---- Spectra: carnivore mode ---- */
+
+	Test("carnivore_finds_each_block_of_text", [] {
+		const auto boxes = Join({LeftLines(kChat, 10, 20),
+					 RightLines(kFeed, 1900, 20),
+					 {Box("100", 1800, 1000), Box("Vinewood", 20, 1040)}});
+		std::vector<TextBlock> blocks = FindTextBlocks(boxes);
+		CHECK(blocks.size() == 4);
+		/* screen order: the two top blocks left to right, then the bottom ones */
+		CHECK(blocks.size() == 4 && blocks[0].boxes.size() == 3 && blocks[0].rect.x0 == 10);
+		CHECK(blocks.size() == 4 && blocks[1].boxes.size() == 3 && blocks[1].rect.x1 == 1900);
+	});
+
+	Test("carnivore_reads_chat_feeds_and_labels_but_not_hud_numbers", [] {
+		const auto boxes =
+			Join({LeftLines(kChat, 10, 20),
+			      RightLines(kFeed, 1900, 20),
+			      {Box("100", 1800, 1000), Box("Vinewood", 20, 1040), Box("30 | 1789231305", 900, 2)}});
+		BoxOcr ocr({boxes});
+		RegionTracker tracker({}, {{"chat", spectra::kDefaultChatRegion, RegionMode::Read}});
+		int blocks = 0;
+		const spectra::Rect hud = spectra::kDefaultHudRegion.ToPixels(kScreenW, kScreenH);
+		auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0, {hud}, &blocks);
+		CHECK(blocks == 2);
+		CHECK(EntryBodies(entries, "chat").size() == 3);
+		/* untimed feed rows of similar width are still one line each */
+		CHECK(EntryBodies(entries, "top-right") == kFeed);
+		/* street names and other labels are kept, as "other" */
+		CHECK(EntryBodies(entries, "other") == QStringList{"Vinewood"});
+		CHECK(entries.size() == 7);
+		for (size_t i = 0; i < entries.size(); i++) {
+			CHECK(entries[i].index == (int)i && !entries[i].rects.empty());
+		}
+		/* only the feed is learned: the chat box is drawn, "other" is no region */
+		auto dirty = tracker.TakeDirty();
+		CHECK(dirty.size() == 1 && dirty[0]->name == "top-right");
+		CHECK(tracker.TakeDirty().empty());
+	});
+
+	Test("carnivore_joins_a_wrapped_sentence", [] {
+		const auto boxes = LeftLines({"Server restarts in ten minutes, please find a safe place to park your",
+					      "vehicle before then", "Next announcement follows"},
+					     700, 500);
+		BoxOcr ocr({boxes});
+		RegionTracker tracker;
+		auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+		CHECK(entries.size() == 2);
+		CHECK(entries.size() == 2 && entries[0].body.endsWith("your vehicle before then"));
+		CHECK(entries.size() == 2 && entries[0].region == "centre");
+	});
+
+	Test("carnivore_regions_keep_their_names", [] {
+		CHECK(RegionTracker::PlaceName({0.0, 0.0, 0.2, 0.1}) == "top-left");
+		CHECK(RegionTracker::PlaceName({0.4, 0.4, 0.6, 0.6}) == "centre");
+		CHECK(RegionTracker::PlaceName({0.4, 0.8, 0.6, 0.9}) == "bottom");
+		CHECK(RegionTracker::PlaceName({0.8, 0.4, 0.9, 0.6}) == "right");
+
+		std::vector<spectra::Row> numbers{spectra::Row::FromBox(Box("100", 0, 0)),
+						  spectra::Row::FromBox(Box("$ 12,500", 0, 24))};
+		std::vector<spectra::Row> labels{spectra::Row::FromBox(Box("Carcer Way", 0, 0)),
+						 spectra::Row::FromBox(Box("Vinewood Blvd", 0, 24))};
+		std::vector<spectra::Row> text{spectra::Row::FromBox(Box("Alice killed Bob", 0, 0))};
+		CHECK(Classify(numbers) == BlockKind::None);
+		CHECK(Classify(labels) == BlockKind::Labels);
+		CHECK(Classify(text) == BlockKind::Text);
+
+		RegionTracker t({}, {{"chat", spectra::kDefaultChatRegion, RegionMode::Read}});
+		CHECK(t.Assign({10, 20, 400, 82}, kScreenW, kScreenH, 1).name == "chat");
+		CHECK(t.Assign({1650, 20, 1900, 82}, kScreenW, kScreenH, 1).name == "top-right");
+		CHECK(t.Assign({1650, 200, 1900, 262}, kScreenW, kScreenH, 1).name == "top-right 2");
+		/* a feed that grows stays the same region, which widens */
+		CHECK(t.Assign({1600, 20, 1900, 130}, kScreenW, kScreenH, 2).name == "top-right");
+		const ScreenRegion &feed = t.Regions()[0];
+		CHECK(std::fabs(feed.area.left - 1600.0 / kScreenW) < 1e-9 && feed.lastSeen == 2 &&
+		      feed.firstSeen == 1);
+		CHECK(t.Regions().size() == 2);
+	});
+
+	Test("carnivore_mode_logs_lines_with_their_region", [] {
+		const auto first = Join({LeftLines(kChat.mid(0, 2), 10, 20), RightLines(kFeed.mid(0, 2), 1900, 20)});
+		const auto second = Join({LeftLines(kChat, 10, 20), RightLines(kFeed.mid(1, 2), 1900, 20)});
+		Store store(NewDb());
+		CHECK(store.Open());
+		BoxOcr ocr({first, second});
+		std::vector<spectra::Image> frames{DrawBoxes(first), DrawBoxes(second)};
+		size_t next = 0;
+		RecorderConfig cfg;
+		cfg.carnivore = true;
+		cfg.keepFrames = true;
+		cfg.framesDir = QFileInfo(store.Path()).absoluteDir().filePath("frames");
+		auto grab = [&]() -> std::optional<GrabbedFrame> {
+			if (next >= frames.size()) {
+				return std::nullopt;
+			}
+			return GrabbedFrame{frames[next++], QStringLiteral("test")};
+		};
+		{
+			Recorder recorder(cfg, store, ocr, grab);
+			Tick a = recorder.Step();
+			CHECK(a.added == 4 && a.regions == 2 && a.frameTs == 1789231305LL);
+			Tick b = recorder.Step();
+			CHECK(b.added == 2 && b.regions == 2);
+			recorder.Close();
+		}
+		CHECK(store.Recent().size() == 6);
+		Query q;
+		q.region = "top-right";
+		CHECK(Bodies(store.Find(q)) == kFeed);
+		q.region = "chat";
+		CHECK(store.Find(q).size() == 3);
+		CHECK((store.RegionNames() == QStringList{"chat", "top-right"}));
+		auto regions = store.ScreenRegions();
+		/* the chat box is drawn, so only the feed is a learned region */
+		CHECK(regions.size() == 1 && regions[0].id > 0 && regions[0].name == "top-right");
+
+		/* screenshots list every line, each with its region */
+		auto shots = store.Frames();
+		CHECK(shots.size() == 2);
+		if (!shots.empty()) {
+			auto lines = store.FrameLines(shots[0].frame.id);
+			CHECK(lines.size() == 5);
+			CHECK(std::all_of(lines.begin(), lines.end(),
+					  [](const LogLine &l) { return !l.region.isEmpty() && l.rect.has_value(); }));
+		}
+
+		/* after a restart the regions keep their names */
+		const auto third = Join(
+			{RightLines({"Gina killed Hank"}, 1900, 20),
+			 LeftLines({"Welcome to the server", "Press F1 for help", "Have fun out there"}, 1500, 600)});
+		BoxOcr again({third});
+		frames = {DrawBoxes(third)};
+		next = 0;
+		Recorder recorder(cfg, store, again, grab);
+		Tick c = recorder.Step();
+		CHECK(c.added == 4);
+		q.region = "top-right";
+		CHECK(store.Find(q).size() == 4);
+		CHECK(store.ScreenRegions().size() == 2);
+	});
+
+	Test("drawn_regions_name_ignore_and_other_text", [] {
+		const auto feed = RightLines(kFeed, 1900, 20);
+		const auto map = LeftLines({"Carcer Way", "Vinewood Blvd"}, 60, 900);
+		const auto ad = LeftLines({"Buy the new Pegassi Zentorno today"}, 800, 500);
+		const auto news = LeftLines({"Weazel News says the port is closed"}, 60, 400);
+		const auto boxes = Join({feed, map, ad, news});
+		const std::vector<RegionRule> drawn{{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read},
+						    {"minimap", {0.0, 0.8, 0.25, 1.0}, RegionMode::Ignore},
+						    {"ads", {0.4, 0.4, 0.7, 0.55}, RegionMode::Other}};
+		{
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, drawn);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK(EntryBodies(entries, "kill feed") == kFeed);
+			CHECK(EntryBodies(entries, "other") == QStringList{"Buy the new Pegassi Zentorno today"});
+			/* the minimap is ignored; the news, outside every drawn region, is learned */
+			CHECK(entries.size() == 5);
+			CHECK(tracker.Regions().size() == 1 && tracker.Regions()[0].name == "left");
+		}
+		{
+			/* only the drawn regions: nothing is learned, the rest is "other" */
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, drawn, true);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK(EntryBodies(entries, "other").size() == 2);
+			CHECK(tracker.Regions().empty() && tracker.TakeDirty().empty());
+		}
+		{
+			/* labels inside a drawn region take its name */
+			std::vector<RegionRule> named = drawn;
+			named[1].mode = RegionMode::Read;
+			BoxOcr ocr({boxes});
+			RegionTracker tracker({}, named);
+			auto entries = ReadScreen(DrawBoxes(boxes), ocr, tracker, 1000.0);
+			CHECK((EntryBodies(entries, "minimap") == QStringList{"Carcer Way", "Vinewood Blvd"}));
+		}
+		/* a drawn region replaces the learned one of the same name */
+		RegionTracker tracker(
+			{{1, "kill feed", {0.0, 0.0, 0.1, 0.1}, 1, 1}, {2, "left", {0.0, 0.3, 0.2, 0.4}, 1, 1}}, drawn);
+		CHECK(tracker.Regions().size() == 1 && tracker.Regions()[0].name == "left");
+		CHECK(WithChatBox(drawn, spectra::kDefaultChatRegion).size() == 4);
+		CHECK(WithChatBox({{"chat", {0, 0, 1, 1}}}, spectra::kDefaultChatRegion).size() == 1);
+	});
+
+	Test("game_profiles_round_trip_and_match", [] {
+		const QString path = QFileInfo(NewDb()).absoluteDir().filePath("game-profiles.json");
+		GameProfiles missing;
+		CHECK(missing.Load(path) && missing.profiles.empty() && missing.AnyExecutable().isEmpty());
+
+		LucidaProfile l;
+		l.carnivore = true;
+		l.onlyDrawn = true;
+		l.readHud = false;
+		l.chatRegion = {0.01, 0.02, 0.4, 0.3};
+		l.regions = {{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read},
+			     {"minimap", {0.0, 0.8, 0.25, 1.0}, RegionMode::Ignore}};
+		GameProfile fivem;
+		fivem.name = "FiveM";
+		fivem.executable = "FiveM.*GTAProcess\\.exe";
+		fivem.SetLucida(l);
+		/* another feature's section is kept as it is */
+		fivem.sections.insert("loop", QJsonObject{{"quotaGb", 100}});
+		GameProfile other;
+		other.name = "No pattern";
+		GameProfiles saved;
+		saved.profiles = {fivem, other};
+		CHECK(saved.Save(path));
+
+		GameProfiles loaded;
+		CHECK(loaded.Load(path) && loaded.profiles.size() == 2);
+		const GameProfile *p = loaded.Match("FiveM_b3095_GTAProcess.exe");
+		CHECK(p && p->name == "FiveM");
+		CHECK(loaded.Match("fivem_b3095_gtaprocess.EXE") == p);
+		CHECK(!loaded.Match("notepad.exe"));
+		CHECK(!other.Matches("anything.exe"));
+		CHECK(p && p->sections.value("loop").toObject().value("quotaGb").toInt() == 100);
+		auto back = p ? p->Lucida() : std::nullopt;
+		CHECK(back && back->carnivore && back->onlyDrawn && !back->readHud);
+		CHECK(back && back->regions == l.regions && back->chatRegion.right == 0.4);
+		CHECK(!other.Lucida());
+		CHECK(loaded.AnyExecutable() == "(?:FiveM.*GTAProcess\\.exe)");
+		CHECK(ModeFromKey(ModeKey(RegionMode::Ignore)) == RegionMode::Ignore &&
+		      ModeFromKey("nonsense") == RegionMode::Read);
+	});
+
+	Test("the_recorder_reads_each_game_with_its_profile", [] {
+		const auto screen = Join({LeftLines(kChat, 10, 20), RightLines(kFeed, 1900, 20)});
+		Store store(NewDb());
+		CHECK(store.Open());
+		BoxOcr ocr({screen});
+		const spectra::Image img = DrawBoxes(screen);
+		std::vector<GrabbedFrame> frames{{img, "Game", "FiveM_GTAProcess.exe"},
+						 {DrawBoxes(RightLines(kFeed, 1900, 40)), "Game", "notepad.exe"}};
+		size_t next = 0;
+		RecorderConfig cfg; /* the settings: chat box mode */
+		cfg.readHud = false;
+		Recorder recorder(cfg, store, ocr, [&]() -> std::optional<GrabbedFrame> {
+			if (next >= frames.size()) {
+				return std::nullopt;
+			}
+			return frames[next++];
+		});
+		LucidaProfile l;
+		l.carnivore = true;
+		l.readHud = false;
+		l.regions = {{"kill feed", {0.8, 0.0, 1.0, 0.15}, RegionMode::Read}};
+		GameProfile fivem;
+		fivem.name = "FiveM";
+		fivem.executable = "GTAProcess";
+		fivem.SetLucida(l);
+		recorder.profileFor = [&](const QString &exe) -> std::optional<GameProfile> {
+			return fivem.Matches(exe) ? std::optional<GameProfile>(fivem) : std::nullopt;
+		};
+		Tick a = recorder.Step();
+		CHECK(a.profile == "FiveM" && recorder.Config().carnivore && a.regions == 2);
+		Query q;
+		q.region = "kill feed";
+		CHECK(Bodies(store.Find(q)) == kFeed);
+		q.region = "chat";
+		CHECK(store.Find(q).size() == 3);
+		/* another game: back to the settings */
+		recorder.Step();
+		CHECK(!recorder.Config().carnivore && recorder.Config().regions.empty());
+	});
+
+	Test("the_chat_box_mode_leaves_region_empty", [] {
+		Rig rig({kChat});
+		rig.recorder->Step();
+		auto lines = rig.store.Recent();
+		CHECK(lines.size() == 3 && lines[0].region.isEmpty());
+		CHECK(rig.store.RegionNames().isEmpty() && rig.store.ScreenRegions().empty());
+	});
+
+	/* ---- Spectra: backing up to Prisma ---- */
+
+	Test("prisma_signs_its_token_request", [] {
+		auto seed = Ed25519SeedFromPem(QString::fromLatin1(kTestPem));
+		CHECK(seed.has_value());
+		CHECK(!Ed25519SeedFromPem("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----"));
+		const std::array<uint8_t, 32> pub = Ed25519PublicKey(*seed);
+		CHECK(QByteArray(reinterpret_cast<const char *>(pub.data()), 32).toHex() == kTestPublic);
+
+		const PrismaCredentials c = TestCredentials();
+		CHECK(c.url == "https://prisma.test" && c.clientId == "c_desktop");
+		CHECK(!PrismaCredentials::FromJson("{\"url\": \"x\"}"));
+
+		const QByteArray jwt = BuildAssertion(c, 1789000000, 120, "nonce");
+		const QList<QByteArray> parts = jwt.split('.');
+		CHECK(parts.size() == 3);
+		if (parts.size() == 3) {
+			auto decode = [](const QByteArray &b) {
+				return QByteArray::fromBase64(b, QByteArray::Base64UrlEncoding |
+									 QByteArray::OmitTrailingEquals);
+			};
+			const QJsonObject header = QJsonDocument::fromJson(decode(parts[0])).object();
+			const QJsonObject claims = QJsonDocument::fromJson(decode(parts[1])).object();
+			CHECK(header.value("alg") == "EdDSA" && header.value("kid") == "k1");
+			CHECK(claims.value("iss") == "c_desktop" && claims.value("sub") == "c_desktop");
+			CHECK(claims.value("aud") == "prisma:test" && claims.value("jti") == "nonce");
+			CHECK(claims.value("iat").toInteger() == 1789000000 &&
+			      claims.value("exp").toInteger() == 1789000120);
+			const QByteArray input = parts[0] + '.' + parts[1];
+			const QByteArray sig = decode(parts[2]);
+			CHECK(sig.size() == 64 &&
+			      crypto_ed25519_check(reinterpret_cast<const uint8_t *>(sig.constData()), pub.data(),
+						   reinterpret_cast<const uint8_t *>(input.constData()),
+						   input.size()) == 0);
+		}
+		/* a fresh jti each time */
+		CHECK(BuildAssertion(c, 1789000000).split('.')[1] != BuildAssertion(c, 1789000000).split('.')[1]);
+
+		const QString dir = QFileInfo(NewDb()).absolutePath();
+		CHECK(FindCredentials({dir}).isEmpty());
+		QFile f(QDir(dir).filePath("prisma-c_desktop.json"));
+		CHECK(f.open(QIODevice::WriteOnly));
+		f.write("{}");
+		f.close();
+		CHECK(FindCredentials({QString(), dir}).endsWith("prisma-c_desktop.json"));
+	});
+
+	Test("prisma_client_keeps_and_renews_its_token", [] {
+		FakePrisma fake;
+		PrismaClient client(TestCredentials(), [&](const HttpRequest &r) { return fake(r); });
+		double now = 1789000000;
+		client.clock = [&] {
+			return now;
+		};
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok());
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok());
+		CHECK(fake.tokens == 1);
+		now += 900 - 30; /* inside the last minute: renewed */
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok() && fake.tokens == 2);
+		/* a revoked token is replaced once */
+		FakePrisma revoked;
+		revoked.rejectToken = 5;
+		PrismaClient again(TestCredentials(), [&](const HttpRequest &r) { return revoked(r); });
+		CHECK(again.Put("/v1/lucida/sources/me", QJsonObject()).Ok() && revoked.tokens == 2);
+		/* failures say why */
+		fake.failNext = 1;
+		const PrismaResult busy = client.Put("/v1/lucida/sources/me", QJsonObject());
+		CHECK(busy.status == 503 && busy.Describe() == "HTTP 503: busy");
+		PrismaClient down(TestCredentials(),
+				  [](const HttpRequest &) { return HttpResponse{0, {}, "unreachable"}; });
+		CHECK(down.Get("/v1/lucida/sources").Describe() == "unreachable");
+	});
+
+	Test("cloud_sync_backs_up_lines_sessions_and_screenshots_once", [] {
+		Store s(NewDb());
+		CHECK(s.Open());
+		Tagger t({{"bodycam-rp", {"bodycam"}}}, false);
+		s.labeler = [&](const QString &body) {
+			return t.Tags(body);
+		};
+		const long long session = s.StartSession("FiveM", 1920, 1080);
+		spectra::ChatEntry a = Entry("16:38:10", "Bob says: bodycam on", "say", 0.6f);
+		a.region = "chat";
+		a.rects = {{10, 20, 300, 40}};
+		auto ids = s.AddFrame({a, Entry("16:38:11", "Harry says: hi")}, 1789231300, "hud", session);
+		const QString shot = QDir(QFileInfo(s.Path()).absolutePath()).filePath("1789231300.jpg");
+		{
+			QFile f(shot);
+			CHECK(f.open(QIODevice::WriteOnly));
+			f.write("\xff\xd8 jpeg");
+		}
+		s.AttachFrame(Seen(ids), shot, 1920, 1080, 1789231300, session);
+		s.AttachFrame({}, QDir(QFileInfo(s.Path()).absolutePath()).filePath("gone.jpg"), 1920, 1080, 1789231301,
+			      session);
+
+		FakePrisma fake;
+		PrismaClient client(TestCredentials(), [&](const HttpRequest &r) { return fake(r); });
+		CloudSync sync(s, client);
+		SyncReport r = sync.Step();
+		CHECK(r.error.isEmpty() && r.lines == 2 && r.sessions == 1 && r.frames == 1 && r.refused == 1 &&
+		      !r.more);
+		/* screenshots go before the lines that point at them */
+		CHECK(fake.calls.indexOf(QRegularExpression(".*/frames/1789231300$")) <
+		      fake.calls.indexOf(QRegularExpression(".*/lines$")));
+		CHECK(fake.images["1789231300"] == "\xff\xd8 jpeg");
+		CHECK(fake.frames["1789231300"].value("session_key").toString().size() >= 10);
+		const QJsonObject line = fake.lines[QString::number(ids[0])];
+		CHECK(line.value("body") == "Bob says: bodycam on" && line.value("clock") == "16:38:10");
+		CHECK(line.value("frame_key") == "1789231300" && line.value("region") == "chat");
+		CHECK(line.value("labels").toArray() == QJsonArray{"bodycam-rp"});
+		CHECK(line.value("rect").toArray() == (QJsonArray{10, 20, 300, 40}));
+		CHECK(line.value("session_key") == fake.frames["1789231300"].value("session_key"));
+		CHECK(line.value("ts_source") == "hud" && !line.value("dedup_key").toString().isEmpty());
+
+		/* nothing changed: nothing sent */
+		fake.calls.clear();
+		r = sync.Step();
+		CHECK(r.lines == 0 && r.frames == 0 && r.sessions == 0 && fake.calls.isEmpty());
+		/* a better reading and an ended session are sent again; another sighting is not */
+		s.AddFrame({Entry("16:38:10", "Bob says: bodycam on!", "say", 0.99f),
+			    Entry("16:38:11", "Harry says: hi")},
+			   1789231305, "hud", session);
+		s.EndSession(session);
+		r = sync.Step();
+		CHECK(r.lines == 1 && r.sessions == 1);
+		CHECK(fake.sessions.begin()->second.contains("ended"));
+
+		/* a line Prisma refuses does not hold up the rest */
+		s.AddFrame({Entry("16:39:00", "REFUSE me"), Entry("16:39:01", "fine")}, 1789231400, "hud", session);
+		r = sync.Step();
+		CHECK(r.lines == 1 && r.refused == 1 && !r.more);
+		/* an outage stops the pass and leaves everything waiting */
+		s.AddFrame({Entry("16:40:00", "later")}, 1789231500, "hud", session);
+		fake.failNext = 1;
+		PrismaClient fresh(TestCredentials(), [&](const HttpRequest &req) { return fake(req); });
+		CloudSync afterRestart(s, fresh);
+		r = afterRestart.Step();
+		CHECK(!r.error.isEmpty() && r.lines == 0 && r.more);
+		r = afterRestart.Step();
+		CHECK(r.error.isEmpty() && r.lines == 1 && s.Unsynced().lines == 0);
+
+		/* another gateway or client: everything is sent again */
+		PrismaCredentials other = TestCredentials("https://elsewhere.test");
+		fake.plain422 = true; /* the one-at-a-time fallback */
+		PrismaClient moved(other, [&](const HttpRequest &req) { return fake(req); });
+		CloudSync movedSync(s, moved);
+		r = movedSync.Step(10, 10);
+		CHECK(r.lines == 4 && r.frames == 1 && r.refused == 2);
+	});
+
+	Test("cloud_sync_against_a_real_prisma", [] {
+		/* LUCIDA_PRISMA_CREDENTIALS=<a credentials file> (e.g. a local Prisma) */
+		const QString path = qEnvironmentVariable("LUCIDA_PRISMA_CREDENTIALS");
+		if (path.isEmpty()) {
+			printf("     (skipped: LUCIDA_PRISMA_CREDENTIALS is not set)\n");
+			return;
+		}
+		QString error;
+		auto creds = PrismaCredentials::FromFile(path, &error);
+		CHECK(creds.has_value());
+		if (!creds) {
+			printf("     %s\n", qPrintable(error));
+			return;
+		}
+		Store s(NewDb());
+		CHECK(s.Open());
+		const long long session = s.StartSession("FiveM", 1920, 1080);
+		const long long ts = NowSecs();
+		spectra::ChatEntry a = Entry("16:38:10", "Pier 400 heist tonight, bring bodycams");
+		a.region = "chat";
+		a.rects = {{10, 20, 300, 40}};
+		auto ids = s.AddFrame({a, Entry("16:38:11", "Harry says: helo wrld")}, ts, "hud", session);
+		const QString shot = QDir(QFileInfo(s.Path()).absolutePath()).filePath(QString::number(ts) + ".jpg");
+		QImage red(64, 32, QImage::Format_RGB888);
+		red.fill(Qt::red);
+		CHECK(red.save(shot, "JPG"));
+		s.AttachFrame(Seen(ids), shot, 64, 32, ts, session);
+
+		PrismaClient client(*creds);
+		CloudSync sync(s, client);
+		sync.machine = "lucida-tests";
+		SyncReport r = sync.Step();
+		printf("     sent %d line(s), %d screenshot(s), %d session(s); %s\n", r.lines, r.frames, r.sessions,
+		       r.error.isEmpty() ? "no error" : qPrintable(r.error));
+		CHECK(r.error.isEmpty() && r.lines == 2 && r.frames == 1 && r.sessions == 1 && r.refused == 0);
+
+		PrismaResult lines =
+			client.Get("/v1/lucida/sources/me/lines", QUrlQuery{{"from_ts", QString::number(ts)}});
+		CHECK(lines.Ok() && lines.body.toObject().value("lines").toArray().size() == 2);
+		PrismaResult frame = client.Get("/v1/lucida/sources/me/frames/" + QString::number(ts));
+		CHECK(frame.Ok() && frame.body.toObject().value("uploaded").toBool());
+		const HttpResponse image = client.Fetch(frame.body.toObject().value("url").toString());
+		QFile original(shot);
+		CHECK(original.open(QIODevice::ReadOnly) && image.status == 200 && image.body == original.readAll());
 	});
 
 	/* ---- Spectra: loop recording lookup ---- */
