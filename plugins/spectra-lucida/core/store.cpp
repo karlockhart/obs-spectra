@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS frame_lines (
 );
 CREATE INDEX IF NOT EXISTS frame_lines_line ON frame_lines(line_id);
 -- Spectra: carnivore mode's screen regions, as fractions of the frame
+-- Spectra: small settings kept with the log (e.g. where it is backed up to)
+CREATE TABLE IF NOT EXISTS meta (
+    key         TEXT PRIMARY KEY,
+    value       TEXT
+);
 CREATE TABLE IF NOT EXISTS regions (
     id          INTEGER PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
@@ -92,7 +97,10 @@ const std::pair<const char *, const char *> kLaterColumns[] = {
 	{"video", "TEXT"},
 	{"video_offset", "REAL"},
 	/* Spectra: the screen region carnivore mode read the line from */
-	{"region", "TEXT"}};
+	{"region", "TEXT"},
+	/* Spectra: when the line was last sent to Prisma (NULL: not since it
+	 * changed; -1: Prisma refused it) */
+	{"synced_at", "REAL"}};
 
 constexpr double kFuzzyRatio = 0.9; /* below this, two readings are different lines */
 constexpr int kPrefixMin = 12;      /* shorter than this, a shared opening proves nothing */
@@ -248,6 +256,7 @@ LogLine RowToLine(const Stmt &s)
 		l.colour = c;
 	}
 	l.firstSeen = s.Real(s.ColumnIndex("first_seen"));
+	l.lastSeen = s.Real(s.ColumnIndex("last_seen"));
 	const QString video = s.Text(s.ColumnIndex("video"));
 	if (!video.isEmpty()) {
 		l.video = VideoSpot{video, s.Real(s.ColumnIndex("video_offset"))};
@@ -450,6 +459,17 @@ void Store::Migrate()
 			Exec(sql.c_str());
 		}
 	}
+	/* Spectra: screenshots and sessions are backed up to Prisma too */
+	for (const char *table : {"frames", "sessions"}) {
+		bool synced = false;
+		Stmt s(db, (std::string("PRAGMA table_info(") + table + ")").c_str());
+		while (s.Step() == SQLITE_ROW) {
+			synced |= s.Text(1) == QLatin1String("synced_at");
+		}
+		if (!synced) {
+			Exec((std::string("ALTER TABLE ") + table + " ADD COLUMN synced_at REAL").c_str());
+		}
+	}
 	/* Logs from before frame_lines: each screenshot had only its new lines */
 	Stmt any(db, "SELECT 1 FROM frame_lines LIMIT 1");
 	if (any.Step() != SQLITE_ROW) {
@@ -497,7 +517,7 @@ long long Store::StartSession(const QString &target, int width, int height)
 
 void Store::EndSession(long long sessionId)
 {
-	Stmt s(db, "UPDATE sessions SET ended=? WHERE id=?");
+	Stmt s(db, "UPDATE sessions SET ended=?, synced_at=NULL WHERE id=?");
 	s.Bind(1, Now()).Bind(2, sessionId).Run();
 }
 
@@ -574,10 +594,11 @@ void Store::Touch(WindowLine &hit, const QString &body, double score, long long 
 {
 	/* Another sighting of a line we already have: keep the best reading */
 	if (score > hit.score + 0.01 && body != hit.body) {
-		Stmt s(db, "UPDATE lines SET body=?, score=?, frames=frames+1, last_seen=? WHERE id=?");
+		/* a better reading is worth sending again */
+		Stmt s(db, "UPDATE lines SET body=?, score=?, frames=frames+1, last_seen=?, synced_at=NULL WHERE id=?");
 		s.Bind(1, body).Bind(2, score).Bind(3, now).Bind(4, hit.rowId).Run();
 		if (labeler) {
-			Stmt l(db, "UPDATE lines SET labels=? WHERE id=?");
+			Stmt l(db, "UPDATE lines SET labels=?, synced_at=NULL WHERE id=?");
 			l.Bind(1, TagsJson(labeler(body))).Bind(2, hit.rowId).Run();
 		}
 		if (fts) {
@@ -663,7 +684,7 @@ long long Store::AttachFrame(const std::vector<Sighting> &lines, const QString &
 	s.Bind(1, sessionId).Bind(2, sortTs).Bind(3, framePath).Bind(4, width).Bind(5, height).Bind(6, Now()).Run();
 	long long frameId = sqlite3_last_insert_rowid(db);
 	Stmt f(db, "INSERT OR IGNORE INTO frame_lines(frame_id, line_id, seq, rect) VALUES (?,?,?,?)");
-	Stmt u(db, "UPDATE lines SET frame_id=? WHERE id=? AND frame_id IS NULL");
+	Stmt u(db, "UPDATE lines SET frame_id=?, synced_at=NULL WHERE id=? AND frame_id IS NULL");
 	for (const Sighting &line : lines) {
 		f.Reset();
 		f.Bind(1, frameId).Bind(2, line.lineId).Bind(3, line.seq).Bind(4, RectText(line.rect)).Run();
@@ -993,6 +1014,151 @@ void Store::SaveScreenRegion(ScreenRegion &r)
 	}
 }
 
+/* ------------------------------------------------------------------------- */
+/* Backing up to Prisma */
+
+QString Store::Meta(const char *key)
+{
+	Stmt s(db, "SELECT value FROM meta WHERE key=?");
+	s.Bind(1, QString::fromLatin1(key));
+	return s.Step() == SQLITE_ROW ? s.Text(0) : QString();
+}
+
+void Store::SetMeta(const char *key, const QString &value)
+{
+	Stmt s(db, "INSERT INTO meta(key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+	s.Bind(1, QString::fromLatin1(key)).Bind(2, value).Run();
+}
+
+std::vector<SyncLine> Store::UnsyncedLines(int limit)
+{
+	std::vector<SyncLine> out;
+	if (!db) {
+		return out;
+	}
+	Stmt s(db, "SELECT lines.*, frames.path AS sync_frame_path, sessions.started AS sync_session_started"
+		   " FROM lines LEFT JOIN frames ON frames.id = lines.frame_id"
+		   " LEFT JOIN sessions ON sessions.id = lines.session_id"
+		   " WHERE lines.synced_at IS NULL ORDER BY lines.sort_ts, lines.seq, lines.id LIMIT ?");
+	s.Bind(1, limit);
+	const int key = s.ColumnIndex("dedup_key"), labels = s.ColumnIndex("labels");
+	const int path = s.ColumnIndex("sync_frame_path"), started = s.ColumnIndex("sync_session_started");
+	while (s.Step() == SQLITE_ROW) {
+		SyncLine l;
+		l.line = RowToLine(s);
+		l.dedupKey = s.Text(key);
+		l.labelsJson = s.Text(labels);
+		if (!s.IsNull(path)) {
+			l.framePath = s.Text(path);
+		}
+		if (!s.IsNull(started)) {
+			l.sessionStarted = s.Real(started);
+		}
+		out.push_back(std::move(l));
+	}
+	return out;
+}
+
+void Store::MarkLinesSynced(const std::vector<SyncLine> &lines, double at)
+{
+	if (!db || lines.empty()) {
+		return;
+	}
+	/* only if the line is still what was sent: a better reading, new labels
+	 * or a screenshot that arrived meanwhile keep it waiting */
+	Exec("BEGIN");
+	Stmt u(db, "UPDATE lines SET synced_at=? WHERE id=? AND synced_at IS NULL AND body=?"
+		   " AND IFNULL(labels, '')=? AND IFNULL(frame_id, -1)=?");
+	for (const SyncLine &l : lines) {
+		u.Reset();
+		u.Bind(1, at).Bind(2, l.line.id).Bind(3, l.line.body).Bind(4, l.labelsJson);
+		u.Bind(5, l.line.frameId.value_or(-1)).Run();
+	}
+	Exec("COMMIT");
+}
+
+std::vector<SyncFrame> Store::UnsyncedFrames(int limit)
+{
+	std::vector<SyncFrame> out;
+	if (!db) {
+		return out;
+	}
+	Stmt s(db, "SELECT frames.id, frames.sort_ts, frames.path, frames.width, frames.height, sessions.started"
+		   " FROM frames LEFT JOIN sessions ON sessions.id = frames.session_id"
+		   " WHERE frames.synced_at IS NULL ORDER BY frames.sort_ts, frames.id LIMIT ?");
+	s.Bind(1, limit);
+	while (s.Step() == SQLITE_ROW) {
+		SyncFrame f{{s.Int(0), s.Int(1), s.Text(2), (int)s.Int(3), (int)s.Int(4)}, std::nullopt};
+		if (!s.IsNull(5)) {
+			f.sessionStarted = s.Real(5);
+		}
+		out.push_back(std::move(f));
+	}
+	return out;
+}
+
+void Store::MarkFrameSynced(long long frameId, double at)
+{
+	Stmt u(db, "UPDATE frames SET synced_at=? WHERE id=?");
+	u.Bind(1, at).Bind(2, frameId).Run();
+}
+
+std::vector<SyncSession> Store::UnsyncedSessions(int limit)
+{
+	std::vector<SyncSession> out;
+	if (!db) {
+		return out;
+	}
+	Stmt s(db, "SELECT id, started, ended, target, width, height FROM sessions WHERE synced_at IS NULL"
+		   " ORDER BY id LIMIT ?");
+	s.Bind(1, limit);
+	while (s.Step() == SQLITE_ROW) {
+		SyncSession x;
+		x.id = s.Int(0);
+		x.started = s.Real(1);
+		if (!s.IsNull(2)) {
+			x.ended = s.Real(2);
+		}
+		x.target = s.Text(3);
+		x.width = (int)s.Int(4);
+		x.height = (int)s.Int(5);
+		out.push_back(std::move(x));
+	}
+	return out;
+}
+
+void Store::MarkSessionSynced(const SyncSession &session, double at)
+{
+	/* not if it ended meanwhile: the end is sent too */
+	Stmt u(db, "UPDATE sessions SET synced_at=? WHERE id=? AND IFNULL(ended, -1)=?");
+	u.Bind(1, at).Bind(2, session.id).Bind(3, session.ended.value_or(-1.0)).Run();
+}
+
+SyncBacklog Store::Unsynced()
+{
+	SyncBacklog b;
+	if (!db) {
+		return b;
+	}
+	auto count = [this](const char *sql) {
+		Stmt s(db, sql);
+		return s.Step() == SQLITE_ROW ? s.Int(0) : 0LL;
+	};
+	b.lines = count("SELECT COUNT(*) FROM lines WHERE synced_at IS NULL");
+	b.frames = count("SELECT COUNT(*) FROM frames WHERE synced_at IS NULL");
+	b.sessions = count("SELECT COUNT(*) FROM sessions WHERE synced_at IS NULL");
+	return b;
+}
+
+void Store::ResetSync()
+{
+	Exec("BEGIN");
+	Exec("UPDATE lines SET synced_at=NULL");
+	Exec("UPDATE frames SET synced_at=NULL");
+	Exec("UPDATE sessions SET synced_at=NULL");
+	Exec("COMMIT");
+}
+
 std::vector<FrameInfo> Store::Frames(int limit, std::optional<long long> from, std::optional<long long> to)
 {
 	std::vector<FrameInfo> out;
@@ -1036,7 +1202,7 @@ int Store::Relabel()
 		}
 	}
 	Exec("BEGIN");
-	Stmt u(db, "UPDATE lines SET labels=? WHERE id=?");
+	Stmt u(db, "UPDATE lines SET labels=?, synced_at=NULL WHERE id=?");
 	for (const auto &[id, labels] : changes) {
 		u.Reset();
 		u.Bind(1, labels).Bind(2, id).Run();

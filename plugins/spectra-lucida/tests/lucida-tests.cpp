@@ -6,12 +6,15 @@
  */
 
 #include "../core/carnivore.hpp"
+#include "../core/cloud.hpp"
+#include "../core/prisma.hpp"
 #include "../core/profiles.hpp"
 #include "../core/recorder.hpp"
 #include "../core/store.hpp"
 #include "../core/tagger.hpp"
 #include "../core/video.hpp"
 
+#include <monocypher-ed25519.h>
 #include <sqlite3.h>
 
 #include <QDateTime>
@@ -20,6 +23,9 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QUrl>
 #include <QPainter>
 
 #include <cmath>
@@ -279,6 +285,121 @@ static QStringList EntryBodies(const std::vector<spectra::ChatEntry> &entries, c
 }
 
 static const QStringList kFeed{"Alice killed Bob", "Carl killed Dave with a pistol", "Erin killed Frank"};
+
+/* ---- Prisma fixtures ---- */
+
+/* RFC 8032 test 1 key as PKCS#8, as Prisma's keygen writes it */
+static const char *kTestPem = "-----BEGIN PRIVATE KEY-----\n"
+			      "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g\n"
+			      "-----END PRIVATE KEY-----\n";
+static const char *kTestPublic = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+
+static PrismaCredentials TestCredentials(const QString &url = "https://prisma.test")
+{
+	QJsonObject o{{"url", url + "/"},
+		      {"client_id", "c_desktop"},
+		      {"kid", "k1"},
+		      {"audience", "prisma:test"},
+		      {"private_key", QString::fromLatin1(kTestPem)}};
+	return *PrismaCredentials::FromJson(QJsonDocument(o).toJson());
+}
+
+/* An in-process stand-in for Prisma's Lucida plugin */
+struct FakePrisma {
+	int tokens = 0;
+	int failNext = 0; /* answer this many requests with a 503 */
+	int rejectToken = 0;
+	bool plain422 = false;                /* a 422 without FastAPI's per-line detail */
+	std::map<QString, QJsonObject> lines; /* by local_id */
+	std::map<QString, QJsonObject> sessions;
+	std::map<QString, QByteArray> images;
+	std::map<QString, QJsonObject> frames;
+	QStringList calls;
+
+	HttpResponse Json(int status, const QJsonObject &o = {})
+	{
+		return {status, QJsonDocument(o).toJson(QJsonDocument::Compact), {}};
+	}
+
+	HttpResponse operator()(const HttpRequest &r)
+	{
+		const QUrl url(r.url);
+		const QString path = url.path();
+		calls << QString::fromLatin1(r.method) + ' ' + path;
+		if (path == "/v1/token") {
+			tokens++;
+			return Json(200, {{"access_token", QStringLiteral("t%1").arg(tokens)}, {"expires_in", 900}});
+		}
+		if (url.host() == "storage.test") {
+			/* the presigned POST: the file part is last */
+			const QByteArray marker = "filename=\"";
+			const int at = r.body.indexOf(marker);
+			const QString name = QString::fromUtf8(r.body.mid(
+				at + marker.size(), r.body.indexOf('"', at + marker.size()) - at - marker.size()));
+			const int start = r.body.indexOf("\r\n\r\n", at) + 4;
+			const int end = r.body.lastIndexOf("\r\n--");
+			images[name] = r.body.mid(start, end - start);
+			return {204, {}, {}};
+		}
+		if (failNext > 0) {
+			failNext--;
+			return Json(503, {{"detail", "busy"}});
+		}
+		const QByteArray auth = [&] {
+			for (const auto &[k, v] : r.headers) {
+				if (k == "Authorization") {
+					return v;
+				}
+			}
+			return QByteArray();
+		}();
+		if (rejectToken > 0 && auth == "Bearer t1") {
+			rejectToken--;
+			return Json(401, {{"detail", "token revoked"}});
+		}
+		const QJsonObject body = QJsonDocument::fromJson(r.body).object();
+		const QString base = "/v1/lucida/sources/me";
+		if (path == base) {
+			return Json(200, {{"source", "c_desktop"}});
+		}
+		if (path == base + "/lines") {
+			const QJsonArray list = body.value("lines").toArray();
+			QJsonArray detail;
+			for (int i = 0; i < list.size(); i++) {
+				if (list[i].toObject().value("body").toString().contains("REFUSE")) {
+					detail.append(QJsonObject{{"loc", QJsonArray{"body", "lines", i, "body"}},
+								  {"msg", "refused"}});
+				}
+			}
+			if (!detail.isEmpty()) {
+				return plain422 ? Json(422, {{"detail", "bad line"}}) : Json(422, {{"detail", detail}});
+			}
+			for (const QJsonValue &v : list) {
+				lines[QString::number(v.toObject().value("local_id").toInteger())] = v.toObject();
+			}
+			return Json(200, {{"written", list.size()}});
+		}
+		if (path.startsWith(base + "/sessions/")) {
+			sessions[path.section('/', -1)] = body;
+			return Json(200);
+		}
+		if (path.startsWith(base + "/frames/") && path.endsWith("/uploaded")) {
+			const QString key = path.section('/', -2, -2);
+			return images.count(key) ? Json(200, {{"uploaded", true}}) : Json(409, {{"detail", "not yet"}});
+		}
+		if (path.startsWith(base + "/frames/")) {
+			const QString key = path.section('/', -1);
+			frames[key] = body;
+			return Json(200,
+				    {{"frame", QJsonObject{}},
+				     {"upload", QJsonObject{{"url", "https://storage.test/bucket"},
+							    {"fields", QJsonObject{{"key", key},
+										   {"Content-Type",
+										    body.value("content_type")}}}}}});
+		}
+		return Json(404, {{"detail", "no route"}});
+	}
+};
 
 /* Sightings of lines without positions, for tests that only need the links */
 static std::vector<Sighting> Seen(const std::vector<long long> &ids)
@@ -1184,6 +1305,202 @@ int main(int argc, char **argv)
 		auto lines = rig.store.Recent();
 		CHECK(lines.size() == 3 && lines[0].region.isEmpty());
 		CHECK(rig.store.RegionNames().isEmpty() && rig.store.ScreenRegions().empty());
+	});
+
+	/* ---- Spectra: backing up to Prisma ---- */
+
+	Test("prisma_signs_its_token_request", [] {
+		auto seed = Ed25519SeedFromPem(QString::fromLatin1(kTestPem));
+		CHECK(seed.has_value());
+		CHECK(!Ed25519SeedFromPem("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----"));
+		const std::array<uint8_t, 32> pub = Ed25519PublicKey(*seed);
+		CHECK(QByteArray(reinterpret_cast<const char *>(pub.data()), 32).toHex() == kTestPublic);
+
+		const PrismaCredentials c = TestCredentials();
+		CHECK(c.url == "https://prisma.test" && c.clientId == "c_desktop");
+		CHECK(!PrismaCredentials::FromJson("{\"url\": \"x\"}"));
+
+		const QByteArray jwt = BuildAssertion(c, 1789000000, 120, "nonce");
+		const QList<QByteArray> parts = jwt.split('.');
+		CHECK(parts.size() == 3);
+		if (parts.size() == 3) {
+			auto decode = [](const QByteArray &b) {
+				return QByteArray::fromBase64(b, QByteArray::Base64UrlEncoding |
+									 QByteArray::OmitTrailingEquals);
+			};
+			const QJsonObject header = QJsonDocument::fromJson(decode(parts[0])).object();
+			const QJsonObject claims = QJsonDocument::fromJson(decode(parts[1])).object();
+			CHECK(header.value("alg") == "EdDSA" && header.value("kid") == "k1");
+			CHECK(claims.value("iss") == "c_desktop" && claims.value("sub") == "c_desktop");
+			CHECK(claims.value("aud") == "prisma:test" && claims.value("jti") == "nonce");
+			CHECK(claims.value("iat").toInteger() == 1789000000 &&
+			      claims.value("exp").toInteger() == 1789000120);
+			const QByteArray input = parts[0] + '.' + parts[1];
+			const QByteArray sig = decode(parts[2]);
+			CHECK(sig.size() == 64 &&
+			      crypto_ed25519_check(reinterpret_cast<const uint8_t *>(sig.constData()), pub.data(),
+						   reinterpret_cast<const uint8_t *>(input.constData()),
+						   input.size()) == 0);
+		}
+		/* a fresh jti each time */
+		CHECK(BuildAssertion(c, 1789000000).split('.')[1] != BuildAssertion(c, 1789000000).split('.')[1]);
+
+		const QString dir = QFileInfo(NewDb()).absolutePath();
+		CHECK(FindCredentials({dir}).isEmpty());
+		QFile f(QDir(dir).filePath("prisma-c_desktop.json"));
+		CHECK(f.open(QIODevice::WriteOnly));
+		f.write("{}");
+		f.close();
+		CHECK(FindCredentials({QString(), dir}).endsWith("prisma-c_desktop.json"));
+	});
+
+	Test("prisma_client_keeps_and_renews_its_token", [] {
+		FakePrisma fake;
+		PrismaClient client(TestCredentials(), [&](const HttpRequest &r) { return fake(r); });
+		double now = 1789000000;
+		client.clock = [&] {
+			return now;
+		};
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok());
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok());
+		CHECK(fake.tokens == 1);
+		now += 900 - 30; /* inside the last minute: renewed */
+		CHECK(client.Put("/v1/lucida/sources/me", QJsonObject()).Ok() && fake.tokens == 2);
+		/* a revoked token is replaced once */
+		FakePrisma revoked;
+		revoked.rejectToken = 5;
+		PrismaClient again(TestCredentials(), [&](const HttpRequest &r) { return revoked(r); });
+		CHECK(again.Put("/v1/lucida/sources/me", QJsonObject()).Ok() && revoked.tokens == 2);
+		/* failures say why */
+		fake.failNext = 1;
+		const PrismaResult busy = client.Put("/v1/lucida/sources/me", QJsonObject());
+		CHECK(busy.status == 503 && busy.Describe() == "HTTP 503: busy");
+		PrismaClient down(TestCredentials(),
+				  [](const HttpRequest &) { return HttpResponse{0, {}, "unreachable"}; });
+		CHECK(down.Get("/v1/lucida/sources").Describe() == "unreachable");
+	});
+
+	Test("cloud_sync_backs_up_lines_sessions_and_screenshots_once", [] {
+		Store s(NewDb());
+		CHECK(s.Open());
+		Tagger t({{"bodycam-rp", {"bodycam"}}}, false);
+		s.labeler = [&](const QString &body) {
+			return t.Tags(body);
+		};
+		const long long session = s.StartSession("FiveM", 1920, 1080);
+		spectra::ChatEntry a = Entry("16:38:10", "Bob says: bodycam on", "say", 0.6f);
+		a.region = "chat";
+		a.rects = {{10, 20, 300, 40}};
+		auto ids = s.AddFrame({a, Entry("16:38:11", "Harry says: hi")}, 1789231300, "hud", session);
+		const QString shot = QDir(QFileInfo(s.Path()).absolutePath()).filePath("1789231300.jpg");
+		{
+			QFile f(shot);
+			CHECK(f.open(QIODevice::WriteOnly));
+			f.write("\xff\xd8 jpeg");
+		}
+		s.AttachFrame(Seen(ids), shot, 1920, 1080, 1789231300, session);
+		s.AttachFrame({}, QDir(QFileInfo(s.Path()).absolutePath()).filePath("gone.jpg"), 1920, 1080, 1789231301,
+			      session);
+
+		FakePrisma fake;
+		PrismaClient client(TestCredentials(), [&](const HttpRequest &r) { return fake(r); });
+		CloudSync sync(s, client);
+		SyncReport r = sync.Step();
+		CHECK(r.error.isEmpty() && r.lines == 2 && r.sessions == 1 && r.frames == 1 && r.refused == 1 &&
+		      !r.more);
+		/* screenshots go before the lines that point at them */
+		CHECK(fake.calls.indexOf(QRegularExpression(".*/frames/1789231300$")) <
+		      fake.calls.indexOf(QRegularExpression(".*/lines$")));
+		CHECK(fake.images["1789231300"] == "\xff\xd8 jpeg");
+		CHECK(fake.frames["1789231300"].value("session_key").toString().size() >= 10);
+		const QJsonObject line = fake.lines[QString::number(ids[0])];
+		CHECK(line.value("body") == "Bob says: bodycam on" && line.value("clock") == "16:38:10");
+		CHECK(line.value("frame_key") == "1789231300" && line.value("region") == "chat");
+		CHECK(line.value("labels").toArray() == QJsonArray{"bodycam-rp"});
+		CHECK(line.value("rect").toArray() == (QJsonArray{10, 20, 300, 40}));
+		CHECK(line.value("session_key") == fake.frames["1789231300"].value("session_key"));
+		CHECK(line.value("ts_source") == "hud" && !line.value("dedup_key").toString().isEmpty());
+
+		/* nothing changed: nothing sent */
+		fake.calls.clear();
+		r = sync.Step();
+		CHECK(r.lines == 0 && r.frames == 0 && r.sessions == 0 && fake.calls.isEmpty());
+		/* a better reading and an ended session are sent again; another sighting is not */
+		s.AddFrame({Entry("16:38:10", "Bob says: bodycam on!", "say", 0.99f),
+			    Entry("16:38:11", "Harry says: hi")},
+			   1789231305, "hud", session);
+		s.EndSession(session);
+		r = sync.Step();
+		CHECK(r.lines == 1 && r.sessions == 1);
+		CHECK(fake.sessions.begin()->second.contains("ended"));
+
+		/* a line Prisma refuses does not hold up the rest */
+		s.AddFrame({Entry("16:39:00", "REFUSE me"), Entry("16:39:01", "fine")}, 1789231400, "hud", session);
+		r = sync.Step();
+		CHECK(r.lines == 1 && r.refused == 1 && !r.more);
+		/* an outage stops the pass and leaves everything waiting */
+		s.AddFrame({Entry("16:40:00", "later")}, 1789231500, "hud", session);
+		fake.failNext = 1;
+		PrismaClient fresh(TestCredentials(), [&](const HttpRequest &req) { return fake(req); });
+		CloudSync afterRestart(s, fresh);
+		r = afterRestart.Step();
+		CHECK(!r.error.isEmpty() && r.lines == 0 && r.more);
+		r = afterRestart.Step();
+		CHECK(r.error.isEmpty() && r.lines == 1 && s.Unsynced().lines == 0);
+
+		/* another gateway or client: everything is sent again */
+		PrismaCredentials other = TestCredentials("https://elsewhere.test");
+		fake.plain422 = true; /* the one-at-a-time fallback */
+		PrismaClient moved(other, [&](const HttpRequest &req) { return fake(req); });
+		CloudSync movedSync(s, moved);
+		r = movedSync.Step(10, 10);
+		CHECK(r.lines == 4 && r.frames == 1 && r.refused == 2);
+	});
+
+	Test("cloud_sync_against_a_real_prisma", [] {
+		/* LUCIDA_PRISMA_CREDENTIALS=<a credentials file> (e.g. a local Prisma) */
+		const QString path = qEnvironmentVariable("LUCIDA_PRISMA_CREDENTIALS");
+		if (path.isEmpty()) {
+			printf("     (skipped: LUCIDA_PRISMA_CREDENTIALS is not set)\n");
+			return;
+		}
+		QString error;
+		auto creds = PrismaCredentials::FromFile(path, &error);
+		CHECK(creds.has_value());
+		if (!creds) {
+			printf("     %s\n", qPrintable(error));
+			return;
+		}
+		Store s(NewDb());
+		CHECK(s.Open());
+		const long long session = s.StartSession("FiveM", 1920, 1080);
+		const long long ts = NowSecs();
+		spectra::ChatEntry a = Entry("16:38:10", "Pier 400 heist tonight, bring bodycams");
+		a.region = "chat";
+		a.rects = {{10, 20, 300, 40}};
+		auto ids = s.AddFrame({a, Entry("16:38:11", "Harry says: helo wrld")}, ts, "hud", session);
+		const QString shot = QDir(QFileInfo(s.Path()).absolutePath()).filePath(QString::number(ts) + ".jpg");
+		QImage red(64, 32, QImage::Format_RGB888);
+		red.fill(Qt::red);
+		CHECK(red.save(shot, "JPG"));
+		s.AttachFrame(Seen(ids), shot, 64, 32, ts, session);
+
+		PrismaClient client(*creds);
+		CloudSync sync(s, client);
+		sync.machine = "lucida-tests";
+		SyncReport r = sync.Step();
+		printf("     sent %d line(s), %d screenshot(s), %d session(s); %s\n", r.lines, r.frames, r.sessions,
+		       r.error.isEmpty() ? "no error" : qPrintable(r.error));
+		CHECK(r.error.isEmpty() && r.lines == 2 && r.frames == 1 && r.sessions == 1 && r.refused == 0);
+
+		PrismaResult lines =
+			client.Get("/v1/lucida/sources/me/lines", QUrlQuery{{"from_ts", QString::number(ts)}});
+		CHECK(lines.Ok() && lines.body.toObject().value("lines").toArray().size() == 2);
+		PrismaResult frame = client.Get("/v1/lucida/sources/me/frames/" + QString::number(ts));
+		CHECK(frame.Ok() && frame.body.toObject().value("uploaded").toBool());
+		const HttpResponse image = client.Fetch(frame.body.toObject().value("url").toString());
+		QFile original(shot);
+		CHECK(original.open(QIODevice::ReadOnly) && image.status == 200 && image.body == original.readAll());
 	});
 
 	/* ---- Spectra: loop recording lookup ---- */

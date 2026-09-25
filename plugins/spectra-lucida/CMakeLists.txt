@@ -34,8 +34,12 @@ target_sources(
   PRIVATE
     core/carnivore.cpp
     core/carnivore.hpp
+    core/cloud.cpp
+    core/cloud.hpp
     core/profiles.cpp
     core/profiles.hpp
+    core/prisma.cpp
+    core/prisma.hpp
     core/recorder.cpp
     core/recorder.hpp
     core/store.cpp
@@ -46,7 +50,10 @@ target_sources(
     core/video.hpp
 )
 target_include_directories(lucida-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/core")
-target_link_libraries(lucida-core PUBLIC spectra-vision spectra-sqlite Qt::Core Qt::Gui)
+target_link_libraries(lucida-core PUBLIC spectra-vision spectra-sqlite spectra-monocypher Qt::Core Qt::Gui)
+if(OS_WINDOWS)
+  target_link_libraries(lucida-core PRIVATE winhttp)
+endif()
 target_compile_features(lucida-core PUBLIC cxx_std_20)
 set_target_properties(lucida-core PROPERTIES FOLDER spectra)
 

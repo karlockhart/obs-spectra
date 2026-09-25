@@ -1,5 +1,6 @@
 #include "lucida-viewer.hpp"
 #include "lucida-host.hpp"
+#include "prisma.hpp"
 
 #include <definitions.hpp>
 #include <learner.hpp>
@@ -26,6 +27,8 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QImageReader>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
@@ -56,8 +59,23 @@ constexpr double kPlayLeadIn = 5.0;   /* s of context before the line */
 constexpr double kClipPadding = 15.0; /* s either side of the line in the clip editor */
 constexpr int kRoleLine = Qt::UserRole;
 constexpr int kRoleFrame = Qt::UserRole + 1;
+constexpr int kRoleSortTs = Qt::UserRole + 2;
+constexpr int kRoleSeq = Qt::UserRole + 3;
+constexpr int kRoleCloud = Qt::UserRole + 4; /* {source, line_id} of another install's line */
+constexpr int kCloudSearchLimit = 100;
+constexpr int kCloudTimelineLimit = 200;
 
-enum Column { kTime, kClock, kChannel, kRegion, kTags, kText, kVideo, kColumns };
+enum Column { kTime, kClock, kChannel, kRegion, kTags, kText, kVideo, kSource, kColumns };
+
+/* Rows sort by when the line was said, local and cloud alike */
+class LineItem : public QTreeWidgetItem {
+public:
+	bool operator<(const QTreeWidgetItem &other) const override
+	{
+		const long long a = data(0, kRoleSortTs).toLongLong(), b = other.data(0, kRoleSortTs).toLongLong();
+		return a != b ? a < b : data(0, kRoleSeq).toInt() < other.data(0, kRoleSeq).toInt();
+	}
+};
 
 QString T(const char *key)
 {
@@ -228,6 +246,9 @@ QWidget *Viewer::BuildLogTab()
 	period = new QComboBox();
 	FillPeriods(period);
 	withShot = new QCheckBox(T("Lucida.Viewer.WithShot"));
+	cloud = new QCheckBox(T("Lucida.Viewer.Cloud"));
+	cloud->setToolTip(T("Lucida.Viewer.Cloud.Tip"));
+	cloud->setVisible(source.cloud != nullptr);
 	QPushButton *find = new QPushButton(T("Lucida.Viewer.Find"));
 	find->setDefault(true);
 
@@ -242,6 +263,7 @@ QWidget *Viewer::BuildLogTab()
 		connect(combo, &QComboBox::currentIndexChanged, this, &Viewer::Reload);
 	}
 	connect(withShot, &QCheckBox::toggled, this, &Viewer::Reload);
+	connect(cloud, &QCheckBox::toggled, this, &Viewer::Reload);
 
 	QHBoxLayout *filters = new QHBoxLayout();
 	filters->addWidget(search, 3);
@@ -254,6 +276,7 @@ QWidget *Viewer::BuildLogTab()
 	filters->addWidget(period);
 	filters->addWidget(withShot);
 	filters->addWidget(find);
+	filters->addWidget(cloud);
 
 	frameFilter = new QLabel();
 	clearFrameFilter = new QPushButton(T("Lucida.Viewer.ShowAll"));
@@ -274,13 +297,14 @@ QWidget *Viewer::BuildLogTab()
 	results->setHeaderLabels({T("Lucida.Viewer.Col.Time"), T("Lucida.Viewer.Col.Clock"),
 				  T("Lucida.Viewer.Col.Channel"), T("Lucida.Viewer.Col.Region"),
 				  T("Lucida.Viewer.Col.Tags"), T("Lucida.Viewer.Col.Text"),
-				  T("Lucida.Viewer.Col.Video")});
+				  T("Lucida.Viewer.Col.Video"), T("Lucida.Viewer.Col.Source")});
+	results->setColumnHidden(kSource, true);
 	results->setRootIsDecorated(false);
 	results->setUniformRowHeights(true);
 	results->setAlternatingRowColors(true);
 	results->setSelectionMode(QAbstractItemView::SingleSelection);
 	results->header()->setStretchLastSection(false);
-	for (int c : {kTime, kClock, kChannel, kRegion, kTags, kVideo}) {
+	for (int c : {kTime, kClock, kChannel, kRegion, kTags, kVideo, kSource}) {
 		results->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
 	}
 	results->header()->setSectionResizeMode(kText, QHeaderView::Stretch);
@@ -437,12 +461,19 @@ void Viewer::Reload()
 	frameFilter->setVisible(onlyFrame.has_value());
 	clearFrameFilter->setVisible(onlyFrame.has_value());
 
+	const bool withCloud = cloud->isChecked() && !onlyFrame;
+	results->setColumnHidden(kSource, !withCloud);
+	cloudGeneration++; /* results still coming for the last query are dropped */
+
 	loading = true;
 	results->clear();
 	QList<QTreeWidgetItem *> rows;
 	for (const LogLine &l : lines) {
-		QTreeWidgetItem *item = new QTreeWidgetItem();
+		QTreeWidgetItem *item = new LineItem();
 		item->setData(kTime, kRoleLine, l.id);
+		item->setData(kTime, kRoleSortTs, l.sortTs);
+		item->setData(kTime, kRoleSeq, l.seq);
+		item->setText(kSource, T("Lucida.Viewer.ThisPc"));
 		item->setText(kTime,
 			      QDateTime::fromSecsSinceEpoch(l.sortTs).toString(QStringLiteral("MM-dd HH:mm:ss")));
 		item->setText(kClock, l.clock.value_or(QStringLiteral("--:--:--")));
@@ -463,6 +494,9 @@ void Viewer::Reload()
 	results->addTopLevelItems(rows);
 	loading = false;
 
+	if (withCloud) {
+		SearchCloud(CurrentQuery());
+	}
 	if (lines.empty()) {
 		if (onlyFrame) {
 			LoadFrame(*onlyFrame);
@@ -527,6 +561,10 @@ QTreeWidgetItem *Viewer::ItemFor(long long lineId) const
 void Viewer::CurrentChanged()
 {
 	QTreeWidgetItem *item = results->currentItem();
+	if (item && item->data(kTime, kRoleCloud).isValid()) {
+		ShowCloudLine(item);
+		return;
+	}
 	std::optional<LogLine> line = item && store() ? store()->Line(item->data(kTime, kRoleLine).toLongLong())
 						      : std::nullopt;
 	ShowVideo(line);
@@ -543,6 +581,212 @@ void Viewer::CurrentChanged()
 	for (auto &[id, entry] : items) {
 		entry->SetSelected(id == line->id);
 	}
+}
+
+/* --- the cloud ------------------------------------------------------------------ */
+
+void Viewer::SearchCloud(const Query &q)
+{
+	std::shared_ptr<PrismaClient> client = source.cloud ? source.cloud() : nullptr;
+	if (!client) {
+		status->setText(T("Lucida.Viewer.CloudNoCredentials"));
+		return;
+	}
+	const int generation = cloudGeneration;
+	status->setText(T("Lucida.Viewer.CloudSearching"));
+	QPointer<Viewer> self(this);
+	std::thread([self, client, q, generation] {
+		std::map<QString, QString> names;
+		PrismaResult sources = client->Get(QStringLiteral("/v1/lucida/sources"));
+		for (const QJsonValue &v : sources.body.toObject().value("sources").toArray()) {
+			names[v.toObject().value("source").toString()] = v.toObject().value("name").toString();
+		}
+		QUrlQuery params;
+		if (q.from) {
+			params.addQueryItem("from_ts", QString::number(*q.from));
+		}
+		if (q.to) {
+			params.addQueryItem("to_ts", QString::number(*q.to));
+		}
+		PrismaResult r;
+		QJsonArray lines;
+		if (!q.text.isEmpty()) {
+			params.addQueryItem("q", q.text);
+			params.addQueryItem("order", "newest");
+			params.addQueryItem("limit", QString::number(kCloudSearchLimit));
+			if (!q.label.isEmpty()) {
+				params.addQueryItem("label", q.label);
+			}
+			if (!q.region.isEmpty()) {
+				params.addQueryItem("region", q.region);
+			}
+			QUrlQuery words = params;
+			words.addQueryItem("mode", "words");
+			r = client->Get(QStringLiteral("/v1/lucida/search"), words);
+			lines = r.body.toObject().value("results").toArray();
+			/* OCR mangles words: fall back to matching part of one */
+			if (r.Ok() && lines.isEmpty() && q.text.size() >= 3) {
+				QUrlQuery part = params;
+				part.addQueryItem("mode", "substring");
+				r = client->Get(QStringLiteral("/v1/lucida/search"), part);
+				lines = r.body.toObject().value("results").toArray();
+			}
+		} else {
+			params.addQueryItem("newest_first", "true");
+			params.addQueryItem("limit", QString::number(kCloudTimelineLimit));
+			r = client->Get(QStringLiteral("/v1/lucida/lines"), params);
+			lines = r.body.toObject().value("lines").toArray();
+		}
+		const QString error = r.Ok() ? QString() : r.Describe();
+		const QString own = client->Credentials().clientId;
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, generation, q, lines, error, names, own] {
+				if (!self) {
+					return;
+				}
+				for (const auto &[id, name] : names) {
+					self->sourceNames[id] = name;
+				}
+				/* this install's lines are already listed from the local log */
+				QJsonArray others;
+				for (const QJsonValue &v : lines) {
+					if (v.toObject().value("source").toString() != own) {
+						others.append(v);
+					}
+				}
+				self->AddCloudLines(generation, q, others, error);
+			},
+			Qt::QueuedConnection);
+	}).detach();
+}
+
+void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lines, const QString &error)
+{
+	if (generation != cloudGeneration) {
+		return;
+	}
+	QList<QTreeWidgetItem *> rows;
+	for (const QJsonValue &v : lines) {
+		const QJsonObject l = v.toObject();
+		QStringList labels;
+		for (const QJsonValue &label : l.value("labels").toArray()) {
+			labels << label.toString();
+		}
+		const QString channel = l.value("channel").toString();
+		const QString region = l.value("region").toString();
+		/* filters Prisma does not apply itself */
+		if ((!q.channel.isEmpty() && channel != q.channel) ||
+		    (!q.label.isEmpty() && !labels.contains(q.label)) || (!q.region.isEmpty() && region != q.region)) {
+			continue;
+		}
+		const QString src = l.value("source").toString();
+		const long long sortTs = l.value("sort_ts").toInteger();
+		QTreeWidgetItem *item = new LineItem();
+		item->setData(kTime, kRoleSortTs, sortTs);
+		item->setData(kTime, kRoleSeq, l.value("seq").toInt());
+		item->setData(kTime, kRoleCloud,
+			      QVariantMap{{"source", src}, {"line_id", l.value("line_id").toString()}});
+		item->setText(kTime, QDateTime::fromSecsSinceEpoch(sortTs).toString(QStringLiteral("MM-dd HH:mm:ss")));
+		item->setText(kClock, l.value("clock").toString(QStringLiteral("--:--:--")));
+		item->setText(kChannel, channel);
+		item->setText(kRegion, region);
+		item->setText(kTags, labels.join(QStringLiteral(", ")));
+		item->setText(kText, l.value("body").toString());
+		item->setToolTip(kText, l.value("snippet").toString(l.value("body").toString()));
+		const auto name = sourceNames.find(src);
+		item->setText(kSource, name != sourceNames.end() && !name->second.isEmpty() ? name->second : src);
+		item->setToolTip(kSource, src);
+		for (int c = 0; c < kColumns; c++) {
+			item->setForeground(c, results->palette().color(QPalette::Link));
+		}
+		rows << item;
+	}
+	const int local = results->topLevelItemCount();
+	loading = true;
+	QTreeWidgetItem *keep = results->currentItem();
+	results->addTopLevelItems(rows);
+	results->sortItems(kTime, Qt::AscendingOrder);
+	loading = false;
+	if (!keep && results->topLevelItemCount()) {
+		results->setCurrentItem(results->topLevelItem(results->topLevelItemCount() - 1));
+	}
+	if (QTreeWidgetItem *current = results->currentItem()) {
+		results->scrollToItem(current);
+	}
+	status->setText(error.isEmpty() ? T("Lucida.Viewer.CloudFound").arg(local + rows.size()).arg(rows.size())
+					: T("Lucida.Viewer.CloudFailed").arg(error));
+}
+
+void Viewer::ShowCloudLine(QTreeWidgetItem *item)
+{
+	std::shared_ptr<PrismaClient> client = source.cloud ? source.cloud() : nullptr;
+	const QVariantMap id = item->data(kTime, kRoleCloud).toMap();
+	ShowVideo(std::nullopt);
+	ClearImage(T("Lucida.Viewer.CloudLoading"));
+	if (!client) {
+		return;
+	}
+	const QString src = id.value("source").toString();
+	const QString lineId = id.value("line_id").toString();
+	const QString caption = item->text(kSource) + QStringLiteral("  -  ") + item->text(kTime);
+	const int generation = ++cloudShotGeneration;
+	QPointer<Viewer> self(this);
+	std::thread([self, client, src, lineId, caption, generation] {
+		const QString base = QStringLiteral("/v1/lucida/sources/%1").arg(src);
+		QImage shot;
+		std::optional<spectra::Rect> rect;
+		QString message;
+		PrismaResult line = client->Get(base + "/lines/" + lineId);
+		const QString frameKey = line.body.toObject().value("frame_key").toString();
+		const QJsonArray r = line.body.toObject().value("rect").toArray();
+		if (r.size() == 4) {
+			rect = spectra::Rect{r[0].toInt(), r[1].toInt(), r[2].toInt(), r[3].toInt()};
+		}
+		if (!line.Ok()) {
+			message = T("Lucida.Viewer.CloudFailed").arg(line.Describe());
+		} else if (frameKey.isEmpty()) {
+			message = T("Lucida.Viewer.CloudNoShot");
+		} else {
+			PrismaResult frame = client->Get(base + "/frames/" + frameKey);
+			const QString url = frame.body.toObject().value("url").toString();
+			if (!frame.Ok() || url.isEmpty()) {
+				message = frame.Ok() ? T("Lucida.Viewer.CloudNoShot")
+						     : T("Lucida.Viewer.CloudFailed").arg(frame.Describe());
+			} else {
+				const HttpResponse image = client->Fetch(url);
+				if (image.status != 200 || !shot.loadFromData(image.body)) {
+					message = T("Lucida.Viewer.CloudFailed")
+							  .arg(image.error.isEmpty()
+								       ? QStringLiteral("HTTP %1").arg(image.status)
+								       : image.error);
+				}
+			}
+		}
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, generation, shot, rect, message, caption] {
+				if (!self || generation != self->cloudShotGeneration) {
+					return;
+				}
+				if (shot.isNull()) {
+					self->ClearImage(message);
+					return;
+				}
+				self->image->SetImage(shot);
+				if (rect) {
+					QPen pen(QColor(80, 140, 255), 2);
+					pen.setCosmetic(true);
+					auto *box = new QGraphicsRectItem(rect->x0, rect->y0, rect->x1 - rect->x0,
+									  rect->y1 - rect->y0);
+					box->setPen(pen);
+					box->setAcceptedMouseButtons(Qt::NoButton);
+					self->image->scene()->addItem(box);
+				}
+				self->status->setText(T("Lucida.Viewer.CloudShot").arg(caption));
+			},
+			Qt::QueuedConnection);
+	}).detach();
 }
 
 void Viewer::ShowVideo(const std::optional<LogLine> &line)

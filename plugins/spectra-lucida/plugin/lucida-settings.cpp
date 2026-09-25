@@ -3,6 +3,7 @@
 
 #include <obs-module.h>
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -12,15 +13,19 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
+
+#include <thread>
 
 namespace lucida {
 
@@ -89,6 +94,7 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	tabs->addTab(TagsPage(s), T("Lucida.Settings.Tags"));
 	tabs->addTab(SamplingPage(s), T("Lucida.Settings.Sampling"));
 	tabs->addTab(ScreenshotsPage(s), T("Lucida.Settings.Screenshots"));
+	tabs->addTab(CloudPage(s), T("Lucida.Settings.Cloud"));
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -236,6 +242,99 @@ QWidget *SettingsDialog::ScreenshotsPage(const Settings &s)
 	form->addRow(T("Lucida.Settings.Quality"), cropQuality);
 	form->addRow(T("Lucida.Settings.Retention"), cropRetention);
 	return Page(form);
+}
+
+QWidget *SettingsDialog::CloudPage(const Settings &s)
+{
+	cloudEnabled = Check("Lucida.Settings.CloudEnabled", s.cloudEnabled);
+	cloudFrames = Check("Lucida.Settings.CloudFrames", s.cloudFrames);
+	cloudFrames->setToolTip(T("Lucida.Settings.CloudFrames.Tip"));
+	cloudCredentials = new QLineEdit(QDir::toNativeSeparators(s.cloudCredentials));
+	cloudCredentials->setPlaceholderText(T("Lucida.Settings.CloudCredentials.Auto"));
+	cloudFound = new QLabel();
+	cloudFound->setWordWrap(true);
+	cloudTest = new QLabel();
+	cloudTest->setWordWrap(true);
+	cloudTest->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+	QWidget *row = new QWidget();
+	QHBoxLayout *layout = new QHBoxLayout(row);
+	layout->setContentsMargins(0, 0, 0, 0);
+	layout->addWidget(cloudCredentials, 1);
+	QPushButton *browse = new QPushButton(T("Lucida.Settings.Browse"));
+	browse->setAutoDefault(false);
+	connect(browse, &QPushButton::clicked, this, [this] {
+		const QString path = QFileDialog::getOpenFileName(this, T("Lucida.Settings.CloudCredentials"),
+								  cloudCredentials->text(),
+								  QStringLiteral("Prisma (*.json)"));
+		if (!path.isEmpty()) {
+			cloudCredentials->setText(QDir::toNativeSeparators(path));
+		}
+	});
+	layout->addWidget(browse);
+	connect(cloudCredentials, &QLineEdit::textChanged, this, &SettingsDialog::UpdateCloudFound);
+
+	QPushButton *test = new QPushButton(T("Lucida.Settings.CloudTest"));
+	test->setAutoDefault(false);
+	connect(test, &QPushButton::clicked, this, &SettingsDialog::TestCloud);
+
+	QFormLayout *form = new QFormLayout();
+	form->addRow(cloudEnabled);
+	form->addRow(Note(T("Lucida.Settings.Cloud.Note")));
+	form->addRow(T("Lucida.Settings.CloudCredentials"), row);
+	form->addRow(QString(), cloudFound);
+	form->addRow(cloudFrames);
+	form->addRow(test, cloudTest);
+	form->addRow(Note(T("Lucida.Settings.CloudView.Note")));
+	UpdateCloudFound();
+	return Page(form);
+}
+
+void SettingsDialog::UpdateCloudFound()
+{
+	if (!cloudCredentials->text().trimmed().isEmpty()) {
+		cloudFound->clear();
+		return;
+	}
+	const QString found = Collect().CloudCredentialsFile();
+	cloudFound->setText(found.isEmpty()
+				    ? T("Lucida.Settings.CloudCredentials.None")
+				    : T("Lucida.Settings.CloudCredentials.Found").arg(QDir::toNativeSeparators(found)));
+}
+
+void SettingsDialog::TestCloud()
+{
+	const QString path = Collect().CloudCredentialsFile();
+	if (path.isEmpty()) {
+		cloudTest->setText(T("Lucida.Settings.CloudCredentials.None"));
+		return;
+	}
+	cloudTest->setText(T("Lucida.Settings.CloudTesting"));
+	QPointer<SettingsDialog> self(this);
+	std::thread([self, path] {
+		QString text;
+		QString error;
+		if (std::optional<PrismaCredentials> creds = PrismaCredentials::FromFile(path, &error)) {
+			PrismaClient client(*creds);
+			/* writes (lucida:write) and reads (lucida:read) this install's source */
+			PrismaResult put = client.Put(QStringLiteral("/v1/lucida/sources/me"), QJsonObject());
+			PrismaResult get = put.Ok() ? client.Get(QStringLiteral("/v1/lucida/sources/me")) : put;
+			text = get.Ok() ? T("Lucida.Settings.CloudConnected")
+						  .arg(creds->url,
+						       get.body.toObject().value("name").toString(creds->clientId))
+					: T("Lucida.Settings.CloudFailed").arg(get.Describe());
+		} else {
+			text = T("Lucida.Settings.CloudFailed").arg(error);
+		}
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, text] {
+				if (self) {
+					self->cloudTest->setText(text);
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
 }
 
 QWidget *SettingsDialog::TagsPage(const Settings &s)
@@ -410,6 +509,11 @@ Settings SettingsDialog::Collect() const
 
 	s.tagRules = Rules();
 	s.tolerateTypos = tolerateTypos->isChecked();
+
+	s.cloudEnabled = cloudEnabled->isChecked();
+	const QString creds = cloudCredentials->text().trimmed();
+	s.cloudCredentials = creds.isEmpty() ? QString() : QDir::cleanPath(QDir::fromNativeSeparators(creds));
+	s.cloudFrames = cloudFrames->isChecked();
 	return s;
 }
 

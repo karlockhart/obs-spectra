@@ -59,6 +59,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 {
 	status = new QLabel(controller->Status());
 	status->setWordWrap(true);
+	cloud = new QLabel(controller->CloudStatus());
+	cloud->setWordWrap(true);
+	cloud->setVisible(!cloud->text().isEmpty());
 
 	search = new QLineEdit();
 	search->setPlaceholderText(obs_module_text("Lucida.Dock.Search"));
@@ -94,6 +97,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(status);
+	layout->addWidget(cloud);
 	layout->addLayout(row);
 	layout->addWidget(list, 1);
 
@@ -116,6 +120,10 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 		carnivore->setChecked(on);
 	});
 	connect(controller, &Controller::statusChanged, status, &QLabel::setText);
+	connect(controller, &Controller::cloudStatusChanged, this, [this](const QString &text) {
+		cloud->setText(text);
+		cloud->setVisible(!text.isEmpty());
+	});
 	connect(controller, &Controller::ticked, this, [this](int added, double, bool) {
 		if (added > 0 && search->text().isEmpty()) {
 			Reload();
@@ -133,7 +141,7 @@ void Dock::OpenViewer(long long lineId)
 				    [c](const LogLine &line) {
 					    return c ? c->VideoFor(line) : std::optional<VideoSpot>();
 				    },
-				    EditClip};
+				    EditClip, [c]() { return c ? c->CloudClient() : nullptr; }};
 		viewer = new Viewer(std::move(source), window());
 		viewer->setWindowFlag(Qt::Window);
 	}
