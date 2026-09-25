@@ -310,6 +310,7 @@ struct FakePrisma {
 	int failNext = 0; /* answer this many requests with a 503 */
 	int rejectToken = 0;
 	bool plain422 = false;                /* a 422 without FastAPI's per-line detail */
+	int lostRecords = 0;                  /* /uploaded answers 404 this many times */
 	std::map<QString, QJsonObject> lines; /* by local_id */
 	std::map<QString, QJsonObject> sessions;
 	std::map<QString, QByteArray> images;
@@ -385,6 +386,10 @@ struct FakePrisma {
 		}
 		if (path.startsWith(base + "/frames/") && path.endsWith("/uploaded")) {
 			const QString key = path.section('/', -2, -2);
+			if (lostRecords > 0) {
+				lostRecords--;
+				return Json(404, {{"detail", "no such frame; PUT it first"}});
+			}
 			return images.count(key) ? Json(200, {{"uploaded", true}}) : Json(409, {{"detail", "not yet"}});
 		}
 		if (path.startsWith(base + "/frames/")) {
@@ -1375,6 +1380,19 @@ int main(int argc, char **argv)
 		fake.failNext = 1;
 		const PrismaResult busy = client.Put("/v1/lucida/sources/me", QJsonObject());
 		CHECK(busy.status == 503 && busy.Describe() == "HTTP 503: busy");
+		/* the other error shapes: a 422's issues, OAuth's and API Gateway's */
+		auto describe = [](int status, const char *json) {
+			PrismaResult r;
+			r.status = status;
+			r.body = QJsonDocument::fromJson(json).object();
+			return r.Describe();
+		};
+		CHECK(describe(422, R"({"detail": [{"loc": ["body", "lines", 7, "tags"], "msg": "too many"}]})") ==
+		      "HTTP 422: too many (body.lines.7.tags)");
+		CHECK(describe(401, R"({"error": "invalid_client", "error_description": "unknown kid"})") ==
+		      "HTTP 401: unknown kid");
+		CHECK(describe(429, R"({"message": "Too Many Requests"})") == "HTTP 429: Too Many Requests");
+		CHECK(describe(500, "{}") == "HTTP 500");
 		PrismaClient down(TestCredentials(),
 				  [](const HttpRequest &) { return HttpResponse{0, {}, "unreachable"}; });
 		CHECK(down.Get("/v1/lucida/sources").Describe() == "unreachable");
@@ -1405,8 +1423,12 @@ int main(int argc, char **argv)
 		FakePrisma fake;
 		PrismaClient client(TestCredentials(), [&](const HttpRequest &r) { return fake(r); });
 		CloudSync sync(s, client);
+		/* a frame record that vanished before the upload was confirmed is sent again */
+		fake.lostRecords = 1;
 		SyncReport r = sync.Step();
-		CHECK(r.error.isEmpty() && r.lines == 2 && r.sessions == 1 && r.frames == 1 && r.refused == 1 &&
+		CHECK(!r.error.isEmpty() && r.sessions == 1 && r.frames == 0 && r.refused == 0 && r.more);
+		r = sync.Step();
+		CHECK(r.error.isEmpty() && r.lines == 2 && r.sessions == 0 && r.frames == 1 && r.refused == 1 &&
 		      !r.more);
 		/* screenshots go before the lines that point at them */
 		CHECK(fake.calls.indexOf(QRegularExpression(".*/frames/1789231300$")) <

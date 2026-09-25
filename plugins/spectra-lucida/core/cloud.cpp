@@ -219,8 +219,9 @@ bool CloudSync::SendFrames(SyncReport &report, int maxFrames)
 		if (r.Ok()) {
 			store.MarkFrameSynced(f.frame.id, Now());
 			report.frames++;
-		} else if (Transient(r) || r.status == 409) {
-			/* 409: storage has not got the image yet */
+		} else if (Transient(r) || r.status == 409 || r.status == 404) {
+			/* 409: storage has not got the image yet; 404 (from /uploaded): the
+			 * record went away, so the next pass PUTs it and uploads again */
 			report.error = r.Describe();
 			return false;
 		} else {

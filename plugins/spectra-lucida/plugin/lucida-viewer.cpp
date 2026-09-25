@@ -611,7 +611,7 @@ void Viewer::SearchCloud(const Query &q)
 		PrismaResult r;
 		QJsonArray lines;
 		if (!q.text.isEmpty()) {
-			params.addQueryItem("q", q.text);
+			params.addQueryItem("q", q.text.left(256)); /* Prisma's limit */
 			params.addQueryItem("order", "newest");
 			params.addQueryItem("limit", QString::number(kCloudSearchLimit));
 			if (!q.label.isEmpty()) {
@@ -684,7 +684,9 @@ void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lin
 		const long long sortTs = l.value("sort_ts").toInteger();
 		QTreeWidgetItem *item = new LineItem();
 		item->setData(kTime, kRoleSortTs, sortTs);
-		item->setData(kTime, kRoleSeq, l.value("seq").toInt());
+		/* search hits have no seq, but their line_id carries it: <sort_ts>-<seq>-<hash> */
+		item->setData(kTime, kRoleSeq,
+			      l.value("seq").toInt(l.value("line_id").toString().section('-', 1, 1).toInt()));
 		item->setData(kTime, kRoleCloud,
 			      QVariantMap{{"source", src}, {"line_id", l.value("line_id").toString()}});
 		item->setText(kTime, QDateTime::fromSecsSinceEpoch(sortTs).toString(QStringLiteral("MM-dd HH:mm:ss")));
