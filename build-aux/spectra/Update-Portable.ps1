@@ -33,6 +33,10 @@ Don't ask before replacing the files.
 .PARAMETER Force
 Update even when the folder already has that version.
 
+.PARAMETER Shortcuts
+Only (re)make the OBS-Spectra and Lucida Viewer shortcuts in the folder, e.g. after moving it.
+Updating makes them too.
+
 .EXAMPLE
 Update-Portable.ps1 -Channel rc -Target 'C:\bin\OBS-Spectra'
 .EXAMPLE
@@ -44,7 +48,8 @@ param(
 	[string]$Channel,
 	[string]$Zip,
 	[switch]$Yes,
-	[switch]$Force
+	[switch]$Force,
+	[switch]$Shortcuts
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,6 +99,30 @@ function Get-Version([string]$dir) {
 	$product = (Get-Item -LiteralPath (Join-Path $dir $Exe)).VersionInfo.ProductVersion
 	if ($product) { return $product }
 	return 'unknown version'
+}
+
+# Shortcuts in the folder's root to its programs. A shortcut holds an absolute path, so they're
+# made here, where the folder's real location is known, and remade after every update.
+function Set-Shortcuts([string]$dir) {
+	$shell = New-Object -ComObject WScript.Shell
+	$made = @()
+	foreach ($s in @(@{ Name = 'OBS-Spectra'; Exe = 'bin\64bit\obs-spectra.exe'; What = 'Start OBS-Spectra' },
+			@{ Name = 'Lucida Viewer'; Exe = 'bin\64bit\lucida-viewer.exe'; What = "Browse Lucida's chat log" })) {
+		$exe = Join-Path $dir $s.Exe
+		$path = Join-Path $dir "$($s.Name).lnk"
+		if (-not (Test-Path -LiteralPath $exe)) {
+			Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+			continue
+		}
+		$link = $shell.CreateShortcut($path)
+		$link.TargetPath = $exe
+		$link.WorkingDirectory = Split-Path $exe -Parent
+		$link.IconLocation = "$exe,0"
+		$link.Description = $s.What
+		$link.Save()
+		$made += $s.Name
+	}
+	return $made
 }
 
 function Get-Running([string]$dir) {
@@ -221,6 +250,12 @@ if (-not (Test-Install $Target)) {
 	throw "$Target is not an OBS-Spectra folder (no $Exe). Nothing changed."
 }
 
+if ($Shortcuts) {
+	$made = Set-Shortcuts $Target
+	Write-Host "Shortcuts in $Target`: $($made -join ', ')"
+	exit 0
+}
+
 $running = Get-Running $Target
 if ($running.Count) {
 	$names = ($running | ForEach-Object { "$($_.ProcessName) ($($_.Id))" }) -join ', '
@@ -339,12 +374,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $Target 'Update-Portable.ps1'))) {
 	[IO.File]::WriteAllText((Join-Path $Target 'Update-Portable.cmd'), $SelfCmd, [Text.Encoding]::ASCII)
 }
 [IO.File]::WriteAllText((Join-Path $Target $VersionFile), "$newVersion`r`n", [Text.Encoding]::ASCII)
+$made = Set-Shortcuts $Target
 if ($cleanup -and (Test-Path -LiteralPath $cleanup)) {
 	Remove-Item -LiteralPath $cleanup -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ''
 Write-Host "Updated to $newVersion. The folder keeps its name."
+if ($made) { Write-Host "Shortcuts in the folder: $($made -join ', ')." }
 $exePath = Join-Path $Target $Exe
 if (-not $Yes -and (Confirm 'Start OBS-Spectra now?')) {
 	Start-Process -FilePath $exePath -WorkingDirectory (Split-Path $exePath -Parent)
