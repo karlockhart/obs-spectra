@@ -19,7 +19,9 @@ Get the latest build from [Releases](https://github.com/karlockhart/obs-spectra/
 
 Unzip either one and run `bin\64bit\obs-spectra.exe`. OBS-Spectra checks this repository's releases and tells you when a new version is available. It does not install updates by itself.
 
-To update a portable copy, unzip the new portable zip anywhere and run `Update-Portable.cmd` from it. It finds the portable OBS-Spectra you run (close it first), keeps that folder's `config` (profiles, scenes, plugin settings and logs), and replaces everything else with the new version. Lucida's chat log, screenshots and loop recordings are kept outside the folder, so they're untouched.
+To update a portable copy, close OBS-Spectra and run `Update-Portable.cmd` in its folder. It asks whether you want the latest release or the latest release candidate, downloads that portable zip from this repository's releases, checks it against its `.sha256`, and puts it in place. The folder keeps its `config` (profiles, scenes, plugin settings and logs) and everything else is replaced. Lucida's chat log, screenshots and loop recordings are kept outside the folder, so they're untouched.
+
+The updater also works from a newly unzipped portable zip: run `Update-Portable.cmd` from there to move that version into your existing folder. From PowerShell, `Update-Portable.ps1 -Channel release|rc`, `-Zip <file>` and `-Target <folder>` do the same without questions (`-Yes`). Portable copies from before the updater existed can use it too: download `build-aux/spectra/Update-Portable.cmd` and `.ps1` into the folder.
 
 Versions are named `<OBS version>-spectra.<n>`. For example, `32.2.2-spectra.1` is the first OBS-Spectra release based on OBS Studio 32.2.2. Release candidates end in `-rc.<n>` and are published as pre-releases.
 
