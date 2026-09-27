@@ -38,6 +38,8 @@ Versions are named `<OBS version>-spectra.<n>`. For example, `32.2.2-spectra.1` 
 
 **Lucida.** Logs in-game chat in the background. It reads the chat from the game capture with OCR and saves each line once to a searchable log. You browse the log in a Chat Log dock, and lines can be tagged by rules and linked to the moment in the loop recording where they appeared. `lucida-viewer.exe` opens the log without starting OBS-Spectra.
 
+**Sharing on the local network.** Turn it on in Lucida Settings > Network. The Chat Log dock then lists the other OBS-Spectra PCs on the same network and what they're playing. You pair with one once: both screens show a six-digit code, and each person confirms that the codes match. After that, each of you can search the other's chat log with its screenshots (the Network checkbox in the log browser) and download clips from the other's clips folder, for as long as OBS-Spectra is running there. Nothing is copied in the background, and unpaired PCs only see the PC's name. Connections are encrypted end to end (X25519 and ChaCha20-Poly1305). OBS-Spectra uses UDP port 47650 to find other PCs and TCP port 47651 (or a free one) for everything else, so allow it through Windows Firewall on private networks.
+
 **Obscura.** Censors chat screenshots:
 - Take a screenshot or snip a region with a hotkey (`Ctrl+F12` / `Ctrl+Shift+F12`).
 - Obscura suggests which chat lines to hide and learns from the lines you choose.
@@ -93,7 +95,7 @@ Their license files come with every build, in `data/spectra-vision/licenses/`. T
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) ONNX models by RapidAI: PP-OCRv6 small detection and recognition models | 3.9.2 | Apache-2.0 | Reading text on screen. The models are [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s (PaddlePaddle, Apache-2.0), converted to ONNX by RapidAI and downloaded from [ModelScope](https://www.modelscope.cn/models/RapidAI/RapidOCR). |
 | [SQLite](https://www.sqlite.org) | 3.53.4 | Public domain | Lucida's chat log, with full-text search (FTS5). |
-| [Monocypher](https://monocypher.org) by Loup Vaillant and contributors | 4.0.2 | CC0-1.0 or BSD-2-Clause | Checking the Ed25519 signatures on Obscura's definitions, and signing Lucida's sign-in to Prisma. |
+| [Monocypher](https://monocypher.org) by Loup Vaillant and contributors | 4.0.2 | CC0-1.0 or BSD-2-Clause | Checking the Ed25519 signatures on Obscura's definitions, signing Lucida's sign-in to Prisma, and encrypting Lucida's connections to paired PCs on the local network. |
 
 ### Algorithms reimplemented from other projects
 

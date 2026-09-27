@@ -1,5 +1,6 @@
 #include "lucida-dock.hpp"
 #include "lucida-controller.hpp"
+#include "lucida-peers.hpp"
 #include "lucida-regions.hpp"
 #include "lucida-settings.hpp"
 #include "lucida-viewer.hpp"
@@ -62,6 +63,10 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	cloud = new QLabel(controller->CloudStatus());
 	cloud->setWordWrap(true);
 	cloud->setVisible(!cloud->text().isEmpty());
+	network = new QLabel(controller->LanStatus());
+	network->setWordWrap(true);
+	network->setVisible(!network->text().isEmpty());
+	peers = new PeersPanel(controller);
 
 	search = new QLineEdit();
 	search->setPlaceholderText(obs_module_text("Lucida.Dock.Search"));
@@ -98,6 +103,8 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	layout->setContentsMargins(4, 4, 4, 4);
 	layout->addWidget(status);
 	layout->addWidget(cloud);
+	layout->addWidget(network);
+	layout->addWidget(peers);
 	layout->addLayout(row);
 	layout->addWidget(list, 1);
 
@@ -124,6 +131,25 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 		cloud->setText(text);
 		cloud->setVisible(!text.isEmpty());
 	});
+	connect(controller, &Controller::lanStatusChanged, this, [this](const QString &text) {
+		network->setText(text);
+		network->setVisible(!text.isEmpty());
+	});
+	connect(peers, &PeersPanel::browseLog, this, [this] {
+		OpenViewer();
+		if (viewer) {
+			viewer->ShowNetwork();
+		}
+	});
+	/* another PC asks to pair with this one */
+	QPointer<Dock> self(this);
+	controller->onPairRequest = [self](const lan::PairPrompt &prompt, std::shared_ptr<std::promise<bool>> answer) {
+		if (self) {
+			AskToPair(self->window(), prompt, std::move(answer));
+		} else {
+			answer->set_value(false);
+		}
+	};
 	connect(controller, &Controller::ticked, this, [this](int added, double, bool) {
 		if (added > 0 && search->text().isEmpty()) {
 			Reload();
@@ -141,7 +167,8 @@ void Dock::OpenViewer(long long lineId)
 				    [c](const LogLine &line) {
 					    return c ? c->VideoFor(line) : std::optional<VideoSpot>();
 				    },
-				    EditClip, [c]() { return c ? c->CloudClient() : nullptr; }};
+				    EditClip, [c]() { return c ? c->CloudClient() : nullptr; },
+				    [c]() { return c ? c->Lan() : nullptr; }};
 		viewer = new Viewer(std::move(source), window());
 		viewer->setWindowFlag(Qt::Window);
 	}

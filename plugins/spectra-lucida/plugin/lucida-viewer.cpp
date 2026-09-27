@@ -1,5 +1,6 @@
 #include "lucida-viewer.hpp"
 #include "lucida-host.hpp"
+#include "lan.hpp"
 #include "prisma.hpp"
 
 #include <definitions.hpp>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
+#include <QSet>
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -64,6 +66,8 @@ constexpr int kRoleSeq = Qt::UserRole + 3;
 constexpr int kRoleCloud = Qt::UserRole + 4; /* {source, line_id} of another install's line */
 constexpr int kCloudSearchLimit = 100;
 constexpr int kCloudTimelineLimit = 200;
+constexpr int kLanLimit = 300; /* lines from each PC on the network */
+constexpr int kLanRequestMs = 20000;
 
 enum Column { kTime, kClock, kChannel, kRegion, kTags, kText, kVideo, kSource, kColumns };
 
@@ -249,6 +253,9 @@ QWidget *Viewer::BuildLogTab()
 	cloud = new QCheckBox(T("Lucida.Viewer.Cloud"));
 	cloud->setToolTip(T("Lucida.Viewer.Cloud.Tip"));
 	cloud->setVisible(source.cloud != nullptr);
+	network = new QCheckBox(T("Lucida.Viewer.Network"));
+	network->setToolTip(T("Lucida.Viewer.Network.Tip"));
+	network->setVisible(source.lan != nullptr);
 	QPushButton *find = new QPushButton(T("Lucida.Viewer.Find"));
 	find->setDefault(true);
 
@@ -264,6 +271,7 @@ QWidget *Viewer::BuildLogTab()
 	}
 	connect(withShot, &QCheckBox::toggled, this, &Viewer::Reload);
 	connect(cloud, &QCheckBox::toggled, this, &Viewer::Reload);
+	connect(network, &QCheckBox::toggled, this, &Viewer::Reload);
 
 	QHBoxLayout *filters = new QHBoxLayout();
 	filters->addWidget(search, 3);
@@ -277,6 +285,7 @@ QWidget *Viewer::BuildLogTab()
 	filters->addWidget(withShot);
 	filters->addWidget(find);
 	filters->addWidget(cloud);
+	filters->addWidget(network);
 
 	frameFilter = new QLabel();
 	clearFrameFilter = new QPushButton(T("Lucida.Viewer.ShowAll"));
@@ -462,7 +471,8 @@ void Viewer::Reload()
 	clearFrameFilter->setVisible(onlyFrame.has_value());
 
 	const bool withCloud = cloud->isChecked() && !onlyFrame;
-	results->setColumnHidden(kSource, !withCloud);
+	const bool withLan = network->isChecked() && !onlyFrame;
+	results->setColumnHidden(kSource, !withCloud && !withLan);
 	cloudGeneration++; /* results still coming for the last query are dropped */
 
 	loading = true;
@@ -496,6 +506,9 @@ void Viewer::Reload()
 
 	if (withCloud) {
 		SearchCloud(CurrentQuery());
+	}
+	if (withLan) {
+		SearchLan(CurrentQuery());
 	}
 	if (lines.empty()) {
 		if (onlyFrame) {
@@ -547,6 +560,16 @@ void Viewer::ShowFrame(long long frameId)
 	Reload();
 }
 
+void Viewer::ShowNetwork()
+{
+	tabs->setCurrentIndex(0);
+	if (onlyFrame) {
+		onlyFrame.reset();
+		Reload();
+	}
+	network->setChecked(true);
+}
+
 QTreeWidgetItem *Viewer::ItemFor(long long lineId) const
 {
 	for (int i = 0; i < results->topLevelItemCount(); i++) {
@@ -562,7 +585,11 @@ void Viewer::CurrentChanged()
 {
 	QTreeWidgetItem *item = results->currentItem();
 	if (item && item->data(kTime, kRoleCloud).isValid()) {
-		ShowCloudLine(item);
+		if (item->data(kTime, kRoleCloud).toMap().value("via").toString() == QLatin1String("lan")) {
+			ShowLanLine(item);
+		} else {
+			ShowCloudLine(item);
+		}
 		return;
 	}
 	std::optional<LogLine> line = item && store() ? store()->Line(item->data(kTime, kRoleLine).toLongLong())
@@ -655,16 +682,79 @@ void Viewer::SearchCloud(const Query &q)
 						others.append(v);
 					}
 				}
-				self->AddCloudLines(generation, q, others, error);
+				self->AddRemoteLines(generation, q, others,
+						     error.isEmpty() ? QString()
+								     : T("Lucida.Viewer.CloudFailed").arg(error),
+						     QStringLiteral("cloud"));
 			},
 			Qt::QueuedConnection);
 	}).detach();
 }
 
-void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lines, const QString &error)
+void Viewer::SearchLan(const Query &q)
+{
+	std::shared_ptr<lan::Service> svc = source.lan ? source.lan() : nullptr;
+	if (!svc) {
+		status->setText(T("Lucida.Viewer.NetworkOff"));
+		return;
+	}
+	std::vector<lan::Peer> peers;
+	for (const lan::Peer &p : svc->Peers()) {
+		if (p.paired && p.pairedThere) {
+			peers.push_back(p);
+			sourceNames[p.id] = p.name;
+		}
+	}
+	if (peers.empty()) {
+		status->setText(T("Lucida.Viewer.NetworkNobody"));
+		return;
+	}
+	QJsonObject request{{"op", "lines"},      {"text", q.text},          {"channel", q.channel}, {"label", q.label},
+			    {"region", q.region}, {"with_shot", q.withShot}, {"limit", kLanLimit}};
+	if (q.from) {
+		request.insert("from", *q.from);
+	}
+	if (q.to) {
+		request.insert("to", *q.to);
+	}
+	const int generation = cloudGeneration;
+	status->setText(T("Lucida.Viewer.NetworkSearching").arg(peers.size()));
+	QPointer<Viewer> self(this);
+	for (const lan::Peer &peer : peers) {
+		std::thread([self, svc, peer, request, q, generation] {
+			const lan::Result r = svc->Request(peer, request, {}, kLanRequestMs);
+			const QJsonArray lines = r.body.value("lines").toArray();
+			const QString error = r.ok ? QString()
+						   : T("Lucida.Viewer.NetworkFailed").arg(peer.name, r.error);
+			QMetaObject::invokeMethod(
+				qApp,
+				[self, generation, q, lines, error] {
+					if (self) {
+						self->AddRemoteLines(generation, q, lines, error,
+								     QStringLiteral("lan"));
+					}
+				},
+				Qt::QueuedConnection);
+		}).detach();
+	}
+}
+
+void Viewer::AddRemoteLines(int generation, const Query &q, const QJsonArray &lines, const QString &error,
+			    const QString &via)
 {
 	if (generation != cloudGeneration) {
 		return;
+	}
+	/* a line can come both from the cloud and from the PC that backed it up */
+	QSet<QString> listed;
+	auto key = [](long long sortTs, const QString &body) {
+		return QString::number(sortTs) + QChar('|') + body;
+	};
+	for (int i = 0; i < results->topLevelItemCount(); i++) {
+		QTreeWidgetItem *item = results->topLevelItem(i);
+		if (item->data(kTime, kRoleCloud).isValid()) {
+			listed.insert(key(item->data(kTime, kRoleSortTs).toLongLong(), item->text(kText)));
+		}
 	}
 	QList<QTreeWidgetItem *> rows;
 	for (const QJsonValue &v : lines) {
@@ -682,13 +772,17 @@ void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lin
 		}
 		const QString src = l.value("source").toString();
 		const long long sortTs = l.value("sort_ts").toInteger();
+		if (listed.contains(key(sortTs, l.value("body").toString()))) {
+			continue;
+		}
+		listed.insert(key(sortTs, l.value("body").toString()));
 		QTreeWidgetItem *item = new LineItem();
 		item->setData(kTime, kRoleSortTs, sortTs);
 		/* search hits have no seq, but their line_id carries it: <sort_ts>-<seq>-<hash> */
 		item->setData(kTime, kRoleSeq,
 			      l.value("seq").toInt(l.value("line_id").toString().section('-', 1, 1).toInt()));
 		item->setData(kTime, kRoleCloud,
-			      QVariantMap{{"source", src}, {"line_id", l.value("line_id").toString()}});
+			      QVariantMap{{"source", src}, {"line_id", l.value("line_id").toString()}, {"via", via}});
 		item->setText(kTime, QDateTime::fromSecsSinceEpoch(sortTs).toString(QStringLiteral("MM-dd HH:mm:ss")));
 		item->setText(kClock, l.value("clock").toString(QStringLiteral("--:--:--")));
 		item->setText(kChannel, channel);
@@ -704,7 +798,6 @@ void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lin
 		}
 		rows << item;
 	}
-	const int local = results->topLevelItemCount();
 	loading = true;
 	QTreeWidgetItem *keep = results->currentItem();
 	results->addTopLevelItems(rows);
@@ -716,8 +809,12 @@ void Viewer::AddCloudLines(int generation, const Query &q, const QJsonArray &lin
 	if (QTreeWidgetItem *current = results->currentItem()) {
 		results->scrollToItem(current);
 	}
-	status->setText(error.isEmpty() ? T("Lucida.Viewer.CloudFound").arg(local + rows.size()).arg(rows.size())
-					: T("Lucida.Viewer.CloudFailed").arg(error));
+	int remote = 0;
+	for (int i = 0; i < results->topLevelItemCount(); i++) {
+		remote += results->topLevelItem(i)->data(kTime, kRoleCloud).isValid() ? 1 : 0;
+	}
+	status->setText(error.isEmpty() ? T("Lucida.Viewer.RemoteFound").arg(results->topLevelItemCount()).arg(remote)
+					: error);
 }
 
 void Viewer::ShowCloudLine(QTreeWidgetItem *item)
@@ -768,27 +865,86 @@ void Viewer::ShowCloudLine(QTreeWidgetItem *item)
 		QMetaObject::invokeMethod(
 			qApp,
 			[self, generation, shot, rect, message, caption] {
-				if (!self || generation != self->cloudShotGeneration) {
-					return;
+				if (self) {
+					self->ShowRemoteImage(
+						generation, shot, rect,
+						shot.isNull() ? message : T("Lucida.Viewer.CloudShot").arg(caption));
 				}
-				if (shot.isNull()) {
-					self->ClearImage(message);
-					return;
-				}
-				self->image->SetImage(shot);
-				if (rect) {
-					QPen pen(QColor(80, 140, 255), 2);
-					pen.setCosmetic(true);
-					auto *box = new QGraphicsRectItem(rect->x0, rect->y0, rect->x1 - rect->x0,
-									  rect->y1 - rect->y0);
-					box->setPen(pen);
-					box->setAcceptedMouseButtons(Qt::NoButton);
-					self->image->scene()->addItem(box);
-				}
-				self->status->setText(T("Lucida.Viewer.CloudShot").arg(caption));
 			},
 			Qt::QueuedConnection);
 	}).detach();
+}
+
+void Viewer::ShowLanLine(QTreeWidgetItem *item)
+{
+	std::shared_ptr<lan::Service> svc = source.lan ? source.lan() : nullptr;
+	const QVariantMap id = item->data(kTime, kRoleCloud).toMap();
+	ShowVideo(std::nullopt);
+	std::optional<lan::Peer> peer = svc ? svc->FindPeer(id.value("source").toString()) : std::nullopt;
+	if (!peer) {
+		ClearImage(T("Lucida.Viewer.NetworkGone").arg(item->text(kSource)));
+		return;
+	}
+	ClearImage(T("Lucida.Viewer.NetworkLoading").arg(peer->name));
+	const QString lineId = id.value("line_id").toString();
+	const QString caption = item->text(kSource) + QStringLiteral("  -  ") + item->text(kTime);
+	const int generation = ++cloudShotGeneration;
+	QPointer<Viewer> self(this);
+	const lan::Peer target = *peer;
+	std::thread([self, svc, target, lineId, caption, generation] {
+		QByteArray bytes;
+		const lan::Result r = svc->Request(
+			target, QJsonObject{{"op", "shot"}, {"line", lineId}},
+			[&bytes](const QByteArray &chunk) {
+				bytes += chunk;
+				return true;
+			},
+			kLanRequestMs);
+		QImage shot;
+		QString message;
+		std::optional<spectra::Rect> rect;
+		const QJsonArray box = r.body.value("rect").toArray();
+		if (box.size() == 4) {
+			rect = spectra::Rect{box[0].toInt(), box[1].toInt(), box[2].toInt(), box[3].toInt()};
+		}
+		if (!r.ok) {
+			message = T("Lucida.Viewer.NetworkFailed").arg(target.name, r.error);
+		} else if (!shot.loadFromData(bytes)) {
+			message = T("Lucida.Viewer.NetworkFailed").arg(target.name, T("Lucida.Viewer.NetworkBadShot"));
+		}
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, generation, shot, rect, message, caption] {
+				if (self) {
+					self->ShowRemoteImage(
+						generation, shot, rect,
+						shot.isNull() ? message : T("Lucida.Viewer.NetworkShot").arg(caption));
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
+}
+
+void Viewer::ShowRemoteImage(int generation, const QImage &shot, const std::optional<spectra::Rect> &rect,
+			     const QString &text)
+{
+	if (generation != cloudShotGeneration) {
+		return;
+	}
+	if (shot.isNull()) {
+		ClearImage(text);
+		return;
+	}
+	image->SetImage(shot);
+	if (rect) {
+		QPen pen(QColor(80, 140, 255), 2);
+		pen.setCosmetic(true);
+		auto *box = new QGraphicsRectItem(rect->x0, rect->y0, rect->x1 - rect->x0, rect->y1 - rect->y0);
+		box->setPen(pen);
+		box->setAcceptedMouseButtons(Qt::NoButton);
+		image->scene()->addItem(box);
+	}
+	status->setText(text);
 }
 
 void Viewer::ShowVideo(const std::optional<LogLine> &line)

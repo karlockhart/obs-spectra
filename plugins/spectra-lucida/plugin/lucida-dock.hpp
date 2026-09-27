@@ -11,6 +11,7 @@ class QListWidget;
 namespace lucida {
 
 class Controller;
+class PeersPanel;
 class Viewer;
 
 /* "Chat Log" dock: live Lucida log with search */
@@ -29,7 +30,8 @@ public:
 
 private:
 	QPointer<Controller> controller;
-	QLabel *status, *cloud;
+	QLabel *status, *cloud, *network;
+	PeersPanel *peers;
 	QLineEdit *search;
 	QCheckBox *pause, *carnivore;
 	QListWidget *list;

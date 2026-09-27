@@ -95,6 +95,7 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 	case OBS_FRONTEND_EVENT_EXIT:
 		if (controller) {
 			controller->Stop();
+			controller->StopLan();
 		}
 		break;
 	default:

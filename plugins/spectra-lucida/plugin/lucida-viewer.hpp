@@ -54,6 +54,8 @@ public:
 	void ShowLine(long long lineId);
 	/* Lists the lines read from a screenshot */
 	void ShowFrame(long long frameId);
+	/* Turns on the Network toggle: paired PCs' lines alongside this one's */
+	void ShowNetwork();
 
 private:
 	ViewerSource source;
@@ -62,13 +64,14 @@ private:
 	/* Log tab: filters and results */
 	QLineEdit *search;
 	QComboBox *channel, *label, *region, *period;
-	QCheckBox *withShot, *cloud;
+	QCheckBox *withShot, *cloud, *network;
 	QLabel *frameFilter;
 	QPushButton *clearFrameFilter;
 	QTreeWidget *results;
 	std::optional<long long> onlyFrame;
 
-	/* Cloud toggle: other installs' lines from Prisma, merged in */
+	/* Cloud and Network toggles: other installs' lines from Prisma and
+	 * from paired PCs on the network, merged in */
 	int cloudGeneration = 0;
 	int cloudShotGeneration = 0;
 	std::map<QString, QString> sourceNames;
@@ -106,8 +109,14 @@ private:
 	Query CurrentQuery() const;
 	QTreeWidgetItem *ItemFor(long long lineId) const;
 	void SearchCloud(const Query &q);
-	void AddCloudLines(int generation, const Query &q, const QJsonArray &lines, const QString &error);
+	void SearchLan(const Query &q);
+	/* via: "cloud" or "lan" */
+	void AddRemoteLines(int generation, const Query &q, const QJsonArray &lines, const QString &error,
+			    const QString &via);
 	void ShowCloudLine(QTreeWidgetItem *item);
+	void ShowLanLine(QTreeWidgetItem *item);
+	void ShowRemoteImage(int generation, const QImage &shot, const std::optional<spectra::Rect> &rect,
+			     const QString &text);
 
 	void CurrentChanged();
 	void ShowVideo(const std::optional<LogLine> &line);

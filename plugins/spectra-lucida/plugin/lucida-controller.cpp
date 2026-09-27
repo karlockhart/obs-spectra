@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonObject>
 #include <QPointer>
 #include <QStandardPaths>
 #include <QSysInfo>
@@ -88,6 +89,8 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "CloudEnabled", d.cloudEnabled);
 	config_set_default_string(c, SECTION, "CloudCredentials", "");
 	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
+	config_set_default_bool(c, SECTION, "LanEnabled", d.lanEnabled);
+	config_set_default_string(c, SECTION, "LanName", "");
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -156,6 +159,8 @@ Settings Settings::Load()
 	s.cloudEnabled = config_get_bool(c, SECTION, "CloudEnabled");
 	s.cloudCredentials = ConfigString(c, SECTION, "CloudCredentials");
 	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
+	s.lanEnabled = config_get_bool(c, SECTION, "LanEnabled");
+	s.lanName = ConfigString(c, SECTION, "LanName").trimmed();
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -195,6 +200,8 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "CloudEnabled", cloudEnabled);
 	config_set_string(c, SECTION, "CloudCredentials", cloudCredentials.toUtf8().constData());
 	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
+	config_set_bool(c, SECTION, "LanEnabled", lanEnabled);
+	config_set_string(c, SECTION, "LanName", lanName.toUtf8().constData());
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
@@ -203,6 +210,11 @@ void Settings::Save() const
 QString Settings::CloudCredentialsFile() const
 {
 	return CloudCredentialsPath(cloudCredentials, {QFileInfo(dbPath).absolutePath(), DefaultFolder()});
+}
+
+QString Settings::LanDisplayName() const
+{
+	return lanName.isEmpty() ? QSysInfo::machineHostName() : lanName;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -216,6 +228,26 @@ QString ProfilesPath()
 		QDir::cleanPath(QString::fromUtf8(own ? own : "") + QStringLiteral("/../spectra/game-profiles.json"));
 	bfree(own);
 	return path;
+}
+
+namespace {
+QString ModuleConfigFile(const char *name)
+{
+	char *path = obs_module_config_path(name);
+	const QString out = QString::fromUtf8(path ? path : "");
+	bfree(path);
+	return out;
+}
+} // namespace
+
+QString LanKeyPath()
+{
+	return ModuleConfigFile("lan-identity.json");
+}
+
+QString LanPeersPath()
+{
+	return ModuleConfigFile("lan-peers.json");
 }
 
 void Controller::ReloadProfiles()
@@ -239,6 +271,19 @@ QString LoopDirectory()
 	return QDir::cleanPath(dir);
 }
 
+QString ClipsDirectory()
+{
+	/* as the frontend's LoopRecorder::ClipsDirectory */
+	config_t *c = obs_frontend_get_profile_config();
+	QString dir = c ? ConfigString(c, "SpectraLoop", "ClipsPath").trimmed() : QString();
+	if (dir.isEmpty()) {
+		char *output = obs_frontend_get_current_record_output_path();
+		dir = QDir(QString::fromUtf8(output ? output : "")).filePath(QStringLiteral("Clips"));
+		bfree(output);
+	}
+	return QDir::cleanPath(dir);
+}
+
 bool LoopRecordingActive()
 {
 	obs_output_t *output = obs_get_output_by_name("spectra_loop_output");
@@ -250,16 +295,20 @@ bool LoopRecordingActive()
 Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Load())
 {
 	loopDir = LoopDirectory();
+	clipsDir = ClipsDirectory();
+	looping = LoopRecordingActive();
 	loopPoll.setInterval(kLoopPollMs);
 	connect(&loopPoll, &QTimer::timeout, this, &Controller::PollLoop);
 	loopPoll.start();
 	StartCloud();
+	StartLan();
 }
 
 Controller::~Controller()
 {
 	Stop();
 	StopCloud();
+	StopLan();
 }
 
 void Controller::SetStatus(const QString &text)
@@ -293,6 +342,8 @@ void Controller::PollLoop()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		loopDir = LoopDirectory();
+		clipsDir = ClipsDirectory();
+		looping = LoopRecordingActive();
 	}
 	if (!settings.followLoop || !settings.enabled || paused) {
 		return;
@@ -342,6 +393,8 @@ void Controller::Stop()
 		worker.join();
 	}
 	running = false;
+	std::lock_guard<std::mutex> lock(mutex);
+	game.clear();
 }
 
 void Controller::SetPaused(bool pause)
@@ -387,11 +440,23 @@ void Controller::ApplySettings(const Settings &s)
 {
 	bool wasRunning = running;
 	const bool wasCarnivore = settings.recorder.carnivore;
+	/* the network service restarts only for its own settings, so other PCs
+	 * do not see this one leave and come back */
+	const bool lanChanged = s.lanEnabled != settings.lanEnabled || s.LanDisplayName() != settings.LanDisplayName();
 	Stop();
 	StopCloud();
-	settings = s;
+	if (lanChanged) {
+		StopLan();
+	}
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		settings = s;
+	}
 	settings.Save();
 	StartCloud();
+	if (lanChanged) {
+		StartLan();
+	}
 	if (settings.recorder.carnivore != wasCarnivore) {
 		regionsRead = 0;
 		emit carnivoreChanged(settings.recorder.carnivore);
@@ -447,10 +512,12 @@ void Controller::Run(Settings s)
 	/* Troubleshooting: SPECTRA_LUCIDA_DUMP=<folder> saves every grabbed frame */
 	const QString dumpDir = qEnvironmentVariable("SPECTRA_LUCIDA_DUMP");
 	int dumped = 0;
-	Recorder recorder(s.recorder, store, *ocr, [&grabber, &dumpDir, &dumped]() {
+	QString executable; /* of the last frame grabbed */
+	Recorder recorder(s.recorder, store, *ocr, [&grabber, &dumpDir, &dumped, &executable]() {
 		std::optional<GrabbedFrame> frame;
 		if (std::optional<spectra::SourceFrame> f = grabber.Grab()) {
 			frame = GrabbedFrame{std::move(f->image), f->source, f->executable};
+			executable = f->executable;
 		}
 		if (frame && !dumpDir.isEmpty()) {
 			QDir().mkpath(dumpDir);
@@ -514,6 +581,11 @@ void Controller::Run(Settings s)
 			tick.interval = recorder.Interval();
 		}
 
+		{
+			/* for other PCs on the network: what this one is playing */
+			std::lock_guard<std::mutex> lock(mutex);
+			game = tick.foundWindow ? QFileInfo(executable).fileName() : QString();
+		}
 		if (tick.foundWindow && tick.changed) {
 			blog(tick.added ? LOG_INFO : LOG_DEBUG, "[Lucida] %s", tick.Describe().toUtf8().constData());
 		}
@@ -758,6 +830,100 @@ void Controller::RunCloud(Settings s)
 			break;
 		}
 	}
+}
+
+/* ------------------------------------------------------------------------- */
+/* Sharing on the local network */
+
+void Controller::SetLanStatus(const QString &text)
+{
+	lanStatus = text;
+	emit lanStatusChanged(text);
+}
+
+void Controller::StartLan()
+{
+	if (!settings.lanEnabled) {
+		SetLanStatus(QString());
+		return;
+	}
+	if (lan) {
+		return;
+	}
+	QString error;
+	std::optional<lan::Identity> self = lan::Identity::LoadOrCreate(LanKeyPath(), &error);
+	if (!self) {
+		blog(LOG_WARNING, "[Lucida] Network sharing has no key: %s", error.toUtf8().constData());
+		SetLanStatus(QString::fromUtf8(obs_module_text("Lucida.Lan.Failed")).arg(error));
+		return;
+	}
+
+	/* the service's threads call these; Stop() ends them before this goes */
+	lan::Provider provider;
+	provider.dbPath = [this] {
+		std::lock_guard<std::mutex> lock(mutex);
+		return settings.dbPath;
+	};
+	provider.clipsDir = [this] {
+		std::lock_guard<std::mutex> lock(mutex);
+		return clipsDir;
+	};
+	provider.status = [this] {
+		std::lock_guard<std::mutex> lock(mutex);
+		return QJsonObject{{"game", game}, {"recording", looping}};
+	};
+	QPointer<Controller> guard(this);
+	provider.askPair = [guard](const lan::PairPrompt &prompt) {
+		auto answer = std::make_shared<std::promise<bool>>();
+		std::future<bool> result = answer->get_future();
+		QMetaObject::invokeMethod(
+			qApp,
+			[guard, prompt, answer] {
+				if (guard && guard->onPairRequest) {
+					guard->onPairRequest(prompt, answer);
+				} else {
+					answer->set_value(false);
+				}
+			},
+			Qt::QueuedConnection);
+		return result;
+	};
+
+	lan = std::make_shared<lan::Service>(*self, LanPeersPath(), std::move(provider));
+	lan->version = QString::fromUtf8(obs_get_version_string());
+	lan->peersChanged = [guard] {
+		QMetaObject::invokeMethod(
+			qApp,
+			[guard] {
+				if (guard) {
+					emit guard->lanPeersChanged();
+				}
+			},
+			Qt::QueuedConnection);
+	};
+	const QString name = settings.LanDisplayName();
+	if (!lan->Start(name, &error)) {
+		blog(LOG_WARNING, "[Lucida] Network sharing could not start: %s", error.toUtf8().constData());
+		SetLanStatus(QString::fromUtf8(obs_module_text("Lucida.Lan.Failed")).arg(error));
+		lan.reset();
+		emit lanPeersChanged();
+		return;
+	}
+	blog(LOG_INFO, "[Lucida] Sharing with paired PCs on the network as \"%s\" (port %d, key %s)",
+	     name.toUtf8().constData(), (int)lan->Port(), lan::Fingerprint(self->pub).toUtf8().constData());
+	SetLanStatus(QString::fromUtf8(obs_module_text("Lucida.Lan.Status")).arg(name));
+	emit lanPeersChanged();
+}
+
+void Controller::StopLan()
+{
+	if (!lan) {
+		return;
+	}
+	lan->Stop();
+	lan.reset();
+	SetLanStatus(QString());
+	emit lanPeersChanged();
 }
 
 } // namespace lucida

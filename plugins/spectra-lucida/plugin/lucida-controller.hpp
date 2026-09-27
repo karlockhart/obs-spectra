@@ -4,6 +4,7 @@
 #include "recorder.hpp"
 #include "store.hpp"
 #include "cloud.hpp"
+#include "lan.hpp"
 #include "profiles.hpp"
 #include "tagger.hpp"
 
@@ -12,6 +13,8 @@
 #include <QTimer>
 
 #include <condition_variable>
+#include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -34,9 +37,14 @@ struct Settings {
 	bool cloudEnabled = false;
 	QString cloudCredentials; /* empty: found automatically */
 	bool cloudFrames = true;
+	/* Sharing with paired Spectra installs on the local network */
+	bool lanEnabled = false;
+	QString lanName; /* empty: the computer's name */
 
 	/* The Prisma credentials file in use (see CloudCredentialsPath) */
 	QString CloudCredentialsFile() const;
+	/* What other PCs on the network see this one as */
+	QString LanDisplayName() const;
 
 	static Settings Load();
 	void Save() const;
@@ -46,10 +54,15 @@ struct Settings {
 
 /* The per-game profiles file (see GameProfiles) */
 QString ProfilesPath();
+/* Sharing on the network: this install's key, and the PCs paired with it */
+QString LanKeyPath();
+QString LanPeersPath();
 
 /* Spectra's loop recording folder and state */
 QString LoopDirectory();
 bool LoopRecordingActive();
+/* Where Spectra saves clips (as the frontend's LoopRecorder::ClipsDirectory) */
+QString ClipsDirectory();
 
 /* Runs Lucida's sampling loop on a worker thread inside Spectra */
 class Controller : public QObject {
@@ -93,6 +106,14 @@ public:
 	 * without credentials */
 	std::shared_ptr<PrismaClient> CloudClient();
 
+	/* Sharing on the local network; null while it is off */
+	std::shared_ptr<lan::Service> Lan() const { return lan; }
+	QString LanStatus() const { return lanStatus; }
+	void StopLan();
+	/* Asks the person here whether another PC may pair (set by the dock);
+	 * unset: every request is refused */
+	std::function<void(const lan::PairPrompt &, std::shared_ptr<std::promise<bool>>)> onPairRequest;
+
 signals:
 	void ticked(int added, double interval, bool foundWindow);
 	void statusChanged(const QString &status);
@@ -100,6 +121,9 @@ signals:
 	void relabelled(int changed);
 	void carnivoreChanged(bool on);
 	void cloudStatusChanged(const QString &status);
+	void lanStatusChanged(const QString &status);
+	/* other PCs came, went, paired or changed what they report */
+	void lanPeersChanged();
 
 private:
 	Settings settings;
@@ -117,6 +141,15 @@ private:
 	int regionsRead = 0; /* text blocks in carnivore mode's last reading */
 	QTimer loopPoll;
 	QString loopDir; /* guarded by mutex; read by the worker */
+	/* guarded by mutex; read by the network service */
+	QString clipsDir;
+	QString game; /* the executable being read, while one is */
+	bool looping = false;
+
+	std::shared_ptr<lan::Service> lan;
+	QString lanStatus;
+	void StartLan();
+	void SetLanStatus(const QString &text);
 
 	std::thread cloudWorker;
 	std::condition_variable cloudWakeup;
