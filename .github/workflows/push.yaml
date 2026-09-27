@@ -50,6 +50,13 @@ jobs:
             echo 'validTag=false' >> $GITHUB_OUTPUT
           fi
 
+      - name: Check Out the Portable Updater 📥
+        if: fromJSON(steps.check.outputs.validTag)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: build-aux/spectra
+          path: source
+
       - name: Download Build Artifacts 📥
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: fromJSON(steps.check.outputs.validTag)
@@ -76,6 +83,8 @@ jobs:
 
           (cd package && zip -qr9 "${{ github.workspace }}/OBS-Spectra-${version}-Windows-x64.zip" .)
           touch package/portable_mode.txt
+          # Updates an existing portable folder to this version, keeping its config
+          cp source/build-aux/spectra/Update-Portable.cmd source/build-aux/spectra/Update-Portable.ps1 package/
           (cd package && zip -qr9 "${{ github.workspace }}/OBS-Spectra-${version}-Windows-x64-Portable.zip" .)
 
       - name: Generate Checksums 🪪
