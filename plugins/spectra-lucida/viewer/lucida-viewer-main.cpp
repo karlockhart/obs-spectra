@@ -7,6 +7,7 @@
  *   lucida-viewer [--portable] [chatlog.db]
  */
 
+#include "cloud.hpp"
 #include "lucida-host.hpp"
 #include "lucida-viewer.hpp"
 
@@ -43,9 +44,8 @@ std::unique_ptr<lookup_t, LookupDeleter> texts;
 Config OpenIni(const QString &path)
 {
 	config_t *c = nullptr;
-	if (!QFileInfo::exists(path) ||
-	    config_open(&c, QDir::toNativeSeparators(path).toUtf8().constData(), CONFIG_OPEN_EXISTING) !=
-		    CONFIG_SUCCESS) {
+	if (!QFileInfo::exists(path) || config_open(&c, QDir::toNativeSeparators(path).toUtf8().constData(),
+						    CONFIG_OPEN_EXISTING) != CONFIG_SUCCESS) {
 		return nullptr;
 	}
 	return Config(c);
@@ -112,8 +112,8 @@ Config OpenProfile(bool portable, QString *language)
 	if (dir.isEmpty()) {
 		dir = QStringLiteral("Untitled");
 	}
-	return OpenIni(QDir(location("Profiles"))
-			       .filePath(QStringLiteral("obs-studio/basic/profiles/%1/basic.ini").arg(dir)));
+	return OpenIni(
+		QDir(location("Profiles")).filePath(QStringLiteral("obs-studio/basic/profiles/%1/basic.ini").arg(dir)));
 }
 
 void LoadTexts(const QString &language)
@@ -158,7 +158,7 @@ QString LoopDirectory()
 	QString output;
 	if (Profile("Output", "Mode") == QStringLiteral("Advanced")) {
 		output = Profile("AdvOut", Profile("AdvOut", "RecType") == QStringLiteral("FFmpeg") ? "FFFilePath"
-												      : "RecFilePath");
+												    : "RecFilePath");
 	} else {
 		output = Profile("SimpleOutput", "FilePath");
 	}
@@ -207,9 +207,9 @@ int main(int argc, char *argv[])
 	}
 	/* Opening creates a log, so never open one that is not there */
 	if (!QFileInfo::exists(db)) {
-		db = QFileDialog::getOpenFileName(nullptr, lucida::Text("Lucida.Viewer.OpenLog"),
-						  QFileInfo(db).absolutePath(),
-						  QStringLiteral("%1 (*.db)").arg(lucida::Text("Lucida.Viewer.ChatLog")));
+		db = QFileDialog::getOpenFileName(
+			nullptr, lucida::Text("Lucida.Viewer.OpenLog"), QFileInfo(db).absolutePath(),
+			QStringLiteral("%1 (*.db)").arg(lucida::Text("Lucida.Viewer.ChatLog")));
 		if (db.isEmpty()) {
 			return 0;
 		}
@@ -218,12 +218,23 @@ int main(int argc, char *argv[])
 	auto store = std::make_shared<lucida::Store>(db);
 	QString error;
 	if (!store->Open(&error) || !store->IsOpen()) {
-		QMessageBox::critical(nullptr, lucida::Text("Lucida.Viewer.Title"),
-				      lucida::Text("Lucida.Viewer.OpenFailed").arg(QDir::toNativeSeparators(db), error));
+		QMessageBox::critical(
+			nullptr, lucida::Text("Lucida.Viewer.Title"),
+			lucida::Text("Lucida.Viewer.OpenFailed").arg(QDir::toNativeSeparators(db), error));
 		return 1;
 	}
 
 	const QString loopDir = LoopDirectory();
+	/* the Cloud toggle reads Prisma with the same credentials Spectra backs up with */
+	const QString credentials =
+		lucida::CloudCredentialsPath(Profile("Lucida", "CloudCredentials"),
+					     {QFileInfo(db).absolutePath(), Profile("Spectra", "LucidaPath")});
+	std::shared_ptr<lucida::PrismaClient> cloud;
+	if (!credentials.isEmpty()) {
+		if (std::optional<lucida::PrismaCredentials> creds = lucida::PrismaCredentials::FromFile(credentials)) {
+			cloud = std::make_shared<lucida::PrismaClient>(*creds);
+		}
+	}
 	lucida::ViewerSource source{[store]() { return store.get(); },
 				    [loopDir](const lucida::LogLine &line) -> std::optional<lucida::VideoSpot> {
 					    if (line.video && QFileInfo::exists(line.video->path)) {
@@ -235,10 +246,11 @@ int main(int argc, char *argv[])
 					    /* Spectra may be recording, but the newest segment
 					     * then ends where its file was last written */
 					    return lucida::LocateVideo(loopDir, line.firstSeen, false);
-				    }};
+				    },
+				    nullptr, [cloud]() { return cloud; }};
 	auto *viewer = new lucida::Viewer(std::move(source));
-	viewer->setWindowTitle(QStringLiteral("%1 - %2").arg(lucida::Text("Lucida.Viewer.Title"),
-								QDir::toNativeSeparators(db)));
+	viewer->setWindowTitle(
+		QStringLiteral("%1 - %2").arg(lucida::Text("Lucida.Viewer.Title"), QDir::toNativeSeparators(db)));
 	viewer->show();
 	return app.exec();
 }

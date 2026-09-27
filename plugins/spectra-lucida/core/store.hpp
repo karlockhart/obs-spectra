@@ -46,8 +46,9 @@ struct LogLine {
 	QStringList labels;                           /* from the tag rules */
 	std::optional<std::array<double, 13>> colour; /* for Obscura's learner */
 	double firstSeen = 0.0;                       /* wall clock, s */
-	std::optional<VideoSpot> video;               /* loop segment when first seen */
-	QString region;                               /* carnivore mode: screen region */
+	double lastSeen = 0.0;
+	std::optional<VideoSpot> video; /* loop segment when first seen */
+	QString region;                 /* carnivore mode: screen region */
 
 	QString When() const;
 };
@@ -105,6 +106,35 @@ struct ScreenRegion {
 	spectra::Region area; /* fractions of the frame */
 	double firstSeen = 0.0;
 	double lastSeen = 0.0;
+};
+
+/* Backing up to Prisma: what is waiting to be sent */
+struct SyncLine {
+	LogLine line;
+	QString dedupKey;
+	QString labelsJson; /* as stored, to tell whether it changed after sending */
+	std::optional<QString> framePath;
+	std::optional<double> sessionStarted;
+};
+
+struct SyncFrame {
+	Frame frame;
+	std::optional<double> sessionStarted;
+};
+
+struct SyncSession {
+	long long id = 0;
+	double started = 0.0;
+	std::optional<double> ended;
+	QString target;
+	int width = 0;
+	int height = 0;
+};
+
+struct SyncBacklog {
+	long long lines = 0;
+	long long frames = 0;
+	long long sessions = 0;
 };
 
 struct RepairResult {
@@ -181,6 +211,24 @@ public:
 	/* Salvages a damaged log into a fresh file, keeping the original as
 	 * <stem>.damaged-<date>.db. Fails if the file is open elsewhere. */
 	static std::optional<RepairResult> Repair(const QString &path, QString *error = nullptr);
+
+	/* Small values kept with the log */
+	QString Meta(const char *key);
+	void SetMeta(const char *key, const QString &value);
+
+	/* Backing up to Prisma. A row waits (synced_at NULL) until it is sent,
+	 * and again when it changes in a way worth sending: a line's better
+	 * reading, labels or screenshot, a session's end. Oldest first. */
+	std::vector<SyncLine> UnsyncedLines(int limit);
+	/* at: when they were sent, or -1 for refused ones (never retried) */
+	void MarkLinesSynced(const std::vector<SyncLine> &lines, double at);
+	std::vector<SyncFrame> UnsyncedFrames(int limit);
+	void MarkFrameSynced(long long frameId, double at);
+	std::vector<SyncSession> UnsyncedSessions(int limit);
+	void MarkSessionSynced(const SyncSession &session, double at);
+	SyncBacklog Unsynced();
+	/* Everything waits again (e.g. backing up somewhere else) */
+	void ResetSync();
 
 	/* Direct access for tests and maintenance */
 	sqlite3 *Db() const { return db; }

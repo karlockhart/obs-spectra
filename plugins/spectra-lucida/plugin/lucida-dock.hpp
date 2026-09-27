@@ -29,7 +29,7 @@ public:
 
 private:
 	QPointer<Controller> controller;
-	QLabel *status;
+	QLabel *status, *cloud;
 	QLineEdit *search;
 	QCheckBox *pause, *carnivore;
 	QListWidget *list;

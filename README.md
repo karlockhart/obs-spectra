@@ -89,7 +89,7 @@ Their license files come with every build, in `data/spectra-vision/licenses/`. T
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) ONNX models by RapidAI: PP-OCRv6 small detection and recognition models | 3.9.2 | Apache-2.0 | Reading text on screen. The models are [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s (PaddlePaddle, Apache-2.0), converted to ONNX by RapidAI and downloaded from [ModelScope](https://www.modelscope.cn/models/RapidAI/RapidOCR). |
 | [SQLite](https://www.sqlite.org) | 3.53.4 | Public domain | Lucida's chat log, with full-text search (FTS5). |
-| [Monocypher](https://monocypher.org) by Loup Vaillant and contributors | 4.0.2 | CC0-1.0 or BSD-2-Clause | Checking the Ed25519 signatures on Obscura's definitions. |
+| [Monocypher](https://monocypher.org) by Loup Vaillant and contributors | 4.0.2 | CC0-1.0 or BSD-2-Clause | Checking the Ed25519 signatures on Obscura's definitions, and signing Lucida's sign-in to Prisma. |
 
 ### Algorithms reimplemented from other projects
 

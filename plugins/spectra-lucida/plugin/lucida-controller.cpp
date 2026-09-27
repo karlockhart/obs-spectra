@@ -11,6 +11,7 @@
 #include <QImage>
 #include <QPointer>
 #include <QStandardPaths>
+#include <QSysInfo>
 
 #include <chrono>
 
@@ -84,6 +85,9 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "FollowLoop", d.followLoop);
 	config_set_default_string(c, SECTION, "TagRules", TagRulesToJson(d.tagRules).toUtf8().constData());
 	config_set_default_bool(c, SECTION, "TolerateTypos", d.tolerateTypos);
+	config_set_default_bool(c, SECTION, "CloudEnabled", d.cloudEnabled);
+	config_set_default_string(c, SECTION, "CloudCredentials", "");
+	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -149,6 +153,9 @@ Settings Settings::Load()
 	s.followLoop = config_get_bool(c, SECTION, "FollowLoop");
 	s.tagRules = TagRulesFromJson(ConfigString(c, SECTION, "TagRules"));
 	s.tolerateTypos = config_get_bool(c, SECTION, "TolerateTypos");
+	s.cloudEnabled = config_get_bool(c, SECTION, "CloudEnabled");
+	s.cloudCredentials = ConfigString(c, SECTION, "CloudCredentials");
+	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -185,9 +192,17 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "FollowLoop", followLoop);
 	config_set_string(c, SECTION, "TagRules", TagRulesToJson(tagRules).toUtf8().constData());
 	config_set_bool(c, SECTION, "TolerateTypos", tolerateTypos);
+	config_set_bool(c, SECTION, "CloudEnabled", cloudEnabled);
+	config_set_string(c, SECTION, "CloudCredentials", cloudCredentials.toUtf8().constData());
+	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
+}
+
+QString Settings::CloudCredentialsFile() const
+{
+	return CloudCredentialsPath(cloudCredentials, {QFileInfo(dbPath).absolutePath(), DefaultFolder()});
 }
 
 /* ------------------------------------------------------------------------- */
@@ -238,11 +253,13 @@ Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Lo
 	loopPoll.setInterval(kLoopPollMs);
 	connect(&loopPoll, &QTimer::timeout, this, &Controller::PollLoop);
 	loopPoll.start();
+	StartCloud();
 }
 
 Controller::~Controller()
 {
 	Stop();
+	StopCloud();
 }
 
 void Controller::SetStatus(const QString &text)
@@ -371,8 +388,10 @@ void Controller::ApplySettings(const Settings &s)
 	bool wasRunning = running;
 	const bool wasCarnivore = settings.recorder.carnivore;
 	Stop();
+	StopCloud();
 	settings = s;
 	settings.Save();
+	StartCloud();
 	if (settings.recorder.carnivore != wasCarnivore) {
 		regionsRead = 0;
 		emit carnivoreChanged(settings.recorder.carnivore);
@@ -508,6 +527,9 @@ void Controller::Run(Settings s)
 			this,
 			[this, added, interval, found, regions, carnivore, profile]() {
 				logged += added;
+				if (added > 0) {
+					WakeCloud();
+				}
 				if (regions >= 0) {
 					regionsRead = regions;
 				}
@@ -583,6 +605,159 @@ void Controller::Relabel()
 			},
 			Qt::QueuedConnection);
 	}).detach();
+}
+
+/* ------------------------------------------------------------------------- */
+/* Backing up to Prisma */
+
+namespace {
+constexpr int kCloudIdle = 30;      /* s between passes with nothing waiting */
+constexpr int kCloudBusy = 2;       /* s between passes while catching up */
+constexpr int kCloudRetry = 30;     /* s before retrying a failure, doubling... */
+constexpr int kCloudRetryMax = 600; /* ...up to this */
+constexpr int kCloudFramesPerPass = 5;
+constexpr int kCloudBatchesPerPass = 10;
+} // namespace
+
+void Controller::SetCloudStatus(const QString &text)
+{
+	QMetaObject::invokeMethod(
+		this,
+		[this, text]() {
+			cloudStatus = text;
+			emit cloudStatusChanged(text);
+		},
+		Qt::QueuedConnection);
+}
+
+void Controller::StartCloud()
+{
+	if (!settings.cloudEnabled) {
+		cloudStatus.clear();
+		emit cloudStatusChanged(cloudStatus);
+		return;
+	}
+	if (cloudWorker.joinable()) {
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudStop = false;
+		cloudWake = false;
+	}
+	cloudWorker = std::thread(&Controller::RunCloud, this, settings);
+}
+
+void Controller::StopCloud()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudStop = true;
+	}
+	cloudWakeup.notify_all();
+	if (cloudWorker.joinable()) {
+		cloudWorker.join();
+	}
+}
+
+void Controller::WakeCloud()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		cloudWake = true;
+	}
+	cloudWakeup.notify_all();
+}
+
+std::shared_ptr<PrismaClient> Controller::CloudClient()
+{
+	const QString path = settings.CloudCredentialsFile();
+	if (path.isEmpty()) {
+		return nullptr;
+	}
+	if (!cloudClient || cloudClientPath != path) {
+		std::optional<PrismaCredentials> creds = PrismaCredentials::FromFile(path);
+		cloudClient = creds ? std::make_shared<PrismaClient>(*creds) : nullptr;
+		cloudClientPath = path;
+	}
+	return cloudClient;
+}
+
+void Controller::RunCloud(Settings s)
+{
+	LowerThreadPriority();
+	auto wait = [this](int seconds, bool wakeable) {
+		std::unique_lock<std::mutex> lock(mutex);
+		cloudWakeup.wait_for(lock, std::chrono::seconds(seconds),
+				     [this, wakeable] { return cloudStop || (wakeable && cloudWake); });
+		cloudWake = false;
+		return !cloudStop;
+	};
+
+	const QString path = s.CloudCredentialsFile();
+	QString error;
+	std::optional<PrismaCredentials> creds = path.isEmpty() ? std::nullopt
+								: PrismaCredentials::FromFile(path, &error);
+	if (!creds) {
+		SetCloudStatus(path.isEmpty()
+				       ? QString::fromUtf8(obs_module_text("Lucida.Cloud.NoCredentials"))
+				       : QString::fromUtf8(obs_module_text("Lucida.Cloud.BadCredentials")).arg(error));
+		blog(LOG_WARNING, "[Lucida] Cloud backup is on but has no usable credentials (%s)",
+		     path.isEmpty() ? "no prisma-*.json found" : error.toUtf8().constData());
+		return;
+	}
+	Store store(s.dbPath);
+	if (!store.Open(&error) || !store.IsOpen()) {
+		SetCloudStatus(QString::fromUtf8(obs_module_text("Lucida.Cloud.Failed")).arg(error));
+		return;
+	}
+	PrismaClient client(*creds);
+	CloudSync sync(store, client);
+	sync.frames = s.cloudFrames;
+	sync.machine = QSysInfo::machineHostName();
+	sync.version = QString::fromUtf8(obs_get_version_string());
+	blog(LOG_INFO, "[Lucida] Backing up to %s as %s", creds->url.toUtf8().constData(),
+	     creds->clientId.toUtf8().constData());
+
+	long long lines = 0, frames = 0;
+	int retry = kCloudRetry;
+	bool failing = false;
+	while (true) {
+		SyncReport r = sync.Step(kCloudFramesPerPass, kCloudBatchesPerPass);
+		lines += r.lines;
+		frames += r.frames;
+		if (r.refused) {
+			blog(LOG_WARNING, "[Lucida] Prisma refused %d item(s); they will not be sent again", r.refused);
+		}
+		const SyncBacklog left = store.Unsynced();
+		const long long waiting = left.lines + (s.cloudFrames ? left.frames : 0);
+		if (!r.error.isEmpty()) {
+			if (!failing) {
+				blog(LOG_WARNING, "[Lucida] Cloud backup failed: %s", r.error.toUtf8().constData());
+			}
+			failing = true;
+			SetCloudStatus(QString::fromUtf8(obs_module_text("Lucida.Cloud.Retrying"))
+					       .arg(r.error)
+					       .arg(retry)
+					       .arg(waiting));
+			if (!wait(retry, false)) {
+				break;
+			}
+			retry = std::min(retry * 2, kCloudRetryMax);
+			continue;
+		}
+		if (failing) {
+			blog(LOG_INFO, "[Lucida] Cloud backup working again");
+		}
+		failing = false;
+		retry = kCloudRetry;
+		SetCloudStatus(
+			QString::fromUtf8(obs_module_text("Lucida.Cloud.Status")).arg(lines).arg(frames).arg(waiting));
+		/* new lines wake it early (see the ticked handler) */
+		if (!wait(r.more ? kCloudBusy : kCloudIdle, !r.more)) {
+			break;
+		}
+	}
 }
 
 } // namespace lucida
