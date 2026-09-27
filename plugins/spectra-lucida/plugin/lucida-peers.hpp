@@ -39,6 +39,8 @@ private:
 	QPushButton *pairButton, *clipsButton, *logButton;
 
 	void Refresh();
+	void UpdateButtons();
+	QTreeWidgetItem *Selected() const;
 	std::optional<lan::Peer> Current() const;
 	void Activate();
 	void Pair();

@@ -126,7 +126,7 @@ PeersPanel::PeersPanel(Controller *controller_, QWidget *parent) : QWidget(paren
 	connect(clipsButton, &QPushButton::clicked, this, &PeersPanel::OpenClips);
 	connect(logButton, &QPushButton::clicked, this, &PeersPanel::browseLog);
 	connect(list, &QTreeWidget::itemDoubleClicked, this, &PeersPanel::Activate);
-	connect(list, &QTreeWidget::currentItemChanged, this, &PeersPanel::Refresh);
+	connect(list, &QTreeWidget::itemSelectionChanged, this, &PeersPanel::UpdateButtons);
 	connect(list, &QTreeWidget::customContextMenuRequested, this, &PeersPanel::ContextMenu);
 	if (controller) {
 		connect(controller, &Controller::lanPeersChanged, this, &PeersPanel::Refresh);
@@ -142,14 +142,12 @@ void PeersPanel::Refresh()
 	if (!svc) {
 		return;
 	}
-	const QString keep = list->currentItem() ? list->currentItem()->data(0, kRoleId).toString() : QString();
+	const QString keep = Selected() ? Selected()->data(0, kRoleId).toString() : QString();
 	const bool blocked = list->blockSignals(true);
 	list->clear();
 	std::set<QString> online;
-	bool anyPaired = false;
 	for (const lan::Peer &p : svc->Peers()) {
 		online.insert(p.id);
-		anyPaired = anyPaired || (p.paired && p.pairedThere);
 		QTreeWidgetItem *item =
 			new QTreeWidgetItem({p.name.isEmpty() ? p.Fingerprint() : p.name, PeerStatus(p)});
 		item->setData(0, kRoleId, p.id);
@@ -176,7 +174,16 @@ void PeersPanel::Refresh()
 	list->blockSignals(blocked);
 	title->setText(online.empty() ? T("Lucida.Peers.NoneYet").arg(svc->Name())
 				      : T("Lucida.Peers.Title").arg(svc->Name()));
+	UpdateButtons();
+}
 
+void PeersPanel::UpdateButtons()
+{
+	std::shared_ptr<lan::Service> svc = controller ? controller->Lan() : nullptr;
+	bool anyPaired = false;
+	for (const lan::Peer &p : svc ? svc->Peers() : std::vector<lan::Peer>()) {
+		anyPaired = anyPaired || (p.paired && p.pairedThere);
+	}
 	std::optional<lan::Peer> current = Current();
 	const bool needsPairing = current && (!current->paired || (current->reachable && !current->pairedThere));
 	pairButton->setEnabled(needsPairing);
@@ -185,10 +192,16 @@ void PeersPanel::Refresh()
 	logButton->setEnabled(anyPaired);
 }
 
+QTreeWidgetItem *PeersPanel::Selected() const
+{
+	const QList<QTreeWidgetItem *> selected = list->selectedItems();
+	return selected.isEmpty() ? nullptr : selected.first();
+}
+
 std::optional<lan::Peer> PeersPanel::Current() const
 {
 	std::shared_ptr<lan::Service> svc = controller ? controller->Lan() : nullptr;
-	QTreeWidgetItem *item = list->currentItem();
+	QTreeWidgetItem *item = Selected();
 	if (!svc || !item) {
 		return std::nullopt;
 	}
@@ -229,7 +242,7 @@ void PeersPanel::OpenClips()
 void PeersPanel::Forget()
 {
 	std::shared_ptr<lan::Service> svc = controller ? controller->Lan() : nullptr;
-	QTreeWidgetItem *item = list->currentItem();
+	QTreeWidgetItem *item = Selected();
 	if (!svc || !item) {
 		return;
 	}
@@ -319,10 +332,8 @@ PairDialog::PairDialog(std::shared_ptr<lan::Service> service, const lan::Peer &p
 	message->setWordWrap(true);
 	message->setMinimumWidth(420);
 	code = new QLabel();
-	QFont big = code->font();
-	big.setPointSizeF(big.pointSizeF() * 2.4);
-	big.setBold(true);
-	code->setFont(big);
+	/* a style sheet: OBS's theme would override a font set on the label */
+	code->setStyleSheet(QStringLiteral("font-size: 20pt; font-weight: bold;"));
 	code->setAlignment(Qt::AlignCenter);
 	code->setTextInteractionFlags(Qt::TextSelectableByMouse);
 	code->hide();
