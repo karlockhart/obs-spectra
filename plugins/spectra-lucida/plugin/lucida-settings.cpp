@@ -16,10 +16,12 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSysInfo>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -95,6 +97,7 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	tabs->addTab(SamplingPage(s), T("Lucida.Settings.Sampling"));
 	tabs->addTab(ScreenshotsPage(s), T("Lucida.Settings.Screenshots"));
 	tabs->addTab(CloudPage(s), T("Lucida.Settings.Cloud"));
+	tabs->addTab(NetworkPage(s), T("Lucida.Settings.Network"));
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -288,6 +291,79 @@ QWidget *SettingsDialog::CloudPage(const Settings &s)
 	form->addRow(Note(T("Lucida.Settings.CloudView.Note")));
 	UpdateCloudFound();
 	return Page(form);
+}
+
+QWidget *SettingsDialog::NetworkPage(const Settings &s)
+{
+	lanEnabled = Check("Lucida.Settings.LanEnabled", s.lanEnabled);
+	lanName = new QLineEdit(s.lanName);
+	lanName->setPlaceholderText(QSysInfo::machineHostName());
+	lanName->setMaxLength(64);
+	lanKey = new QLabel();
+	lanKey->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	std::shared_ptr<lan::Service> svc = controller->Lan();
+	std::optional<lan::Identity> key = svc ? std::optional(svc->Self()) : lan::Identity::Load(LanKeyPath());
+	lanKey->setText(key ? lan::Fingerprint(key->pub) : T("Lucida.Settings.LanKey.None"));
+
+	pairedList = new QListWidget();
+	pairedList->setMaximumHeight(120);
+	QPushButton *forget = new QPushButton(T("Lucida.Peers.Forget"));
+	forget->setAutoDefault(false);
+	connect(forget, &QPushButton::clicked, this, &SettingsDialog::ForgetPaired);
+	connect(pairedList, &QListWidget::currentRowChanged, forget,
+		[this, forget] { forget->setEnabled(pairedList->currentItem() != nullptr); });
+	FillPaired();
+	forget->setEnabled(false);
+
+	QFormLayout *form = new QFormLayout();
+	form->addRow(lanEnabled);
+	form->addRow(Note(T("Lucida.Settings.Lan.Note")));
+	form->addRow(T("Lucida.Settings.LanName"), lanName);
+	form->addRow(T("Lucida.Settings.LanKey"), lanKey);
+	form->addRow(T("Lucida.Settings.LanPaired"), pairedList);
+	form->addRow(QString(), forget);
+	form->addRow(Note(T("Lucida.Settings.Lan.Firewall")));
+	return Page(form);
+}
+
+/* The paired PCs, from the running service or from the file while it is off */
+void SettingsDialog::FillPaired()
+{
+	pairedList->clear();
+	std::shared_ptr<lan::Service> svc = controller->Lan();
+	const std::vector<lan::PairedPeer> paired =
+		svc ? svc->Paired() : lan::Service(lan::Identity::Generate(), LanPeersPath(), {}).Paired();
+	for (const lan::PairedPeer &p : paired) {
+		std::optional<lan::Key> k = lan::KeyFromId(p.id);
+		QListWidgetItem *item = new QListWidgetItem(
+			QStringLiteral("%1  (%2)").arg(p.name, k ? lan::Fingerprint(*k) : QString()), pairedList);
+		item->setData(Qt::UserRole, p.id);
+	}
+	if (paired.empty()) {
+		QListWidgetItem *none = new QListWidgetItem(T("Lucida.Settings.LanPaired.None"), pairedList);
+		none->setFlags(Qt::NoItemFlags);
+	}
+}
+
+void SettingsDialog::ForgetPaired()
+{
+	QListWidgetItem *item = pairedList->currentItem();
+	if (!item || !item->data(Qt::UserRole).isValid()) {
+		return;
+	}
+	if (QMessageBox::question(
+		    this, T("Lucida.Peers.Forget"),
+		    T("Lucida.Peers.Forget.Confirm").arg(item->text().section(QStringLiteral("  ("), 0, 0))) !=
+	    QMessageBox::Yes) {
+		return;
+	}
+	const QString id = item->data(Qt::UserRole).toString();
+	if (std::shared_ptr<lan::Service> svc = controller->Lan()) {
+		svc->Forget(id);
+	} else {
+		lan::Service(lan::Identity::Generate(), LanPeersPath(), {}).Forget(id);
+	}
+	FillPaired();
 }
 
 void SettingsDialog::UpdateCloudFound()
@@ -514,6 +590,9 @@ Settings SettingsDialog::Collect() const
 	const QString creds = cloudCredentials->text().trimmed();
 	s.cloudCredentials = creds.isEmpty() ? QString() : QDir::cleanPath(QDir::fromNativeSeparators(creds));
 	s.cloudFrames = cloudFrames->isChecked();
+
+	s.lanEnabled = lanEnabled->isChecked();
+	s.lanName = lanName->text().trimmed();
 	return s;
 }
 

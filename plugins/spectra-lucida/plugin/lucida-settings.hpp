@@ -8,6 +8,7 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QSpinBox;
 class QTableWidget;
 
@@ -47,6 +48,12 @@ private:
 	QLineEdit *cloudCredentials;
 	QLabel *cloudFound, *cloudTest;
 
+	/* Network */
+	QCheckBox *lanEnabled;
+	QLineEdit *lanName;
+	QLabel *lanKey;
+	QListWidget *pairedList;
+
 	/* Tags */
 	QTableWidget *rules;
 	QCheckBox *tolerateTypos;
@@ -58,6 +65,9 @@ private:
 	QWidget *ScreenshotsPage(const Settings &s);
 	QWidget *TagsPage(const Settings &s);
 	QWidget *CloudPage(const Settings &s);
+	QWidget *NetworkPage(const Settings &s);
+	void FillPaired();
+	void ForgetPaired();
 	void UpdateCloudFound();
 	void TestCloud();
 	QWidget *PathRow(QLineEdit *edit, bool file);

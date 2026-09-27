@@ -7,6 +7,7 @@
 
 #include "../core/carnivore.hpp"
 #include "../core/cloud.hpp"
+#include "../core/lan.hpp"
 #include "../core/prisma.hpp"
 #include "../core/profiles.hpp"
 #include "../core/recorder.hpp"
@@ -27,10 +28,14 @@
 #include <QJsonDocument>
 #include <QUrl>
 #include <QPainter>
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QThread>
 
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <future>
 #include <map>
 
 using namespace lucida;
@@ -1549,6 +1554,294 @@ int main(int argc, char **argv)
 		CHECK(LocateVideo(dir, t0 + 900, true).has_value());
 		CHECK(!LocateVideo(dir, t0 + 3600, false));
 		CHECK(FormatOffset(83) == "1:23" && FormatOffset(3723) == "1:02:03");
+	});
+
+	/* ---- sharing on the local network ---- */
+
+	Test("lan_keys_are_kept_protected_and_shown_short", [] {
+		const QString path = QDir(QFileInfo(NewDb()).absolutePath()).filePath("lan-identity.json");
+		QString error;
+		auto made = lan::Identity::LoadOrCreate(path, &error);
+		CHECK(made.has_value());
+		if (!made) {
+			return;
+		}
+		auto again = lan::Identity::LoadOrCreate(path, &error);
+		CHECK(again && again->pub == made->pub && again->secret == made->secret);
+		QFile f(path);
+		CHECK(f.open(QIODevice::ReadOnly));
+		const QByteArray stored = f.readAll();
+		/* the secret is not in the file as it is */
+		CHECK(!stored.contains(QByteArray((const char *)made->secret.data(), 32).toBase64()));
+		CHECK(made->Id().size() == 43 && lan::KeyFromId(made->Id()) == made->pub);
+		CHECK(!lan::KeyFromId("not a key").has_value());
+		const QString fp = lan::Fingerprint(made->pub);
+		CHECK(fp.size() == 19 && fp[4] == '-' && fp[9] == '-' && fp[14] == '-');
+		CHECK(lan::FormatPairCode(42) == "000 042");
+	});
+
+	Test("lan_channel_proves_both_keys_and_seals_messages", [] {
+		const lan::Identity server = lan::Identity::Generate(), client = lan::Identity::Generate();
+		/* the server side runs on its own thread with its own listener */
+		std::promise<quint16> listening;
+		auto served = std::async(
+			std::launch::async,
+			[&](lan::Identity key, bool genuine) {
+				QTcpServer listener;
+				listener.listen(QHostAddress::LocalHost, 0);
+				listening.set_value(listener.serverPort());
+				if (!listener.waitForNewConnection(5000)) {
+					return QString("no connection");
+				}
+				QTcpSocket *s = listener.nextPendingConnection();
+				std::unique_ptr<lan::Channel> ch =
+					lan::Channel::Accept(*s, genuine ? key : lan::Identity::Generate(), 3000);
+				if (!genuine) {
+					return QString();
+				}
+				if (!ch || ch->PeerId() != client.Id()) {
+					return QString("bad handshake");
+				}
+				auto m = ch->ReceiveJson(5000);
+				ch->SendJson(QJsonObject{{"echo", m ? m->value("say").toString() : QString()}});
+				ch->Send(QByteArray(lan::Channel::kMaxMessage, 'x'));
+				s->waitForBytesWritten(5000);
+				s->disconnectFromHost();
+				return QString();
+			},
+			server, true);
+		QTcpSocket socket;
+		socket.connectToHost(QHostAddress::LocalHost, listening.get_future().get());
+		CHECK(socket.waitForConnected(5000));
+		auto ch = lan::Channel::Connect(socket, client, server.pub, 5000);
+		CHECK(ch && ch->PeerId() == server.Id());
+		if (ch) {
+			CHECK(ch->SendJson(QJsonObject{{"say", "hello"}}));
+			auto reply = ch->ReceiveJson(5000);
+			CHECK(reply && reply->value("echo").toString() == "hello");
+			auto big = ch->Receive(5000);
+			CHECK(big && big->size() == lan::Channel::kMaxMessage);
+		}
+		CHECK(served.get().isEmpty());
+
+		/* a client expecting another key refuses whoever answers */
+		std::promise<quint16> listening2;
+		auto impostor = std::async(std::launch::async, [&] {
+			QTcpServer listener;
+			listener.listen(QHostAddress::LocalHost, 0);
+			listening2.set_value(listener.serverPort());
+			if (listener.waitForNewConnection(5000)) {
+				QTcpSocket *s = listener.nextPendingConnection();
+				lan::Channel::Accept(*s, lan::Identity::Generate(), 2000);
+			}
+		});
+		QTcpSocket socket2;
+		socket2.connectToHost(QHostAddress::LocalHost, listening2.get_future().get());
+		CHECK(socket2.waitForConnected(5000));
+		QString error;
+		CHECK(!lan::Channel::Connect(socket2, client, server.pub, 2000, &error));
+		CHECK(error.contains("different install"));
+		socket2.abort();
+		impostor.wait();
+	});
+
+	Test("lan_installs_find_each_other_pair_and_share_the_log_and_clips", [] {
+		const QString dbA = NewDb(), dbB = NewDb();
+		const QString dirB = QFileInfo(dbB).absolutePath();
+		const QString clipsB = QDir(dirB).filePath("clips");
+		QDir().mkpath(clipsB);
+		{
+			QFile clip(QDir(clipsB).filePath("Big Moment.mp4"));
+			CHECK(clip.open(QIODevice::WriteOnly));
+			QByteArray data(3 * lan::kChunk + 1234, '\0');
+			for (int i = 0; i < data.size(); i++) {
+				data[i] = char(i * 7);
+			}
+			clip.write(data);
+			QFile notes(QDir(clipsB).filePath("notes.txt"));
+			CHECK(notes.open(QIODevice::WriteOnly));
+			notes.write("secret");
+		}
+		/* B's log: two lines on one screenshot */
+		const QString shotPath = QDir(dirB).filePath("shot.jpg");
+		{
+			QImage img(64, 36, QImage::Format_RGB32);
+			img.fill(Qt::darkBlue);
+			CHECK(img.save(shotPath));
+			Store s(dbB);
+			s.Open();
+			std::vector<Sighting> seen;
+			s.AddFrame({At(Entry("16:38:10", "meet at the docks"), 100),
+				    At(Entry("16:38:11", "on my way"), 120)},
+				   1789231300, "wall", {}, &seen);
+			s.AttachFrame(seen, shotPath, 64, 36, 1789231300);
+		}
+		Store(dbA).Open();
+
+		std::atomic<int> askedB{0};
+		std::atomic<bool> acceptB{true};
+		QString codeA, codeB;
+		std::mutex codes;
+		lan::Provider providerA{[dbA] { return dbA; },
+					[] { return QString(); },
+					[] { return QJsonObject(); },
+					{}};
+		lan::Provider providerB{
+			[dbB] { return dbB; }, [clipsB] { return clipsB; },
+			[] { return QJsonObject{{"game", "FiveM_GTAProcess.exe"}, {"recording", true}}; },
+			[&](const lan::PairPrompt &p) {
+				askedB++;
+				{
+					std::lock_guard<std::mutex> lock(codes);
+					codeB = p.code;
+				}
+				std::promise<bool> answer;
+				answer.set_value(acceptB.load());
+				return answer.get_future();
+			}};
+		const QString dir = QFileInfo(dbA).absolutePath();
+		lan::Service a(lan::Identity::Generate(), QDir(dir).filePath("a-peers.json"), providerA);
+		lan::Service b(lan::Identity::Generate(), QDir(dir).filePath("b-peers.json"), providerB);
+		for (lan::Service *svc : {&a, &b}) {
+			svc->broadcast = false;
+			svc->beaconMs = 100;
+			svc->statusMs = 300;
+			svc->expireMs = 1500;
+		}
+		a.extraTargets = {{QHostAddress(QHostAddress::LocalHost), 47702}};
+		b.extraTargets = {{QHostAddress(QHostAddress::LocalHost), 47701}};
+		QString error;
+		CHECK(a.Start("Alpha PC", &error, 0, 47701));
+		CHECK(b.Start("Bravo\nPC", &error, 0, 47702));
+
+		auto waitFor = [](const std::function<bool()> &cond) {
+			for (int i = 0; i < 100 && !cond(); i++) {
+				QThread::msleep(50);
+			}
+			return cond();
+		};
+		CHECK(waitFor([&] { return a.FindPeer(b.Self().Id()).has_value(); }));
+		std::optional<lan::Peer> peerB = a.FindPeer(b.Self().Id());
+		CHECK(peerB && peerB->name == "BravoPC" && !peerB->paired && peerB->port == b.Port());
+		if (!peerB) {
+			return;
+		}
+
+		/* nothing but hello before pairing */
+		lan::Result r = a.Request(*peerB, QJsonObject{{"op", "lines"}});
+		CHECK(!r.ok && r.notPaired);
+		r = a.Request(*peerB, QJsonObject{{"op", "hello"}});
+		CHECK(r.ok && r.body.value("name").toString() == "BravoPC" && !r.body.contains("game"));
+
+		/* B says no */
+		acceptB = false;
+		r = a.Pair(*peerB, [&](const QString &code) {
+			std::lock_guard<std::mutex> lock(codes);
+			codeA = code;
+			return true;
+		});
+		CHECK(!r.ok && !a.IsPaired(b.Self().Id()) && !b.IsPaired(a.Self().Id()));
+		CHECK(codeA.size() == 7 && codeA == codeB);
+
+		/* A's person sees different codes and cancels */
+		acceptB = true;
+		r = a.Pair(*peerB, [](const QString &) { return false; });
+		CHECK(!r.ok && !b.IsPaired(a.Self().Id()));
+
+		/* both say yes */
+		r = a.Pair(*peerB, [&](const QString &code) {
+			std::lock_guard<std::mutex> lock(codes);
+			codeA = code;
+			return true;
+		});
+		CHECK(r.ok && a.IsPaired(b.Self().Id()));
+		CHECK(waitFor([&] { return b.IsPaired(a.Self().Id()); }));
+		CHECK(codeA == codeB && askedB == 3);
+		CHECK(a.Paired().size() == 1 && a.Paired()[0].name == "BravoPC");
+
+		/* what B reports about itself */
+		CHECK(waitFor([&] {
+			auto p = a.FindPeer(b.Self().Id());
+			return p && p->reachable && p->game == "FiveM_GTAProcess.exe";
+		}));
+		peerB = a.FindPeer(b.Self().Id());
+		CHECK(peerB && peerB->recording && peerB->pairedThere && peerB->paired);
+		if (!peerB) {
+			return;
+		}
+
+		/* B's log */
+		r = a.Request(*peerB, QJsonObject{{"op", "lines"}, {"text", "docks"}});
+		QJsonArray lines = r.body.value("lines").toArray();
+		CHECK(r.ok && lines.size() == 1 &&
+		      lines[0].toObject().value("body").toString() == "meet at the docks" &&
+		      lines[0].toObject().value("source").toString() == b.Self().Id() &&
+		      lines[0].toObject().value("has_frame").toBool());
+		r = a.Request(*peerB, QJsonObject{{"op", "lines"}});
+		CHECK(r.ok && r.body.value("lines").toArray().size() == 2);
+
+		/* a line's screenshot, with where the line is on it */
+		QByteArray shot;
+		r = a.Request(*peerB, QJsonObject{{"op", "shot"}, {"line", lines[0].toObject().value("line_id")}},
+			      [&](const QByteArray &chunk) {
+				      shot += chunk;
+				      return true;
+			      });
+		QFile shotFile(shotPath);
+		CHECK(shotFile.open(QIODevice::ReadOnly));
+		CHECK(r.ok && shot == shotFile.readAll());
+		CHECK(r.body.value("rect").toArray().size() == 4 && r.body.value("rect").toArray()[1].toInt() == 100);
+		r = a.Request(*peerB, QJsonObject{{"op", "shot"}, {"line", "999"}});
+		CHECK(!r.ok && r.error.contains("screenshot"));
+
+		/* B's clips: only the videos, downloadable from anywhere in the file */
+		r = a.Request(*peerB, QJsonObject{{"op", "clips"}});
+		QJsonArray clips = r.body.value("clips").toArray();
+		CHECK(r.ok && clips.size() == 1 && clips[0].toObject().value("name").toString() == "Big Moment.mp4" &&
+		      clips[0].toObject().value("size").toInteger() == 3 * lan::kChunk + 1234);
+		QFile original(QDir(clipsB).filePath("Big Moment.mp4"));
+		CHECK(original.open(QIODevice::ReadOnly));
+		const QByteArray whole = original.readAll();
+		QByteArray got;
+		r = a.Request(*peerB, QJsonObject{{"op", "clip"}, {"name", "Big Moment.mp4"}, {"offset", 1000}},
+			      [&](const QByteArray &chunk) {
+				      got += chunk;
+				      return true;
+			      });
+		CHECK(r.ok && got == whole.mid(1000) && r.body.value("size").toInteger() == whole.size());
+		/* stopping part way */
+		int chunks = 0;
+		r = a.Request(*peerB, QJsonObject{{"op", "clip"}, {"name", "Big Moment.mp4"}},
+			      [&](const QByteArray &) { return ++chunks < 2; });
+		CHECK(!r.ok && chunks == 2);
+		for (const char *name :
+		     {"notes.txt", "../log.db", "..\\log.db", "C:log.db", "", ".hidden.mp4", "missing.mp4"}) {
+			r = a.Request(*peerB, QJsonObject{{"op", "clip"}, {"name", name}});
+			CHECK(!r.ok && r.error.contains("clip"));
+		}
+		CHECK(!lan::ClipPath(clipsB, "../clips/Big Moment.mp4"));
+		CHECK(lan::ClipPath(clipsB, "Big Moment.mp4").has_value());
+
+		/* B forgets A: A is told it has to pair again */
+		b.Forget(a.Self().Id());
+		r = a.Request(*peerB, QJsonObject{{"op", "lines"}});
+		CHECK(!r.ok && r.notPaired);
+		CHECK(waitFor([&] {
+			auto p = a.FindPeer(b.Self().Id());
+			return p && !p->pairedThere;
+		}));
+
+		/* pairings are kept */
+		{
+			lan::Service again(lan::Identity::Generate(), QDir(dir).filePath("a-peers.json"), providerA);
+			CHECK(again.IsPaired(b.Self().Id()));
+		}
+
+		/* B leaving is noticed at once */
+		b.Stop();
+		CHECK(waitFor([&] { return !a.FindPeer(b.Self().Id()).has_value(); }));
+		a.Stop();
+		CHECK(a.Peers().empty());
 	});
 
 	printf("\n%d checks, %d failures\n", checks, failures);

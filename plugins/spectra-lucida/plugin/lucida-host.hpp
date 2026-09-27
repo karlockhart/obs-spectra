@@ -11,6 +11,9 @@
 namespace lucida {
 
 class PrismaClient;
+namespace lan {
+class Service;
+}
 
 /* What the log browser needs from where it runs: inside Spectra (the
  * plugin) or on its own (lucida-viewer.exe, next to obs-spectra.exe). Each
@@ -31,6 +34,9 @@ struct ViewerSource {
 	/* Prisma, for the Cloud toggle: other installs' lines and screenshots;
 	 * unset or null without credentials */
 	std::function<std::shared_ptr<PrismaClient>()> cloud;
+	/* Sharing on the local network, for the Network toggle: paired PCs'
+	 * lines and screenshots; unset or null while it is off */
+	std::function<std::shared_ptr<lan::Service>()> lan;
 };
 
 } // namespace lucida

@@ -25,7 +25,7 @@ if(MSVC)
   target_compile_options(spectra-sqlite PRIVATE /W0)
 endif()
 
-find_package(Qt6 REQUIRED Core Gui Widgets)
+find_package(Qt6 REQUIRED Core Gui Network Widgets)
 
 # Lucida's logic (store, sampling loop), shared by the plugin and the tests
 add_library(lucida-core STATIC)
@@ -36,6 +36,10 @@ target_sources(
     core/carnivore.hpp
     core/cloud.cpp
     core/cloud.hpp
+    core/lan-channel.cpp
+    core/lan-channel.hpp
+    core/lan.cpp
+    core/lan.hpp
     core/profiles.cpp
     core/profiles.hpp
     core/prisma.cpp
@@ -50,9 +54,13 @@ target_sources(
     core/video.hpp
 )
 target_include_directories(lucida-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/core")
-target_link_libraries(lucida-core PUBLIC spectra-vision spectra-sqlite spectra-monocypher Qt::Core Qt::Gui)
+target_link_libraries(
+  lucida-core
+  PUBLIC spectra-vision spectra-sqlite spectra-monocypher Qt::Core Qt::Gui Qt::Network
+)
 if(OS_WINDOWS)
-  target_link_libraries(lucida-core PRIVATE winhttp)
+  # WinHTTP for Prisma; DPAPI (crypt32) keeps the LAN key; Winsock to cut LAN connections on shutdown
+  target_link_libraries(lucida-core PRIVATE winhttp crypt32 ws2_32)
 endif()
 target_compile_features(lucida-core PUBLIC cxx_std_20)
 set_target_properties(lucida-core PROPERTIES FOLDER spectra)
@@ -81,6 +89,8 @@ target_sources(
     plugin/lucida-controller.hpp
     plugin/lucida-dock.cpp
     plugin/lucida-dock.hpp
+    plugin/lucida-peers.cpp
+    plugin/lucida-peers.hpp
     plugin/lucida-plugin.cpp
     plugin/lucida-regions.cpp
     plugin/lucida-regions.hpp
