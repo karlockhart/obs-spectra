@@ -1,4 +1,5 @@
 #include "StarlingLink.hpp"
+#include "SpectraDefaults.hpp"
 
 #include <widgets/OBSBasic.hpp>
 
@@ -8,6 +9,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+
+#include <algorithm>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -103,6 +106,42 @@ QString UniqueSourceName(const QString &base)
 	}
 }
 
+bool SameKeys(const std::vector<obs_key_combination_t> &a, const std::vector<obs_key_combination_t> &b)
+{
+	return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+			  [](const obs_key_combination_t &x, const obs_key_combination_t &y) {
+				  return x.modifiers == y.modifiers && x.key == y.key;
+			  });
+}
+
+/* The converted voice stands in for the microphone, so it is push-to-talk
+ * too: on the microphone's keys and delay, or on Spectra's default keys when
+ * the microphone has none. Only what differs is changed, as this runs every
+ * poll and picks up keys changed in Settings. */
+void MatchPushToTalk(obs_source_t *voice, obs_source_t *mic)
+{
+	const bool micPtt = mic && obs_source_push_to_talk_enabled(mic);
+	std::vector<obs_key_combination_t> keys = micPtt ? SpectraDefaults::GetPushToTalkKeys(mic)
+							 : std::vector<obs_key_combination_t>();
+	const bool micKeys = !keys.empty();
+	if (!micKeys) {
+		keys = SpectraDefaults::DefaultPushToTalkKeys();
+	}
+	const uint64_t delay = micPtt ? obs_source_get_push_to_talk_delay(mic) : 0;
+
+	if (!obs_source_push_to_talk_enabled(voice)) {
+		obs_source_enable_push_to_talk(voice, true);
+	}
+	if (obs_source_get_push_to_talk_delay(voice) != delay) {
+		obs_source_set_push_to_talk_delay(voice, delay);
+	}
+	if (!SameKeys(SpectraDefaults::GetPushToTalkKeys(voice), keys)) {
+		SpectraDefaults::SetPushToTalkKeys(voice, keys);
+		blog(LOG_INFO, "[Spectra] Starling voice is push-to-talk on %s keys",
+		     micKeys ? "the microphone's" : "the default");
+	}
+}
+
 } // namespace
 
 StarlingLink::StarlingLink(OBSBasic *main) : QObject(main)
@@ -194,6 +233,7 @@ void StarlingLink::Engage(const QString &deviceId, const QString &deviceName)
 			     obs_source_get_name(mic));
 		}
 	}
+	MatchPushToTalk(voice, mic);
 
 	if (!engaged) {
 		engaged = true;
