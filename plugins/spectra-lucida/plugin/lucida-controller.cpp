@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QJsonObject>
+#include <QLocale>
 #include <QPointer>
 #include <QStandardPaths>
 #include <QSysInfo>
@@ -94,6 +95,10 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
 	config_set_default_bool(c, SECTION, "LanEnabled", d.lanEnabled);
 	config_set_default_string(c, SECTION, "LanName", "");
+	config_set_default_string(c, SECTION, "StorageNode", "");
+	config_set_default_bool(c, SECTION, "StorageOffer", d.storageOffer);
+	config_set_default_string(c, SECTION, "StorageFolder", "");
+	config_set_default_int(c, SECTION, "StorageQuotaGB", d.storageQuotaGB);
 	const SpeechSettings &sp = d.speech;
 	config_set_default_bool(c, SECTION, "SpeechEnabled", sp.enabled);
 	config_set_default_bool(c, SECTION, "SpeechAutoDownload", sp.autoDownload);
@@ -177,6 +182,10 @@ Settings Settings::Load()
 	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
 	s.lanEnabled = config_get_bool(c, SECTION, "LanEnabled");
 	s.lanName = ConfigString(c, SECTION, "LanName").trimmed();
+	s.storageNode = ConfigString(c, SECTION, "StorageNode").trimmed();
+	s.storageOffer = config_get_bool(c, SECTION, "StorageOffer");
+	s.storageFolder = ConfigString(c, SECTION, "StorageFolder").trimmed();
+	s.storageQuotaGB = std::max(1, (int)config_get_int(c, SECTION, "StorageQuotaGB"));
 	SpeechSettings &sp = s.speech;
 	sp.enabled = config_get_bool(c, SECTION, "SpeechEnabled");
 	sp.autoDownload = config_get_bool(c, SECTION, "SpeechAutoDownload");
@@ -232,6 +241,10 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
 	config_set_bool(c, SECTION, "LanEnabled", lanEnabled);
 	config_set_string(c, SECTION, "LanName", lanName.toUtf8().constData());
+	config_set_string(c, SECTION, "StorageNode", storageNode.toUtf8().constData());
+	config_set_bool(c, SECTION, "StorageOffer", storageOffer);
+	config_set_string(c, SECTION, "StorageFolder", storageFolder.toUtf8().constData());
+	config_set_int(c, SECTION, "StorageQuotaGB", storageQuotaGB);
 	config_set_bool(c, SECTION, "SpeechEnabled", speech.enabled);
 	config_set_bool(c, SECTION, "SpeechAutoDownload", speech.autoDownload);
 	config_set_string(c, SECTION, "SpeechModel", speech.model.toUtf8().constData());
@@ -256,6 +269,14 @@ QString Settings::CloudCredentialsFile() const
 QString Settings::LanDisplayName() const
 {
 	return lanName.isEmpty() ? QSysInfo::machineHostName() : lanName;
+}
+
+QString Settings::StorageFolder() const
+{
+	if (!storageFolder.isEmpty()) {
+		return QDir::cleanPath(storageFolder);
+	}
+	return QDir(QFileInfo(LoopDirectory()).absolutePath()).filePath(QStringLiteral("Spectra Storage"));
 }
 
 /* ------------------------------------------------------------------------- */
@@ -289,6 +310,11 @@ QString LanKeyPath()
 QString LanPeersPath()
 {
 	return ModuleConfigFile("lan-peers.json");
+}
+
+QString LanStorageStatePath()
+{
+	return ModuleConfigFile("lan-storage-sent.json");
 }
 
 void Controller::ReloadProfiles()
@@ -352,6 +378,7 @@ Controller::~Controller()
 {
 	Stop();
 	StopCloud();
+	StopStorage();
 	StopLan();
 }
 
@@ -489,6 +516,7 @@ void Controller::ApplySettings(const Settings &s)
 	const bool lanChanged = s.lanEnabled != settings.lanEnabled || s.LanDisplayName() != settings.LanDisplayName();
 	Stop();
 	StopCloud();
+	StopStorage();
 	if (lanChanged) {
 		StopLan();
 	}
@@ -500,6 +528,9 @@ void Controller::ApplySettings(const Settings &s)
 	StartCloud();
 	if (lanChanged) {
 		StartLan();
+	} else {
+		ApplyStorageNode();
+		StartStorage();
 	}
 	if (settings.recorder.carnivore != wasCarnivore) {
 		regionsRead = 0;
@@ -646,6 +677,7 @@ void Controller::Run(Settings s)
 				logged += added;
 				if (added > 0) {
 					WakeCloud();
+					WakeStorage();
 				}
 				if (regions >= 0) {
 					regionsRead = regions;
@@ -915,7 +947,20 @@ void Controller::StartLan()
 	};
 	provider.status = [this] {
 		std::lock_guard<std::mutex> lock(mutex);
-		return QJsonObject{{"game", game}, {"recording", looping}};
+		return QJsonObject{{"game", game}, {"recording", looping}, {"storage", storageNode != nullptr}};
+	};
+	provider.store = [this](lan::Channel &channel, const QString &peerId, const QString &peerName,
+				const QJsonObject &request) {
+		std::shared_ptr<lan::StorageNode> node;
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			node = storageNode;
+		}
+		if (node) {
+			node->Answer(channel, peerId, peerName, request);
+		} else {
+			channel.SendJson(QJsonObject{{"error", "no_storage"}});
+		}
 	};
 	QPointer<Controller> guard(this);
 	provider.askPair = [guard](const lan::PairPrompt &prompt) {
@@ -957,18 +1002,278 @@ void Controller::StartLan()
 	blog(LOG_INFO, "[Lucida] Sharing with paired PCs on the network as \"%s\" (port %d, key %s)",
 	     name.toUtf8().constData(), (int)lan->Port(), lan::Fingerprint(self->pub).toUtf8().constData());
 	SetLanStatus(QString::fromUtf8(obs_module_text("Lucida.Lan.Status")).arg(name));
+	ApplyStorageNode();
+	StartStorage();
 	emit lanPeersChanged();
 }
 
 void Controller::StopLan()
 {
+	StopStorage();
 	if (!lan) {
 		return;
 	}
 	lan->Stop();
 	lan.reset();
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		storageNode.reset();
+	}
+	UpdateKeepStatus();
 	SetLanStatus(QString());
 	emit lanPeersChanged();
+}
+
+/* ------------------------------------------------------------------------- */
+/* Storing on a storage PC, and being one */
+
+namespace {
+constexpr int kStorageIdle = 15;      /* s between passes with nothing waiting */
+constexpr int kStorageRetry = 30;     /* s before retrying a failure, doubling... */
+constexpr int kStorageRetryMax = 300; /* ...up to this */
+constexpr int kStorageAbsent = 10;    /* s between looks for a storage PC that is not there */
+constexpr qint64 kProgressMs = 500;
+
+QString T(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
+} // namespace
+
+QString Controller::StorageStatus() const
+{
+	QStringList lines;
+	for (const QString &line : {sendStatus, keepStatus}) {
+		if (!line.isEmpty()) {
+			lines << line;
+		}
+	}
+	return lines.join('\n');
+}
+
+std::shared_ptr<lan::StorageNode> Controller::StorageNode() const
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	return storageNode;
+}
+
+void Controller::ApplyStorageNode()
+{
+	std::shared_ptr<lan::StorageNode> node;
+	if (lan && settings.storageOffer) {
+		const QString folder = settings.StorageFolder();
+		const quint64 quota = (quint64)settings.storageQuotaGB << 30;
+		node = StorageNode();
+		if (!node || node->Folder() != QDir::cleanPath(folder) || node->Quota() != quota) {
+			node = std::make_shared<lan::StorageNode>(folder, quota);
+			QPointer<Controller> guard(this);
+			node->changed = [guard] {
+				QMetaObject::invokeMethod(
+					qApp,
+					[guard] {
+						if (guard) {
+							guard->UpdateKeepStatus();
+							emit guard->storedChanged();
+						}
+					},
+					Qt::QueuedConnection);
+			};
+			blog(LOG_INFO, "[Lucida] Storing paired PCs' recordings in %s (quota %d GB)",
+			     folder.toUtf8().constData(), settings.storageQuotaGB);
+		}
+		/* stored logs keep what this PC's own log keeps */
+		node->retentionDays = settings.retentionDays;
+		node->frameRetentionDays = settings.recorder.frameRetentionDays;
+	}
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		storageNode = node;
+	}
+	UpdateKeepStatus();
+}
+
+void Controller::UpdateKeepStatus()
+{
+	std::shared_ptr<lan::StorageNode> node = StorageNode();
+	QString text;
+	if (node) {
+		const QLocale locale;
+		text = T("Lucida.Storage.Keeping")
+			       .arg(QDir::toNativeSeparators(node->Folder()),
+				    locale.formattedDataSize((qint64)node->UsedBytes(), 1,
+							     QLocale::DataSizeTraditionalFormat),
+				    locale.formattedDataSize((qint64)node->Quota(), 0,
+							     QLocale::DataSizeTraditionalFormat));
+	}
+	if (text != keepStatus) {
+		keepStatus = text;
+		emit storageStatusChanged(StorageStatus());
+	}
+}
+
+void Controller::SetSendStatus(const QString &text)
+{
+	QMetaObject::invokeMethod(
+		this,
+		[this, text]() {
+			if (text != sendStatus) {
+				sendStatus = text;
+				emit storageStatusChanged(StorageStatus());
+			}
+		},
+		Qt::QueuedConnection);
+}
+
+void Controller::StartStorage()
+{
+	if (!lan || settings.storageNode.isEmpty() || storageWorker.joinable()) {
+		if (!lan || settings.storageNode.isEmpty()) {
+			SetSendStatus(QString());
+		}
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		storageStop = false;
+		storageWake = false;
+	}
+	storageWorker = std::thread(&Controller::RunStorage, this, settings, lan);
+}
+
+void Controller::StopStorage()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		storageStop = true;
+	}
+	storageWakeup.notify_all();
+	if (storageWorker.joinable()) {
+		storageWorker.join();
+	}
+}
+
+void Controller::WakeStorage()
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		storageWake = true;
+	}
+	storageWakeup.notify_all();
+}
+
+void Controller::RunStorage(Settings s, std::shared_ptr<lan::Service> service)
+{
+	LowerThreadPriority();
+	auto wait = [this](int seconds, bool wakeable) {
+		std::unique_lock<std::mutex> lock(mutex);
+		storageWakeup.wait_for(lock, std::chrono::seconds(seconds),
+				       [this, wakeable] { return storageStop || (wakeable && storageWake); });
+		storageWake = false;
+		return !storageStop;
+	};
+	auto stopping = [this] {
+		std::lock_guard<std::mutex> lock(mutex);
+		return storageStop;
+	};
+
+	std::unique_ptr<Store> store;
+	if (QFileInfo::exists(s.dbPath)) {
+		store = std::make_unique<Store>(s.dbPath);
+		if (!store->Open() || !store->IsOpen()) {
+			store.reset();
+		}
+	}
+	lan::StorageClient client(*service, LanStorageStatePath());
+	int retry = kStorageRetry;
+	bool failing = false;
+	while (!stopping()) {
+		QString nodeName;
+		for (const lan::PairedPeer &p : service->Paired()) {
+			if (p.id == s.storageNode) {
+				nodeName = p.name;
+			}
+		}
+		if (nodeName.isEmpty()) {
+			SetSendStatus(T("Lucida.Storage.NotPaired"));
+			if (!wait(kStorageAbsent, false)) {
+				break;
+			}
+			continue;
+		}
+		std::optional<lan::Peer> node = service->FindPeer(s.storageNode);
+		if (!node || !node->reachable) {
+			SetSendStatus(T("Lucida.Storage.Waiting").arg(nodeName));
+			if (!wait(kStorageAbsent, false)) {
+				break;
+			}
+			continue;
+		}
+		if (!node->pairedThere) {
+			SetSendStatus(T("Lucida.Storage.PairAgain").arg(nodeName));
+			if (!wait(kStorageAbsent, false)) {
+				break;
+			}
+			continue;
+		}
+		if (!node->storage) {
+			SetSendStatus(T("Lucida.Storage.NotOffered").arg(nodeName));
+			if (!wait(kStorageAbsent, false)) {
+				break;
+			}
+			continue;
+		}
+
+		QString dir;
+		bool recording;
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			dir = loopDir;
+			recording = looping;
+		}
+		qint64 lastPost = 0;
+		const lan::PushReport r = client.Step(
+			*node, store.get(), dir, recording, [&](const QString &segment, qint64 sent, qint64 size) {
+				const qint64 now = QDateTime::currentMSecsSinceEpoch();
+				if (now - lastPost >= kProgressMs) {
+					lastPost = now;
+					SetSendStatus(T("Lucida.Storage.Sending")
+							      .arg(segment, nodeName)
+							      .arg(size > 0 ? (int)(sent * 100 / size) : 0));
+				}
+				return !stopping();
+			});
+		if (r.segments || r.skipped || r.frames) {
+			blog(LOG_DEBUG,
+			     "[Lucida] Stored on %s: %d segment(s), %d skipped, %d screenshot(s), %d line(s)",
+			     nodeName.toUtf8().constData(), r.segments, r.skipped, r.frames, r.lines);
+		}
+		if (!r.error.isEmpty()) {
+			if (stopping()) {
+				break;
+			}
+			if (!failing) {
+				blog(LOG_WARNING, "[Lucida] Storing on %s failed: %s", nodeName.toUtf8().constData(),
+				     r.error.toUtf8().constData());
+			}
+			failing = true;
+			SetSendStatus(T("Lucida.Storage.Retrying").arg(nodeName, r.error).arg(retry));
+			if (!wait(retry, false)) {
+				break;
+			}
+			retry = std::min(retry * 2, kStorageRetryMax);
+			continue;
+		}
+		if (failing) {
+			blog(LOG_INFO, "[Lucida] Storing on %s works again", nodeName.toUtf8().constData());
+		}
+		failing = false;
+		retry = kStorageRetry;
+		const int waiting = (int)client.Waiting(dir, recording).size();
+		SetSendStatus(T("Lucida.Storage.Status").arg(nodeName).arg(waiting));
+		if (!r.more && !wait(kStorageIdle, true)) {
+			break;
+		}
+	}
 }
 
 } // namespace lucida

@@ -60,6 +60,10 @@ private:
 	QLineEdit *lanName;
 	QLabel *lanKey;
 	QListWidget *pairedList;
+	QComboBox *storageNode;
+	QCheckBox *storageOffer;
+	QLineEdit *storageFolder;
+	QSpinBox *storageQuota;
 
 	/* Tags */
 	QTableWidget *rules;

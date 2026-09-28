@@ -108,18 +108,28 @@ struct ScreenRegion {
 	double lastSeen = 0.0;
 };
 
-/* Backing up to Prisma: what is waiting to be sent */
+/* Where the log is backed up to; each keeps its own record of what was sent */
+enum class SyncTarget {
+	Cloud, /* Prisma */
+	Lan,   /* the storage PC on the local network */
+};
+
+/* Backing up: what is waiting to be sent */
 struct SyncLine {
 	LogLine line;
 	QString dedupKey;
 	QString labelsJson; /* as stored, to tell whether it changed after sending */
 	std::optional<QString> framePath;
 	std::optional<double> sessionStarted;
+	std::optional<long long> sessionId;
+	QString source; /* "speech" or empty */
 };
 
 struct SyncFrame {
 	Frame frame;
 	std::optional<double> sessionStarted;
+	std::optional<long long> sessionId;
+	double created = 0.0;
 };
 
 struct SyncSession {
@@ -242,19 +252,27 @@ public:
 	QString Meta(const char *key);
 	void SetMeta(const char *key, const QString &value);
 
-	/* Backing up to Prisma. A row waits (synced_at NULL) until it is sent,
-	 * and again when it changes in a way worth sending: a line's better
-	 * reading, labels or screenshot, a session's end. Oldest first. */
-	std::vector<SyncLine> UnsyncedLines(int limit);
+	/* Backing up to Prisma or the storage PC. A row waits (its sync column
+	 * NULL) until it is sent, and again when it changes in a way worth
+	 * sending: a line's better reading, labels or screenshot, a session's
+	 * end. Oldest first. */
+	std::vector<SyncLine> UnsyncedLines(int limit, SyncTarget target = SyncTarget::Cloud);
 	/* at: when they were sent, or -1 for refused ones (never retried) */
-	void MarkLinesSynced(const std::vector<SyncLine> &lines, double at);
-	std::vector<SyncFrame> UnsyncedFrames(int limit);
-	void MarkFrameSynced(long long frameId, double at);
-	std::vector<SyncSession> UnsyncedSessions(int limit);
-	void MarkSessionSynced(const SyncSession &session, double at);
-	SyncBacklog Unsynced();
+	void MarkLinesSynced(const std::vector<SyncLine> &lines, double at, SyncTarget target = SyncTarget::Cloud);
+	std::vector<SyncFrame> UnsyncedFrames(int limit, SyncTarget target = SyncTarget::Cloud);
+	void MarkFrameSynced(long long frameId, double at, SyncTarget target = SyncTarget::Cloud);
+	std::vector<SyncSession> UnsyncedSessions(int limit, SyncTarget target = SyncTarget::Cloud);
+	void MarkSessionSynced(const SyncSession &session, double at, SyncTarget target = SyncTarget::Cloud);
+	SyncBacklog Unsynced(SyncTarget target = SyncTarget::Cloud);
 	/* Everything waits again (e.g. backing up somewhere else) */
-	void ResetSync();
+	void ResetSync(SyncTarget target = SyncTarget::Cloud);
+
+	/* A storage PC's copy of another PC's log: rows keep the ids they have
+	 * there, and arriving again replaces them */
+	void ImportSessions(const std::vector<SyncSession> &sessions);
+	void ImportLines(const std::vector<SyncLine> &lines);
+	void ImportFrame(const Frame &frame, std::optional<long long> sessionId, double created,
+			 const std::vector<Sighting> &lines);
 
 	/* Direct access for tests and maintenance */
 	sqlite3 *Db() const { return db; }

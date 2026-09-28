@@ -5,6 +5,7 @@
 #include "store.hpp"
 #include "cloud.hpp"
 #include "lan.hpp"
+#include "lan-storage.hpp"
 #include "profiles.hpp"
 #include "tagger.hpp"
 
@@ -61,11 +62,19 @@ struct Settings {
 	/* Sharing with paired Spectra installs on the local network */
 	bool lanEnabled = false;
 	QString lanName; /* empty: the computer's name */
+	/* Keeping this PC's loop recordings and log on a paired storage PC */
+	QString storageNode; /* its key; empty: nowhere */
+	/* Being a storage PC for paired PCs */
+	bool storageOffer = false;
+	QString storageFolder; /* empty: "Spectra Storage" beside the loop folder */
+	int storageQuotaGB = 500;
 
 	/* The Prisma credentials file in use (see CloudCredentialsPath) */
 	QString CloudCredentialsFile() const;
 	/* What other PCs on the network see this one as */
 	QString LanDisplayName() const;
+	/* Where other PCs' recordings are kept when this is a storage PC */
+	QString StorageFolder() const;
 
 	SpeechSettings speech;
 
@@ -80,6 +89,8 @@ QString ProfilesPath();
 /* Sharing on the network: this install's key, and the PCs paired with it */
 QString LanKeyPath();
 QString LanPeersPath();
+/* Which loop segments were sent to the storage PC */
+QString LanStorageStatePath();
 
 /* Spectra's loop recording folder and state */
 QString LoopDirectory();
@@ -137,6 +148,10 @@ public:
 	/* Sharing on the local network; null while it is off */
 	std::shared_ptr<lan::Service> Lan() const { return lan; }
 	QString LanStatus() const { return lanStatus; }
+	/* Storing on a storage PC, and being one: one line each, when in use */
+	QString StorageStatus() const;
+	/* This PC as a storage PC; null unless it is one */
+	std::shared_ptr<lan::StorageNode> StorageNode() const;
 	void StopLan();
 	/* Asks the person here whether another PC may pair (set by the dock);
 	 * unset: every request is refused */
@@ -152,6 +167,9 @@ signals:
 	void lanStatusChanged(const QString &status);
 	/* other PCs came, went, paired or changed what they report */
 	void lanPeersChanged();
+	void storageStatusChanged(const QString &status);
+	/* a paired PC stored something here */
+	void storedChanged();
 
 private:
 	Settings settings;
@@ -178,6 +196,21 @@ private:
 	QString lanStatus;
 	void StartLan();
 	void SetLanStatus(const QString &text);
+
+	/* guarded by mutex: the network service's threads answer with it */
+	std::shared_ptr<lan::StorageNode> storageNode;
+	QString sendStatus, keepStatus;
+	std::thread storageWorker;
+	std::condition_variable storageWakeup;
+	bool storageStop = false;
+	bool storageWake = false;
+	void ApplyStorageNode();
+	void StartStorage();
+	void StopStorage();
+	void WakeStorage();
+	void RunStorage(Settings s, std::shared_ptr<lan::Service> service);
+	void SetSendStatus(const QString &text);
+	void UpdateKeepStatus();
 
 	std::thread cloudWorker;
 	std::condition_variable cloudWakeup;

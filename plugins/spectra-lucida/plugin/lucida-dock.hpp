@@ -30,7 +30,7 @@ public:
 
 private:
 	QPointer<Controller> controller;
-	QLabel *status, *cloud, *network;
+	QLabel *status, *cloud, *network, *storage;
 	PeersPanel *peers;
 	QLabel *speechStatus;
 	QLineEdit *search;

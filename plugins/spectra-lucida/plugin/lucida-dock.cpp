@@ -67,6 +67,9 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	network = new QLabel(controller->LanStatus());
 	network->setWordWrap(true);
 	network->setVisible(!network->text().isEmpty());
+	storage = new QLabel(controller->StorageStatus());
+	storage->setWordWrap(true);
+	storage->setVisible(!storage->text().isEmpty());
 	peers = new PeersPanel(controller);
 	speechStatus = new QLabel(controller->Speech()->Status());
 	speechStatus->setWordWrap(true);
@@ -108,6 +111,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	layout->addWidget(status);
 	layout->addWidget(cloud);
 	layout->addWidget(network);
+	layout->addWidget(storage);
 	layout->addWidget(peers);
 	layout->addWidget(speechStatus);
 	layout->addLayout(row);
@@ -139,6 +143,10 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	connect(controller, &Controller::lanStatusChanged, this, [this](const QString &text) {
 		network->setText(text);
 		network->setVisible(!text.isEmpty());
+	});
+	connect(controller, &Controller::storageStatusChanged, this, [this](const QString &text) {
+		storage->setText(text);
+		storage->setVisible(!text.isEmpty());
 	});
 	connect(peers, &PeersPanel::browseLog, this, [this] {
 		OpenViewer();
