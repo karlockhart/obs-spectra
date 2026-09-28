@@ -60,6 +60,10 @@ private:
 	QLineEdit *lanName;
 	QLabel *lanKey;
 	QListWidget *pairedList;
+	QComboBox *storageNode;
+	QCheckBox *storageOffer;
+	QLineEdit *storageFolder;
+	QSpinBox *storageQuota;
 
 	/* Tags */
 	QTableWidget *rules;
@@ -69,6 +73,7 @@ private:
 
 	/* Speech (Spectra) */
 	QCheckBox *speechEnabled, *speechAutoDownload, *speechGpu, *speechMe, *speechTeamSpeak, *speechGame;
+	QCheckBox *speechOnStorage, *speechForOthers;
 	QComboBox *speechModel, *speechLanguage, *speechWhen;
 	QPushButton *speechDownload, *speechOlder;
 	QProgressBar *speechProgress;

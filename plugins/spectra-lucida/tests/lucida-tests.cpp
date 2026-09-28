@@ -8,6 +8,7 @@
 #include "../core/carnivore.hpp"
 #include "../core/cloud.hpp"
 #include "../core/lan.hpp"
+#include "../core/lan-storage.hpp"
 #include "../core/prisma.hpp"
 #include "../core/profiles.hpp"
 #include "../core/recorder.hpp"
@@ -1842,6 +1843,457 @@ int main(int argc, char **argv)
 		CHECK(waitFor([&] { return !a.FindPeer(b.Self().Id()).has_value(); }));
 		a.Stop();
 		CHECK(a.Peers().empty());
+	});
+
+	auto waitUntil = [](const std::function<bool()> &cond) {
+		for (int i = 0; i < 100 && !cond(); i++) {
+			QThread::msleep(50);
+		}
+		return cond();
+	};
+	auto quick = [](lan::Service &svc) {
+		svc.broadcast = false;
+		svc.beaconMs = 100;
+		svc.statusMs = 300;
+		svc.expireMs = 1500;
+	};
+	auto yes = [](const lan::PairPrompt &) {
+		std::promise<bool> answer;
+		answer.set_value(true);
+		return answer.get_future();
+	};
+
+	Test("lan_installs_broadcasts_miss_still_find_each_other", [&] {
+		const QString dir = QFileInfo(NewDb()).absolutePath();
+		lan::Provider provider{{}, {}, {}, yes};
+		lan::Service a(lan::Identity::Generate(), QDir(dir).filePath("a.json"), provider);
+		lan::Service b(lan::Identity::Generate(), QDir(dir).filePath("b.json"), provider);
+		quick(a);
+		quick(b);
+		QString error;
+		CHECK(a.Start("Alpha", &error, 0, 47711));
+		CHECK(b.Start("Bravo", &error, 0, 47712));
+
+		/* by address: each lists the other, though no beacon goes anywhere */
+		lan::Result r = a.AddAddress("127.0.0.1", b.Port());
+		CHECK(r.ok && r.body.value("id").toString() == b.Self().Id() &&
+		      r.body.value("name").toString() == "Bravo");
+		CHECK(a.FindPeer(b.Self().Id()).has_value());
+		CHECK(waitUntil([&] { return b.FindPeer(a.Self().Id()).has_value(); }));
+		std::optional<lan::Peer> onB = b.FindPeer(a.Self().Id());
+		CHECK(onB && onB->name == "Alpha" && onB->port == a.Port());
+		CHECK(!a.AddAddress("127.0.0.1", a.Port()).ok);
+		CHECK(!a.AddAddress("127.0.0.1", 1).ok);
+		CHECK(!a.AddAddress("no-such-pc.invalid", b.Port()).ok);
+
+		/* paired PCs remember where the other one is */
+		std::optional<lan::Peer> peerB = a.FindPeer(b.Self().Id());
+		lan::Result paired = peerB ? a.Pair(*peerB, [](const QString &) { return true; }) : lan::Result();
+		if (!paired.ok) {
+			fprintf(stderr, "  pairing failed: %s\n", paired.error.toUtf8().constData());
+		}
+		CHECK(paired.ok);
+		CHECK(a.Paired().size() == 1 && a.Paired()[0].port == b.Port() && !a.Paired()[0].address.isNull());
+		{
+			lan::Service again(lan::Identity::Generate(), QDir(dir).filePath("a.json"), provider);
+			CHECK(again.Paired().size() == 1 && again.Paired()[0].port == b.Port());
+		}
+		/* and it stays listed while it answers, beacons or not */
+		QThread::msleep(2000);
+		CHECK(a.FindPeer(b.Self().Id()).has_value());
+		a.Stop();
+		b.Stop();
+
+		/* one way only: C's beacons reach D, D's reach nobody; D answers C */
+		lan::Service c(lan::Identity::Generate(), QDir(dir).filePath("c.json"), provider);
+		lan::Service d(lan::Identity::Generate(), QDir(dir).filePath("d.json"), provider);
+		quick(c);
+		quick(d);
+		c.extraTargets = {{QHostAddress(QHostAddress::LocalHost), 47714}};
+		CHECK(c.Start("Charlie", &error, 0, 47713));
+		CHECK(d.Start("Delta", &error, 0, 47714));
+		CHECK(waitUntil([&] { return d.FindPeer(c.Self().Id()).has_value(); }));
+		CHECK(waitUntil([&] { return c.FindPeer(d.Self().Id()).has_value(); }));
+		c.Stop();
+		d.Stop();
+		CHECK(!lan::Service::LocalAddresses().contains("127.0.0.1"));
+	});
+
+	Test("lan_a_paired_pc_that_moved_is_found_through_the_others", [&] {
+		const QString dir = QFileInfo(NewDb()).absolutePath();
+		lan::Provider provider{{}, {}, {}, yes};
+		const lan::Identity idG = lan::Identity::Generate();
+		lan::Service e(lan::Identity::Generate(), QDir(dir).filePath("e.json"), provider);
+		lan::Service f(lan::Identity::Generate(), QDir(dir).filePath("f.json"), provider);
+		auto g = std::make_unique<lan::Service>(idG, QDir(dir).filePath("g.json"), provider);
+		for (lan::Service *svc : {&e, &f, g.get()}) {
+			quick(*svc);
+		}
+		QString error;
+		CHECK(e.Start("Echo", &error, 0, 47731));
+		CHECK(f.Start("Foxtrot", &error, 0, 47732));
+		CHECK(g->Start("Golf", &error, 0, 47733));
+		auto pair = [](lan::Service &from, lan::Service &to) {
+			if (!from.AddAddress("127.0.0.1", to.Port()).ok) {
+				return false;
+			}
+			std::optional<lan::Peer> p = from.FindPeer(to.Self().Id());
+			return p && from.Pair(*p, [](const QString &) { return true; }).ok;
+		};
+		CHECK(pair(e, f));
+		CHECK(pair(*g, e));
+		CHECK(pair(*g, f));
+		const quint16 oldPort = g->Port();
+
+		/* Golf comes back somewhere else and only tells Foxtrot */
+		g->Stop();
+		g = std::make_unique<lan::Service>(idG, QDir(dir).filePath("g.json"), provider);
+		quick(*g);
+		g->Forget(e.Self().Id());
+		CHECK(g->Start("Golf", &error, 0, 47734));
+		CHECK(g->Port() != oldPort);
+		auto at = [&](lan::Service &svc) {
+			std::optional<lan::Peer> p = svc.FindPeer(idG.Id());
+			return p ? p->port : quint16(0);
+		};
+		bool found = false;
+		for (int i = 0; i < 200 && !found; i++) {
+			found = at(f) == g->Port() && at(e) == g->Port();
+			QThread::msleep(50);
+		}
+		CHECK(at(f) == g->Port());
+		CHECK(at(e) == g->Port()); /* from Foxtrot's gossip */
+		CHECK(e.Paired().size() == 2);
+		for (lan::Service *svc : {&e, &f, g.get()}) {
+			svc->Stop();
+		}
+	});
+
+	Test("lan_storage_pc_keeps_segments_and_the_log", [&] {
+		CHECK(lan::IsSegmentName("2026-09-20 10-00-00.mkv"));
+		CHECK(!lan::IsSegmentName("../2026-09-20 10-00-00.mkv"));
+		CHECK(!lan::IsSegmentName("notes.mkv"));
+		CHECK(!lan::IsSegmentName("2026-09-20 10-00-00.mp4"));
+
+		const QString dbS = NewDb();
+		const QString dir = QFileInfo(dbS).absolutePath();
+		const QString loop = QDir(dir).filePath("loop");
+		const QString storage = QDir(dir).filePath("storage");
+		QDir().mkpath(loop);
+		constexpr int kSegment = 300 * 1024;
+		auto segment = [&](const QString &name, char fill) {
+			QFile f(QDir(loop).filePath(name));
+			CHECK(f.open(QIODevice::WriteOnly));
+			QByteArray data(kSegment, fill);
+			for (int i = 0; i < data.size(); i += 997) {
+				data[i] = char(i);
+			}
+			f.write(data);
+			return f.fileName();
+		};
+		const QString seg1 = segment("2026-09-20 10-00-00.mkv", 'a');
+		const QString seg2 = segment("2026-09-20 10-02-00.mkv", 'b');
+		const QString seg3 = segment("2026-09-20 10-04-00.mkv", 'c');
+		auto same = [](const QString &x, const QString &y) {
+			QFile a(x), b(y);
+			return a.open(QIODevice::ReadOnly) && b.open(QIODevice::ReadOnly) && a.readAll() == b.readAll();
+		};
+
+		/* the source's log: a session, two lines on a screenshot */
+		const QString shot = QDir(dir).filePath("1789231300.jpg");
+		{
+			QImage img(64, 36, QImage::Format_RGB32);
+			img.fill(Qt::darkGreen);
+			CHECK(img.save(shot));
+		}
+		Store s(dbS);
+		CHECK(s.Open());
+		const long long session = s.StartSession("FiveM_GTAProcess.exe", 1920, 1080);
+		std::vector<Sighting> seen;
+		const std::vector<long long> ids = s.AddFrame({At(Entry("16:38:10", "meet at the docks"), 100),
+							       At(Entry("16:38:11", "on my way"), 120)},
+							      1789231300, "wall", session, &seen);
+		s.AttachFrame(seen, shot, 64, 36, 1789231300, session);
+		CHECK(ids.size() == 2);
+
+		lan::StorageNode node(storage, 700 * 1024); /* room for two segments */
+		std::atomic<int> arrived{0};
+		node.changed = [&] {
+			arrived++;
+		};
+		lan::Provider nodeProvider{{},
+					   {},
+					   [] { return QJsonObject{{"storage", true}}; },
+					   yes,
+					   [&](lan::Channel &ch, const QString &id, const QString &name,
+					       const QJsonObject &req) { node.Answer(ch, id, name, req); }};
+		lan::Provider plain{{}, {}, {}, yes};
+		lan::Service n(lan::Identity::Generate(), QDir(dir).filePath("n.json"), nodeProvider);
+		lan::Service src(lan::Identity::Generate(), QDir(dir).filePath("s.json"), plain);
+		lan::Service stranger(lan::Identity::Generate(), QDir(dir).filePath("x.json"), plain);
+		for (lan::Service *svc : {&n, &src, &stranger}) {
+			quick(*svc);
+		}
+		QString error;
+		CHECK(n.Start("Storage", &error, 0, 47721));
+		CHECK(src.Start("Gamer", &error, 0, 47722));
+		CHECK(stranger.Start("Stranger", &error, 0, 47723));
+		CHECK(src.AddAddress("127.0.0.1", n.Port()).ok);
+		std::optional<lan::Peer> peerN = src.FindPeer(n.Self().Id());
+		CHECK(peerN && src.Pair(*peerN, [](const QString &) { return true; }).ok);
+		CHECK(waitUntil([&] {
+			auto p = src.FindPeer(n.Self().Id());
+			return p && p->storage && p->reachable;
+		}));
+		peerN = src.FindPeer(n.Self().Id());
+		if (!peerN) {
+			return;
+		}
+
+		/* only paired PCs may store, and only sensible names */
+		CHECK(stranger.AddAddress("127.0.0.1", n.Port()).ok);
+		std::optional<lan::Peer> strangerSeesN = stranger.FindPeer(n.Self().Id());
+		CHECK(strangerSeesN &&
+		      stranger.Request(*strangerSeesN, QJsonObject{{"op", "store_segment"}, {"segment", "x"}})
+			      .notPaired);
+		lan::Result r = src.Request(*peerN, QJsonObject{{"op", "store_segment"},
+								{"segment", "../2026-09-20 10-00-00.mkv"},
+								{"size", 10}});
+		CHECK(!r.ok && r.error.contains("understand"));
+
+		/* while recording, the newest segment is still being written */
+		lan::StorageClient client(src, QDir(dir).filePath("sent.json"));
+		QStringList waiting = client.Waiting(loop, true);
+		CHECK(waiting.size() == 2 && QFileInfo(waiting.value(0)).fileName() == "2026-09-20 10-02-00.mkv");
+		lan::PushReport total;
+		for (int i = 0; i < 10; i++) {
+			lan::PushReport p = client.Step(*peerN, &s, loop, true);
+			CHECK(p.error.isEmpty());
+			total.lines += p.lines;
+			total.frames += p.frames;
+			total.sessions += p.sessions;
+			total.segments += p.segments;
+			if (!p.more) {
+				break;
+			}
+		}
+		CHECK(total.lines == 2 && total.frames == 1 && total.sessions == 1 && total.segments == 2);
+		CHECK(client.Waiting(loop, true).isEmpty());
+		std::vector<lan::StoredSource> sources = node.Sources();
+		CHECK(sources.size() == 1 && sources[0].name == "Gamer" && sources[0].segments == 2);
+		if (sources.size() != 1) {
+			return;
+		}
+		const QString stored = sources[0].LoopFolder();
+		CHECK(same(QDir(stored).filePath("2026-09-20 10-00-00.mkv"), seg1));
+		CHECK(same(QDir(stored).filePath("2026-09-20 10-02-00.mkv"), seg2));
+		CHECK(arrived > 0);
+
+		/* the log's copy keeps the ids, the screenshot and where each line is on it */
+		{
+			Store copy(sources[0].LogPath());
+			CHECK(copy.Open());
+			const std::vector<LogLine> lines = copy.Find(Query());
+			CHECK(lines.size() == 2 && lines[0].id == ids[0] && lines[0].body == "meet at the docks");
+			CHECK(lines.size() == 2 && lines[0].frameId.has_value());
+			if (lines.size() == 2 && lines[0].frameId) {
+				std::optional<Frame> f = copy.GetFrame(*lines[0].frameId);
+				CHECK(f && same(f->path, shot) && f->path.startsWith(sources[0].folder));
+				const std::vector<LogLine> onShot = copy.FrameLines(*lines[0].frameId);
+				CHECK(onShot.size() == 2 && onShot[1].rect && onShot[1].rect->y0 == 120);
+			}
+			CHECK(copy.Search("docks").size() == 1);
+		}
+		/* Prisma's record is its own */
+		CHECK(s.Unsynced(SyncTarget::Cloud).lines == 2 && s.Unsynced(SyncTarget::Lan).lines == 0);
+
+		/* a line's video spot is sent again, as the storage PC's segment */
+		s.SetVideo({ids[1]}, VideoSpot{seg2, 42.5});
+		CHECK(s.Unsynced(SyncTarget::Lan).lines == 1 && s.Unsynced(SyncTarget::Cloud).lines == 2);
+		lan::PushReport p = client.Step(*peerN, &s, loop, true);
+		CHECK(p.error.isEmpty() && p.lines == 1);
+		{
+			Store copy(sources[0].LogPath());
+			copy.Open();
+			std::optional<LogLine> l = copy.Line(ids[1]);
+			CHECK(l && l->video &&
+			      QDir::cleanPath(l->video->path) ==
+				      QDir::cleanPath(QDir(stored).filePath("2026-09-20 10-02-00.mkv")) &&
+			      l->video->offset == 42.5);
+		}
+
+		/* recording stopped: the last segment goes on from where a cut-off
+		 * send left it, and the oldest makes room for it */
+		{
+			QFile original(seg3);
+			CHECK(original.open(QIODevice::ReadOnly));
+			QFile part(QDir(stored).filePath("2026-09-20 10-04-00.mkv.part"));
+			CHECK(part.open(QIODevice::WriteOnly));
+			part.write(original.read(1000));
+		}
+		qint64 firstSent = -1;
+		p = client.Step(*peerN, &s, loop, false, [&](const QString &, qint64 sent, qint64) {
+			if (firstSent < 0) {
+				firstSent = sent;
+			}
+			return true;
+		});
+		CHECK(p.error.isEmpty() && p.segments == 1 && firstSent == 1000 + lan::kChunk);
+		CHECK(same(QDir(stored).filePath("2026-09-20 10-04-00.mkv"), seg3));
+		CHECK(!QFileInfo::exists(QDir(stored).filePath("2026-09-20 10-00-00.mkv")));
+		CHECK(!QFileInfo::exists(QDir(stored).filePath("2026-09-20 10-04-00.mkv.part")));
+		CHECK(node.UsedBytes() <= 700 * 1024);
+
+		/* full: something older than all it has is not wanted */
+		segment("2026-09-19 09-00-00.mkv", 'd');
+		p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.skipped == 1 && p.segments == 0);
+		CHECK(!QFileInfo::exists(QDir(stored).filePath("2026-09-19 09-00-00.mkv")));
+		CHECK(client.Waiting(loop, false).isEmpty());
+
+		/* what was sent is remembered, and forgotten with another storage PC */
+		{
+			lan::StorageClient again(src, QDir(dir).filePath("sent.json"));
+			CHECK(again.Waiting(loop, false).isEmpty());
+		}
+
+		/* a PC that does not store says so */
+		CHECK(src.AddAddress("127.0.0.1", stranger.Port()).ok);
+		std::optional<lan::Peer> strangerPeer = src.FindPeer(stranger.Self().Id());
+		CHECK(strangerPeer && src.Pair(*strangerPeer, [](const QString &) { return true; }).ok);
+		strangerPeer = src.FindPeer(stranger.Self().Id());
+		if (strangerPeer) {
+			lan::StorageClient other(src, QDir(dir).filePath("sent.json"));
+			p = other.Step(*strangerPeer, &s, loop, false);
+			CHECK(!p.error.isEmpty() && p.error.contains("store"));
+			CHECK(s.Unsynced(SyncTarget::Lan).lines == 2); /* starts again for the new one */
+		}
+		for (lan::Service *svc : {&n, &src, &stranger}) {
+			svc->Stop();
+		}
+	});
+
+	Test("lan_storage_pc_transcribes_and_each_segment_is_in_the_log_once", [&] {
+		const QString dbS = NewDb();
+		const QString dir = QFileInfo(dbS).absolutePath();
+		const QString loop = QDir(dir).filePath("loop");
+		QDir().mkpath(loop);
+		auto segment = [&](const QString &name) {
+			QFile f(QDir(loop).filePath(name));
+			CHECK(f.open(QIODevice::WriteOnly));
+			f.write(QByteArray(50 * 1024, 'x'));
+			return QDir::cleanPath(QFileInfo(f.fileName()).absoluteFilePath());
+		};
+		const QString done = segment("2026-09-21 20-00-00.mkv");  /* transcribed here already */
+		const QString stale = segment("2026-09-21 20-02-00.mkv"); /* an old transcript, of another size */
+		const QString fresh = segment("2026-09-21 20-04-00.mkv");
+		Store s(dbS);
+		CHECK(s.Open());
+		s.SetSegmentSpeech(done, 50 * 1024, {SpeechLine{1.0, "me", "said here", 0.9, VideoSpot{done, 1.0}}});
+		s.SetSegmentSpeech(stale, 1234,
+				   {SpeechLine{2.0, "me", "old reading one", 0.5, VideoSpot{stale, 2.0}},
+				    SpeechLine{3.0, "me", "old reading two", 0.5, VideoSpot{stale, 3.0}}});
+
+		lan::StorageNode node(QDir(dir).filePath("storage"), 1ull << 30);
+		lan::Provider nodeProvider{{},
+					   {},
+					   [] { return QJsonObject{{"storage", true}}; },
+					   yes,
+					   [&](lan::Channel &ch, const QString &id, const QString &name,
+					       const QJsonObject &req) { node.Answer(ch, id, name, req); }};
+		lan::Provider plain{{}, {}, {}, yes};
+		lan::Service n(lan::Identity::Generate(), QDir(dir).filePath("n.json"), nodeProvider);
+		lan::Service src(lan::Identity::Generate(), QDir(dir).filePath("s.json"), plain);
+		quick(n);
+		quick(src);
+		QString error;
+		CHECK(n.Start("Storage", &error, 0, 47741));
+		CHECK(src.Start("Gamer", &error, 0, 47742));
+		CHECK(src.AddAddress("127.0.0.1", n.Port()).ok);
+		std::optional<lan::Peer> peerN = src.FindPeer(n.Self().Id());
+		CHECK(peerN && src.Pair(*peerN, [](const QString &) { return true; }).ok);
+		peerN = src.FindPeer(n.Self().Id());
+		if (!peerN) {
+			return;
+		}
+
+		lan::StorageClient client(src, QDir(dir).filePath("sent.json"));
+		client.speech = true;
+		for (int i = 0; i < 10; i++) {
+			const lan::PushReport p = client.Step(*peerN, &s, loop, false);
+			CHECK(p.error.isEmpty());
+			if (!p.more) {
+				break;
+			}
+		}
+		std::vector<lan::StoredSource> sources = node.Sources();
+		CHECK(sources.size() == 1 && sources[0].speech && sources[0].segments == 3);
+		if (sources.size() != 1) {
+			return;
+		}
+		/* what was transcribed here is not transcribed there */
+		{
+			Store there(sources[0].SpeechLogPath());
+			CHECK(there.Open());
+			const auto seg = there.GetSpeechSegment(
+				QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath("2026-09-21 20-00-00.mkv")));
+			CHECK(seg && seg->state == "done" && seg->lines == 0);
+			CHECK(!there.GetSpeechSegment(
+				QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath("2026-09-21 20-04-00.mkv"))));
+		}
+
+		/* the storage PC transcribes the other two (as its speech worker would) */
+		{
+			Store there(sources[0].SpeechLogPath());
+			CHECK(there.Open());
+			for (const char *name : {"2026-09-21 20-02-00.mkv", "2026-09-21 20-04-00.mkv"}) {
+				const QString p = QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath(name));
+				there.SetSegmentSpeech(p, 50 * 1024,
+						       {SpeechLine{10.0, "teamspeak",
+								   QStringLiteral("heard in %1").arg(name), 0.8,
+								   VideoSpot{p, 4.5}}});
+			}
+		}
+		lan::PushReport p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.transcripts == 2);
+
+		/* each segment's speech is in the log once, pointing at this PC's file */
+		auto speechOf = [&](const QString &segment) {
+			return s.SegmentSpeech(segment);
+		};
+		CHECK(speechOf(done).size() == 1 && speechOf(done)[0].body == "said here");
+		const std::vector<SpeechLine> replaced = speechOf(stale);
+		CHECK(replaced.size() == 1 && replaced[0].body == "heard in 2026-09-21 20-02-00.mkv" &&
+		      replaced[0].speaker == "teamspeak" && replaced[0].video.path == stale &&
+		      replaced[0].video.offset == 4.5);
+		CHECK(speechOf(fresh).size() == 1);
+		CHECK(s.Search("old reading").empty());
+		const auto freshSeg = s.GetSpeechSegment(fresh);
+		CHECK(freshSeg && freshSeg->size == 50 * 1024 && freshSeg->state == "done");
+
+		/* asking again changes nothing */
+		p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.transcripts == 0);
+		CHECK(speechOf(stale).size() == 1 && speechOf(fresh).size() == 1);
+
+		/* the returned lines go back to the storage PC's copy like any other */
+		for (int i = 0; i < 5 && s.Unsynced(SyncTarget::Lan).lines > 0; i++) {
+			client.Step(*peerN, &s, loop, false);
+		}
+		{
+			Store copy(sources[0].LogPath());
+			CHECK(copy.Open());
+			CHECK(copy.Search("heard").size() == 2 && copy.Search("old reading").empty());
+		}
+
+		/* turned off: the storage PC stops transcribing for it */
+		client.speech = false;
+		segment("2026-09-21 20-06-00.mkv");
+		p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.segments == 1);
+		CHECK(!node.Sources()[0].speech);
+		n.Stop();
+		src.Stop();
 	});
 
 	printf("\n%d checks, %d failures\n", checks, failures);

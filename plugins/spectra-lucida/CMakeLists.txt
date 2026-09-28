@@ -38,6 +38,8 @@ target_sources(
     core/cloud.hpp
     core/lan-channel.cpp
     core/lan-channel.hpp
+    core/lan-storage.cpp
+    core/lan-storage.hpp
     core/lan.cpp
     core/lan.hpp
     core/profiles.cpp

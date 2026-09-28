@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <thread>
 
@@ -21,6 +22,11 @@ namespace lucida {
  * The log records which segments are done, so after a restart it carries on
  * where it stopped. Segments go as soon as they're finished, or only once
  * the game has closed and the loop stopped.
+ *
+ * With a storage PC, either PC can do it: the one that records leaves its
+ * loop to the storage PC, which transcribes the segments it keeps into a
+ * log of its own for that PC, and the recording PC takes the transcripts
+ * back into its log (see lan::StorageClient::speech).
  */
 class SpeechController : public QObject {
 	Q_OBJECT
@@ -31,6 +37,9 @@ public:
 
 	/* Takes the speech settings, the log and the tag rules */
 	void Apply(const Settings &settings);
+	/* On a storage PC: the paired PCs whose loops it keeps (called on the
+	 * worker thread); those that ask are transcribed too */
+	void SetStoredSources(std::function<std::vector<lan::StoredSource>()> sources);
 	void Stop();
 
 	QString Status() const;
@@ -46,6 +55,7 @@ private:
 		QString dbPath;
 		QList<TagRule> tagRules;
 		bool tolerateTypos = true;
+		std::function<std::vector<lan::StoredSource>()> storedSources;
 	};
 	struct Next {
 		QString path;

@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkDatagram>
@@ -37,6 +38,12 @@ constexpr int kMaxLines = 500;
 constexpr int kMaxName = 64;
 constexpr int kMaxBeacon = 1024;
 constexpr qint64 kTargetsEveryMs = 30000;
+constexpr int kMaxGossip = 64;
+constexpr size_t kMaxAdded = 64;
+/* Announcements also go to this group: some routers pass multicast between
+ * Wi-Fi clients but drop broadcasts (administratively scoped, so it stays
+ * on the local network) */
+const QHostAddress kMulticastGroup(QStringLiteral("239.255.76.51"));
 const QStringList kClipPatterns{QStringLiteral("*.mp4"), QStringLiteral("*.mkv"), QStringLiteral("*.mov")};
 
 qint64 SteadyMs()
@@ -102,6 +109,15 @@ QString ErrorText(const QString &code)
 	if (code == QLatin1String("missing_file")) {
 		return QStringLiteral("the file is gone");
 	}
+	if (code == QLatin1String("no_storage")) {
+		return QStringLiteral("it does not store other PCs' recordings");
+	}
+	if (code == QLatin1String("bad_request")) {
+		return QStringLiteral("it did not understand what was sent");
+	}
+	if (code == QLatin1String("write_failed")) {
+		return QStringLiteral("it could not save what was sent");
+	}
 	return code;
 }
 
@@ -132,6 +148,26 @@ public:
 protected:
 	void incomingConnection(qintptr handle) override { onConnection(handle); }
 };
+
+/* The networks multicast can go out on */
+QList<QNetworkInterface> MulticastInterfaces()
+{
+	QList<QNetworkInterface> out;
+	for (const QNetworkInterface &i : QNetworkInterface::allInterfaces()) {
+		const auto flags = i.flags();
+		if (!(flags & QNetworkInterface::IsUp) || !(flags & QNetworkInterface::IsRunning) ||
+		    !(flags & QNetworkInterface::CanMulticast) || (flags & QNetworkInterface::IsLoopBack)) {
+			continue;
+		}
+		for (const QNetworkAddressEntry &e : i.addressEntries()) {
+			if (e.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+				out << i;
+				break;
+			}
+		}
+	}
+	return out;
+}
 
 QList<QHostAddress> BroadcastAddresses()
 {
@@ -341,7 +377,14 @@ void Service::LoadPaired()
 		const QJsonObject o = v.toObject();
 		const QString id = o.value("id").toString();
 		if (KeyFromId(id)) {
-			paired[id] = PairedPeer{id, CleanName(o.value("name").toString()), o.value("since").toDouble()};
+			PairedPeer p{id, CleanName(o.value("name").toString()), o.value("since").toDouble()};
+			const QHostAddress address(o.value("address").toString());
+			const int port = o.value("port").toInt();
+			if (!address.isNull() && port > 0 && port <= 65535) {
+				p.address = address;
+				p.port = (quint16)port;
+			}
+			paired[id] = p;
 		}
 	}
 }
@@ -352,7 +395,12 @@ void Service::SavePaired()
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		for (const auto &[id, p] : paired) {
-			list.append(QJsonObject{{"id", id}, {"name", p.name}, {"since", p.since}});
+			QJsonObject o{{"id", id}, {"name", p.name}, {"since", p.since}};
+			if (!p.address.isNull() && p.port) {
+				o.insert("address", p.address.toString());
+				o.insert("port", (int)p.port);
+			}
+			list.append(o);
 		}
 	}
 	QDir().mkpath(QFileInfo(pairedFile).absolutePath());
@@ -363,11 +411,17 @@ void Service::SavePaired()
 	}
 }
 
-void Service::AddPaired(const QString &id, const QString &peerName)
+void Service::AddPaired(const QString &id, const QString &peerName, const QHostAddress &address, quint16 peerPort)
 {
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		paired[id] = PairedPeer{id, peerName, Now()};
+		PairedPeer p{id, peerName, Now(), address, peerPort};
+		auto s = seen.find(id);
+		if (s != seen.end() && (p.address.isNull() || !p.port)) {
+			p.address = s->second.address;
+			p.port = s->second.port;
+		}
+		paired[id] = p;
 		reported.erase(id); /* ask it again straight away */
 	}
 	SavePaired();
@@ -423,6 +477,7 @@ std::vector<Peer> Service::Peers() const
 				p.pairedThere = r->second.pairedThere;
 				p.game = r->second.game;
 				p.recording = r->second.recording;
+				p.storage = r->second.storage;
 				p.version = r->second.version;
 				p.error = r->second.error;
 			}
@@ -445,6 +500,76 @@ std::optional<Peer> Service::FindPeer(const QString &id) const
 }
 
 /* --- finding each other --------------------------------------------------------------- */
+
+bool Service::Saw(const QString &id, const QString &peerName, const QHostAddress &address, quint16 peerPort)
+{
+	Seen &s = seen[id];
+	const bool changed = s.at == 0 || s.name != peerName || s.address != address || s.port != peerPort;
+	s.name = peerName;
+	s.address = address;
+	s.port = peerPort;
+	s.at = std::max<qint64>(SteadyMs(), 1);
+	auto p = paired.find(id);
+	if (p != paired.end() && (p->second.address != address || p->second.port != peerPort)) {
+		p->second.address = address;
+		p->second.port = peerPort;
+		pairedMoved = true;
+	}
+	return changed;
+}
+
+void Service::SaveIfMoved()
+{
+	bool moved;
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		moved = pairedMoved;
+		pairedMoved = false;
+	}
+	if (moved) {
+		SavePaired();
+	}
+}
+
+QList<QPair<QHostAddress, quint16>> Service::UnicastTargets() const
+{
+	QList<QPair<QHostAddress, quint16>> out = extraTargets;
+	std::lock_guard<std::mutex> lock(mutex);
+	auto add = [&](const QHostAddress &a) {
+		if (!a.isNull() && !a.isLoopback() && !out.contains({a, discoveryPort})) {
+			out.append({a, discoveryPort});
+		}
+	};
+	for (const auto &[address, tcpPort] : added) {
+		add(QHostAddress(address));
+	}
+	/* paired PCs where they were last seen, in case broadcasts miss them */
+	for (const auto &[id, p] : paired) {
+		add(p.address);
+	}
+	return out;
+}
+
+QStringList Service::LocalAddresses()
+{
+	QStringList out;
+	for (const QNetworkInterface &i : QNetworkInterface::allInterfaces()) {
+		const auto flags = i.flags();
+		if (!(flags & QNetworkInterface::IsUp) || !(flags & QNetworkInterface::IsRunning) ||
+		    (flags & QNetworkInterface::IsLoopBack) || i.type() == QNetworkInterface::Virtual ||
+		    i.humanReadableName().startsWith(QLatin1String("vEthernet"))) {
+			continue;
+		}
+		for (const QNetworkAddressEntry &e : i.addressEntries()) {
+			const QHostAddress ip = e.ip();
+			if (ip.protocol() == QAbstractSocket::IPv4Protocol && !ip.isLinkLocal() &&
+			    !out.contains(ip.toString())) {
+				out << ip.toString();
+			}
+		}
+	}
+	return out;
+}
 
 QByteArray Service::Beacon() const
 {
@@ -474,6 +599,7 @@ void Service::RunDiscovery(std::shared_ptr<std::promise<QString>> started)
 	qint64 boundAt = SteadyMs();
 
 	QList<QHostAddress> targets;
+	QList<QNetworkInterface> groups;
 	qint64 targetsAt = -kTargetsEveryMs;
 	qint64 nextBeacon = 0;
 	auto announce = [&]() {
@@ -481,13 +607,24 @@ void Service::RunDiscovery(std::shared_ptr<std::promise<QString>> started)
 		if (broadcast) {
 			if (SteadyMs() - targetsAt >= kTargetsEveryMs) {
 				targets = BroadcastAddresses();
+				/* networks come and go: join the group on each one there is now
+				 * (joining one already joined just fails) */
+				groups = MulticastInterfaces();
+				for (const QNetworkInterface &i : groups) {
+					udp.joinMulticastGroup(kMulticastGroup, i);
+				}
+				udp.setSocketOption(QAbstractSocket::MulticastTtlOption, 1);
 				targetsAt = SteadyMs();
 			}
 			for (const QHostAddress &a : targets) {
 				udp.writeDatagram(beacon, a, discoveryPort);
 			}
+			for (const QNetworkInterface &i : groups) {
+				udp.setMulticastInterface(i);
+				udp.writeDatagram(beacon, kMulticastGroup, discoveryPort);
+			}
 		}
-		for (const auto &[address, targetPort] : extraTargets) {
+		for (const auto &[address, targetPort] : UnicastTargets()) {
 			udp.writeDatagram(beacon, address, targetPort);
 		}
 	};
@@ -523,6 +660,7 @@ void Service::RunDiscovery(std::shared_ptr<std::promise<QString>> started)
 				udp.close();
 				bind();
 				boundAt = SteadyMs();
+				targetsAt = -kTargetsEveryMs; /* join the group again */
 			}
 			continue;
 		}
@@ -542,22 +680,24 @@ void Service::RunDiscovery(std::shared_ptr<std::promise<QString>> started)
 			if (ok) {
 				from = QHostAddress(v4);
 			}
-			std::lock_guard<std::mutex> lock(mutex);
-			if (o.value("bye").toBool()) {
-				changed |= seen.erase(id) > 0;
-				reported.erase(id);
-				continue;
+			bool fresh = false;
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				if (o.value("bye").toBool()) {
+					changed |= seen.erase(id) > 0;
+					reported.erase(id);
+					continue;
+				}
+				fresh = seen.count(id) == 0;
+				changed |= Saw(id, CleanName(o.value("name").toString()), from, (quint16)peerPort);
 			}
-			Seen &s = seen[id];
-			const QString peerName = CleanName(o.value("name").toString());
-			if (s.name != peerName || s.address != from || s.port != peerPort) {
-				changed = true;
+			/* answer a newcomer directly: its broadcasts may reach this PC
+			 * while this PC's do not reach it */
+			if (fresh) {
+				udp.writeDatagram(Beacon(), d.senderAddress(), (quint16)d.senderPort());
 			}
-			s.name = peerName;
-			s.address = from;
-			s.port = (quint16)peerPort;
-			s.at = SteadyMs();
 		}
+		SaveIfMoved();
 		if (changed) {
 			wake.notify_all(); /* new paired installs are asked how they are */
 			Changed();
@@ -567,48 +707,162 @@ void Service::RunDiscovery(std::shared_ptr<std::promise<QString>> started)
 	announce();
 }
 
+/* Gossip: where this PC sees the PCs it is paired with, for another paired
+ * PC to find those that moved (a new address from DHCP, another network).
+ * Nothing in it is trusted: an address is only used to connect, and the
+ * connection proves the key. */
+QJsonArray Service::Gossip(const QString &asker) const
+{
+	QJsonArray out;
+	std::lock_guard<std::mutex> lock(mutex);
+	for (const auto &[id, s] : seen) {
+		if (id != asker && paired.count(id) && !s.address.isNull() && s.port) {
+			out.append(QJsonObject{{"id", id}, {"address", s.address.toString()}, {"port", (int)s.port}});
+		}
+		if (out.size() >= kMaxGossip) {
+			break;
+		}
+	}
+	return out;
+}
+
+void Service::TakeGossip(const QString &from, const QJsonArray &peers)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	for (const QJsonValue &v : peers) {
+		const QJsonObject o = v.toObject();
+		const QString id = o.value("id").toString();
+		const QHostAddress address(o.value("address").toString());
+		const int peerPort = o.value("port").toInt();
+		/* only about PCs this one is paired with and does not see itself */
+		if (id == self.Id() || id == from || !paired.count(id) || seen.count(id) || address.isNull() ||
+		    address.protocol() != QAbstractSocket::IPv4Protocol || peerPort <= 0 || peerPort > 65535) {
+			continue;
+		}
+		gossip[id] = {address, (quint16)peerPort};
+	}
+}
+
+void Service::ProbeQuiet(const std::set<QString> &online, std::map<QString, qint64> &probed)
+{
+	/* paired PCs not heard from: try where they were last, and where the
+	 * others say they are now */
+	std::vector<Peer> tries;
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		const qint64 now = SteadyMs();
+		for (const auto &[id, p] : paired) {
+			if (online.count(id) || seen.count(id)) {
+				continue;
+			}
+			auto last = probed.find(id);
+			if (last != probed.end() && now - last->second < std::max(statusMs, 1000)) {
+				continue;
+			}
+			probed[id] = now;
+			QList<QPair<QHostAddress, quint16>> where;
+			auto g = gossip.find(id);
+			if (g != gossip.end()) {
+				where.append(g->second);
+			}
+			if (!p.address.isNull() && p.port && !where.contains({p.address, p.port})) {
+				where.append({p.address, p.port});
+			}
+			for (const auto &[address, peerPort] : where) {
+				Peer candidate;
+				candidate.id = id;
+				candidate.name = p.name;
+				candidate.address = address;
+				candidate.port = peerPort;
+				candidate.paired = true;
+				tries.push_back(candidate);
+			}
+		}
+	}
+	for (const Peer &p : tries) {
+		if (stopping) {
+			return;
+		}
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			if (seen.count(p.id)) {
+				continue; /* found at the first address */
+			}
+		}
+		const Result r =
+			Request(p, QJsonObject{{"op", "hello"}, {"name", Name()}, {"port", (int)port}}, {}, kStatusMs);
+		if (!r.ok) {
+			continue;
+		}
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			const QString peerName = CleanName(r.body.value("name").toString());
+			Saw(p.id, peerName.isEmpty() ? p.name : peerName, p.address, p.port);
+			gossip.erase(p.id);
+			reported.erase(p.id); /* ask it how it is straight away */
+		}
+		TakeGossip(p.id, r.body.value("peers").toArray());
+		SaveIfMoved();
+		Changed();
+	}
+}
+
 /* Asks each paired install how it is: what it plays, whether it still
  * knows this one */
 void Service::RunStatus()
 {
-	std::map<QString, qint64> asked;
+	std::map<QString, qint64> asked, probed;
 	while (!stopping) {
 		const qint64 now = SteadyMs();
 		std::vector<Peer> due;
+		std::set<QString> online;
 		for (const Peer &p : Peers()) {
+			online.insert(p.id);
 			auto a = asked.find(p.id);
-			bool known;
+			bool known, wanted;
 			{
 				std::lock_guard<std::mutex> lock(mutex);
 				known = reported.count(p.id) > 0;
+				/* PCs found by address are asked too: nothing else may keep
+				 * them listed */
+				wanted = p.paired || addedIds.count(p.id) > 0;
 			}
-			if (p.paired && (!known || a == asked.end() || now - a->second >= statusMs)) {
+			if (wanted && (!known || a == asked.end() || now - a->second >= statusMs)) {
 				due.push_back(p);
 			}
 		}
+		ProbeQuiet(online, probed);
 		for (const Peer &p : due) {
 			if (stopping) {
 				break;
 			}
 			asked[p.id] = SteadyMs();
-			const Result r = Request(p, QJsonObject{{"op", "hello"}}, {}, kStatusMs);
+			const Result r = Request(p, QJsonObject{{"op", "hello"}, {"name", Name()}, {"port", (int)port}},
+						 {}, kStatusMs);
 			Reported rep;
 			rep.reachable = r.ok;
 			rep.error = r.ok ? QString() : r.error;
 			if (r.ok) {
+				TakeGossip(p.id, r.body.value("peers").toArray());
 				rep.pairedThere = r.body.value("paired").toBool();
 				rep.game = r.body.value("game").toString().left(kMaxName);
 				rep.recording = r.body.value("recording").toBool();
+				rep.storage = r.body.value("storage").toBool();
 				rep.version = r.body.value("version").toString().left(kMaxName);
 			}
 			bool changed = false;
 			{
 				std::lock_guard<std::mutex> lock(mutex);
 				if (seen.count(p.id)) {
+					/* it answered, so it is there even if its beacons get lost */
+					if (r.ok) {
+						seen[p.id].at = std::max<qint64>(SteadyMs(), 1);
+					}
 					const Reported old = reported.count(p.id) ? reported[p.id] : Reported{};
 					changed = !reported.count(p.id) || old.reachable != rep.reachable ||
 						  old.pairedThere != rep.pairedThere || old.game != rep.game ||
-						  old.recording != rep.recording || old.error != rep.error;
+						  old.recording != rep.recording || old.storage != rep.storage ||
+						  old.error != rep.error;
 					reported[p.id] = rep;
 				}
 			}
@@ -664,7 +918,13 @@ void Service::Handle(qintptr handle)
 	QString error;
 	std::unique_ptr<Channel> channel = Channel::Accept(socket, self, kHandshakeMs, &error);
 	if (channel) {
-		Answer(*channel);
+		QHostAddress from = socket.peerAddress();
+		bool ok = false;
+		const quint32 v4 = from.toIPv4Address(&ok);
+		if (ok) {
+			from = QHostAddress(v4);
+		}
+		Answer(*channel, from);
 	}
 	/* forget the handle before the socket closes it and it can be reused */
 	finished();
@@ -674,7 +934,7 @@ void Service::Handle(qintptr handle)
 	}
 }
 
-void Service::Answer(Channel &channel)
+void Service::Answer(Channel &channel, const QHostAddress &from)
 {
 	std::optional<QJsonObject> request = channel.ReceiveJson(kRequestMs);
 	if (!request) {
@@ -683,7 +943,30 @@ void Service::Answer(Channel &channel)
 	const QString op = request->value("op").toString();
 	const bool trusted = IsPaired(channel.PeerId());
 	if (op == QLatin1String("hello")) {
+		/* a hello says where the asker answers: it is listed even if its
+		 * beacons never arrive (e.g. it added this PC by address) */
+		const int callerPort = request->value("port").toInt();
+		if (callerPort > 0 && callerPort <= 65535 && channel.PeerId() != self.Id() && !from.isNull()) {
+			bool changed;
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				changed = Saw(channel.PeerId(), CleanName(request->value("name").toString()), from,
+					      (quint16)callerPort);
+				/* it reached this PC directly: announce to it directly too */
+				if (added.size() < kMaxAdded) {
+					added.insert({from.toIPv4Address(), (quint16)callerPort});
+				}
+			}
+			SaveIfMoved();
+			if (changed) {
+				wake.notify_all();
+				Changed();
+			}
+		}
 		QJsonObject reply{{"id", self.Id()}, {"name", Name()}, {"paired", trusted}, {"version", version}};
+		if (trusted) {
+			reply.insert("peers", Gossip(channel.PeerId()));
+		}
 		if (trusted && provider.status) {
 			const QJsonObject status = provider.status();
 			for (auto it = status.begin(); it != status.end(); ++it) {
@@ -703,6 +986,18 @@ void Service::Answer(Channel &channel)
 		AnswerClips(channel);
 	} else if (op == QLatin1String("clip")) {
 		AnswerClip(channel, *request);
+	} else if (op.startsWith(QLatin1String("store_"))) {
+		if (provider.store) {
+			QString peerName;
+			{
+				std::lock_guard<std::mutex> lock(mutex);
+				auto p = paired.find(channel.PeerId());
+				peerName = p != paired.end() ? p->second.name : QString();
+			}
+			provider.store(channel, channel.PeerId(), peerName, *request);
+		} else {
+			channel.SendJson(QJsonObject{{"error", "no_storage"}});
+		}
 	} else {
 		channel.SendJson(QJsonObject{{"error", "unknown_request"}});
 	}
@@ -775,7 +1070,7 @@ void Service::AnswerPair(Channel &channel, const QJsonObject &request)
 		confirmed = m && m->value("confirm").toBool();
 	}
 	if (*ours && *confirmed) {
-		AddPaired(prompt.id, peerName);
+		AddPaired(prompt.id, peerName, QHostAddress(), 0);
 	}
 	channel.SendJson(QJsonObject{{"accepted", *ours}});
 }
@@ -1012,7 +1307,130 @@ Result Service::Pair(const Peer &peer, const std::function<bool(const QString &c
 	if (!answer->value("accepted").toBool()) {
 		return fail(ErrorText(QStringLiteral("refused")));
 	}
-	AddPaired(peer.id, peer.name);
+	AddPaired(peer.id, peer.name, peer.address, peer.port);
+	r.ok = true;
+	return r;
+}
+
+Result Service::Upload(const Peer &peer, const QJsonObject &request, QIODevice &data,
+		       const std::function<bool(qint64 sent)> &progress, int timeoutMs)
+{
+	Result r;
+	QTcpSocket socket;
+	std::unique_ptr<Channel> channel = Open(peer, socket, kHandshakeMs, &r.error);
+	if (!channel) {
+		return r;
+	}
+	std::optional<QJsonObject> header;
+	if (!channel->SendJson(request) || !(header = channel->ReceiveJson(timeoutMs))) {
+		r.error = channel->Error();
+		return r;
+	}
+	auto failed = [&](const QJsonObject &answer) {
+		const QString code = answer.value("error").toString();
+		r.body = answer;
+		r.notPaired = code == QLatin1String("not_paired");
+		r.error = ErrorText(code);
+		return r;
+	};
+	if (header->contains("error")) {
+		return failed(*header);
+	}
+	if (!header->value("offset").isDouble()) {
+		r.body = *header;
+		r.ok = true;
+		return r;
+	}
+	const qint64 offset = header->value("offset").toInteger();
+	if (offset < 0 || offset > data.size() || !data.seek(offset)) {
+		r.error = QStringLiteral("it asked for data past the end of the file");
+		return r;
+	}
+	qint64 sent = offset;
+	while (!data.atEnd()) {
+		if (stopping) {
+			r.error = QStringLiteral("stopped");
+			return r;
+		}
+		const QByteArray chunk = data.read(kChunk);
+		if (chunk.isEmpty()) {
+			r.error = data.errorString();
+			return r;
+		}
+		if (!channel->Send(chunk)) {
+			r.error = channel->Error();
+			return r;
+		}
+		sent += chunk.size();
+		if (progress && !progress(sent)) {
+			socket.abort();
+			r.error = QStringLiteral("stopped");
+			return r;
+		}
+	}
+	std::optional<QJsonObject> answer;
+	if (!channel->Send(QByteArray()) || !(answer = channel->ReceiveJson(timeoutMs))) {
+		r.error = channel->Error();
+		return r;
+	}
+	if (answer->contains("error")) {
+		return failed(*answer);
+	}
+	r.body = *answer;
+	r.ok = true;
+	return r;
+}
+
+Result Service::AddAddress(const QString &host, quint16 peerPort)
+{
+	Result r;
+	QHostAddress address(host.trimmed());
+	if (address.isNull()) {
+		const QHostInfo info = QHostInfo::fromName(host.trimmed());
+		for (const QHostAddress &a : info.addresses()) {
+			if (a.protocol() == QAbstractSocket::IPv4Protocol) {
+				address = a;
+				break;
+			}
+		}
+		if (address.isNull()) {
+			r.error = info.errorString().isEmpty() ? QStringLiteral("no such PC") : info.errorString();
+			return r;
+		}
+	}
+	QTcpSocket socket;
+	socket.connectToHost(address, peerPort);
+	if (!socket.waitForConnected(kConnectMs)) {
+		r.error = socket.errorString();
+		return r;
+	}
+	/* whoever answers: the handshake proves which key it has */
+	std::unique_ptr<Channel> channel = Channel::Connect(socket, self, std::nullopt, kHandshakeMs, &r.error);
+	if (!channel) {
+		return r;
+	}
+	std::optional<QJsonObject> reply;
+	if (!channel->SendJson(QJsonObject{{"op", "hello"}, {"name", Name()}, {"port", (int)port}}) ||
+	    !(reply = channel->ReceiveJson(kStatusMs))) {
+		r.error = channel->Error();
+		return r;
+	}
+	const QString id = channel->PeerId();
+	if (id == self.Id()) {
+		r.error = QStringLiteral("that is this PC");
+		return r;
+	}
+	const QString peerName = CleanName(reply->value("name").toString());
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		Saw(id, peerName, address, peerPort);
+		added.insert({address.toIPv4Address(), peerPort});
+		addedIds.insert(id);
+	}
+	SaveIfMoved();
+	wake.notify_all();
+	Changed();
+	r.body = QJsonObject{{"id", id}, {"name", peerName}};
 	r.ok = true;
 	return r;
 }

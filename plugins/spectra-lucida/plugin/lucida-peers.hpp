@@ -35,8 +35,9 @@ signals:
 private:
 	QPointer<Controller> controller;
 	QLabel *title;
+	QLabel *hint; /* what to check while nobody has been found */
 	QTreeWidget *list;
-	QPushButton *pairButton, *clipsButton, *logButton;
+	QPushButton *pairButton, *clipsButton, *logButton, *addButton, *storedButton;
 
 	void Refresh();
 	void UpdateButtons();
@@ -47,6 +48,25 @@ private:
 	void OpenClips();
 	void Forget();
 	void ContextMenu(const QPoint &pos);
+	/* Adds a PC broadcasts do not reach, by its address */
+	void AddByAddress();
+	void OpenStored();
+};
+
+/* On a storage PC: the PCs whose recordings and logs are kept here */
+class StoredDialog : public QDialog {
+	Q_OBJECT
+
+public:
+	StoredDialog(Controller *controller, QWidget *parent = nullptr);
+
+private:
+	QPointer<Controller> controller;
+	QTreeWidget *list;
+	QLabel *status;
+
+	void Reload();
+	QString SelectedFolder(bool log) const;
 };
 
 /* Someone on another PC asks to pair: shows the code, answers through the

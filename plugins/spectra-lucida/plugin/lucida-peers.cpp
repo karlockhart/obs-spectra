@@ -11,11 +11,13 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLocale>
 #include <QMenu>
 #include <QMessageBox>
+#include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTimer>
@@ -68,6 +70,9 @@ QString PeerStatus(const lan::Peer &p)
 	if (p.recording) {
 		text += T("Lucida.Peers.Recording");
 	}
+	if (p.storage) {
+		text += T("Lucida.Peers.Storage");
+	}
 	return text;
 }
 
@@ -93,6 +98,10 @@ PeersPanel::PeersPanel(Controller *controller_, QWidget *parent) : QWidget(paren
 {
 	title = new QLabel();
 	title->setWordWrap(true);
+	hint = new QLabel();
+	hint->setWordWrap(true);
+	hint->setTextInteractionFlags(Qt::TextSelectableByMouse);
+	hint->hide();
 	list = new QTreeWidget();
 	list->setColumnCount(2);
 	list->setHeaderLabels({T("Lucida.Peers.Col.Name"), T("Lucida.Peers.Col.Status")});
@@ -109,19 +118,28 @@ PeersPanel::PeersPanel(Controller *controller_, QWidget *parent) : QWidget(paren
 	clipsButton->setToolTip(T("Lucida.Peers.Clips.Tip"));
 	logButton = new QPushButton(T("Lucida.Peers.Log"));
 	logButton->setToolTip(T("Lucida.Peers.Log.Tip"));
+	addButton = new QPushButton(T("Lucida.Peers.Add"));
+	addButton->setToolTip(T("Lucida.Peers.Add.Tip"));
+	storedButton = new QPushButton(T("Lucida.Peers.Stored"));
+	storedButton->setToolTip(T("Lucida.Peers.Stored.Tip"));
 
 	QHBoxLayout *buttons = new QHBoxLayout();
 	buttons->addWidget(pairButton);
 	buttons->addWidget(clipsButton);
 	buttons->addWidget(logButton);
+	buttons->addWidget(addButton);
+	buttons->addWidget(storedButton);
 	buttons->addStretch(1);
 
 	QVBoxLayout *layout = new QVBoxLayout(this);
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->addWidget(title);
 	layout->addWidget(list);
+	layout->addWidget(hint);
 	layout->addLayout(buttons);
 
+	connect(addButton, &QPushButton::clicked, this, &PeersPanel::AddByAddress);
+	connect(storedButton, &QPushButton::clicked, this, &PeersPanel::OpenStored);
 	connect(pairButton, &QPushButton::clicked, this, &PeersPanel::Pair);
 	connect(clipsButton, &QPushButton::clicked, this, &PeersPanel::OpenClips);
 	connect(logButton, &QPushButton::clicked, this, &PeersPanel::browseLog);
@@ -131,6 +149,7 @@ PeersPanel::PeersPanel(Controller *controller_, QWidget *parent) : QWidget(paren
 	if (controller) {
 		connect(controller, &Controller::lanPeersChanged, this, &PeersPanel::Refresh);
 		connect(controller, &Controller::lanStatusChanged, this, &PeersPanel::Refresh);
+		connect(controller, &Controller::storageStatusChanged, this, &PeersPanel::UpdateButtons);
 	}
 	Refresh();
 }
@@ -174,6 +193,15 @@ void PeersPanel::Refresh()
 	list->blockSignals(blocked);
 	title->setText(online.empty() ? T("Lucida.Peers.NoneYet").arg(svc->Name())
 				      : T("Lucida.Peers.Title").arg(svc->Name()));
+	/* nobody found: say what to check, and where this PC is for adding it by hand */
+	if (online.empty()) {
+		const QStringList addresses = lan::Service::LocalAddresses();
+		hint->setText(T("Lucida.Peers.Hint")
+				      .arg(addresses.isEmpty() ? T("Lucida.Peers.Hint.NoAddress")
+							       : addresses.join(QStringLiteral(", ")))
+				      .arg(svc->Port()));
+	}
+	hint->setVisible(online.empty());
 	UpdateButtons();
 }
 
@@ -190,6 +218,7 @@ void PeersPanel::UpdateButtons()
 	pairButton->setText(current && current->paired ? T("Lucida.Peers.PairAgainButton") : T("Lucida.Peers.Pair"));
 	clipsButton->setEnabled(current && current->paired && current->pairedThere);
 	logButton->setEnabled(anyPaired);
+	storedButton->setVisible(controller && controller->StorageNode() != nullptr);
 }
 
 QTreeWidgetItem *PeersPanel::Selected() const
@@ -277,6 +306,170 @@ void PeersPanel::ContextMenu(const QPoint &pos)
 	if (!menu.isEmpty()) {
 		menu.exec(list->viewport()->mapToGlobal(pos));
 	}
+}
+
+void PeersPanel::AddByAddress()
+{
+	std::shared_ptr<lan::Service> svc = controller ? controller->Lan() : nullptr;
+	if (!svc) {
+		return;
+	}
+	bool ok = false;
+	const QString text = QInputDialog::getText(this, T("Lucida.Peers.Add.Title"), T("Lucida.Peers.Add.Prompt"),
+						   QLineEdit::Normal, QString(), &ok)
+				     .trimmed();
+	if (!ok || text.isEmpty()) {
+		return;
+	}
+	/* "host" or "host:port" */
+	QString host = text;
+	quint16 port = lan::kDefaultPort;
+	const qsizetype colon = text.lastIndexOf(':');
+	if (colon > 0 && text.count(':') == 1) {
+		bool numeric = false;
+		const int p = text.mid(colon + 1).toInt(&numeric);
+		if (numeric && p > 0 && p <= 65535) {
+			host = text.left(colon);
+			port = (quint16)p;
+		}
+	}
+	addButton->setEnabled(false);
+	title->setText(T("Lucida.Peers.Add.Trying").arg(text));
+	QPointer<PeersPanel> self(this);
+	std::thread([svc, host, port, text, self] {
+		const lan::Result r = svc->AddAddress(host, port);
+		OnUi(self, [r, text](PeersPanel *panel) {
+			panel->addButton->setEnabled(true);
+			panel->Refresh();
+			if (r.ok) {
+				/* select it, ready to pair */
+				for (int i = 0; i < panel->list->topLevelItemCount(); i++) {
+					QTreeWidgetItem *item = panel->list->topLevelItem(i);
+					if (item->data(0, kRoleId).toString() == r.body.value("id").toString()) {
+						panel->list->setCurrentItem(item);
+					}
+				}
+			} else {
+				QMessageBox::warning(panel, T("Lucida.Peers.Add.Title"),
+						     T("Lucida.Peers.Add.Failed").arg(text, r.error));
+			}
+		});
+	}).detach();
+}
+
+void PeersPanel::OpenStored()
+{
+	if (controller && controller->StorageNode()) {
+		(new StoredDialog(controller, window()))->show();
+	}
+}
+
+/* --- what is stored here ------------------------------------------------------------------ */
+
+StoredDialog::StoredDialog(Controller *controller_, QWidget *parent) : QDialog(parent), controller(controller_)
+{
+	setWindowTitle(T("Lucida.Stored.Title"));
+	setAttribute(Qt::WA_DeleteOnClose);
+	resize(680, 320);
+	list = new QTreeWidget();
+	list->setColumnCount(4);
+	list->setHeaderLabels({T("Lucida.Stored.Col.Pc"), T("Lucida.Stored.Col.Segments"), T("Lucida.Stored.Col.Size"),
+			       T("Lucida.Stored.Col.Newest")});
+	list->setRootIsDecorated(false);
+	list->setUniformRowHeights(true);
+	list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+	for (int c = 1; c < 4; c++) {
+		list->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+	}
+	list->header()->setStretchLastSection(false);
+	status = new QLabel();
+	status->setWordWrap(true);
+
+	QPushButton *log = new QPushButton(T("Lucida.Stored.OpenLog"));
+	log->setToolTip(T("Lucida.Stored.OpenLog.Tip"));
+	QPushButton *folder = new QPushButton(T("Lucida.Stored.OpenFolder"));
+	QPushButton *close = new QPushButton(T("Lucida.Pair.Close"));
+	connect(log, &QPushButton::clicked, this, [this] {
+		const QString db = SelectedFolder(true);
+		if (db.isEmpty()) {
+			return;
+		}
+		const QString viewer =
+			QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("lucida-viewer.exe"));
+		if (!QProcess::startDetached(viewer, {QDir::toNativeSeparators(db)})) {
+			status->setText(T("Lucida.Stored.NoViewer").arg(QDir::toNativeSeparators(viewer)));
+		}
+	});
+	connect(folder, &QPushButton::clicked, this, [this] {
+		const QString dir = SelectedFolder(false);
+		if (!dir.isEmpty()) {
+			QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+		}
+	});
+	connect(close, &QPushButton::clicked, this, &QDialog::reject);
+	connect(list, &QTreeWidget::itemSelectionChanged, this, [this, log, folder] {
+		log->setEnabled(!list->selectedItems().isEmpty() && QFileInfo::exists(SelectedFolder(true)));
+		folder->setEnabled(!list->selectedItems().isEmpty());
+	});
+	log->setEnabled(false);
+	folder->setEnabled(false);
+	if (controller) {
+		connect(controller, &Controller::storedChanged, this, &StoredDialog::Reload);
+	}
+
+	QHBoxLayout *buttons = new QHBoxLayout();
+	buttons->addWidget(log);
+	buttons->addWidget(folder);
+	buttons->addStretch(1);
+	buttons->addWidget(close);
+	QVBoxLayout *layout = new QVBoxLayout(this);
+	layout->addWidget(list, 1);
+	layout->addWidget(status);
+	layout->addLayout(buttons);
+	Reload();
+}
+
+void StoredDialog::Reload()
+{
+	std::shared_ptr<lan::StorageNode> node = controller ? controller->StorageNode() : nullptr;
+	if (!node) {
+		status->setText(T("Lucida.Stored.Off"));
+		list->clear();
+		return;
+	}
+	const QString keep = list->currentItem() ? list->currentItem()->data(0, kRoleId).toString() : QString();
+	const QSignalBlocker block(list);
+	list->clear();
+	const QLocale locale;
+	for (const lan::StoredSource &s : node->Sources()) {
+		QTreeWidgetItem *item = new QTreeWidgetItem(
+			{s.name, QString::number(s.segments), locale.formattedDataSize(s.bytes),
+			 s.newest ? QDateTime::fromSecsSinceEpoch(s.newest).toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+				  : QString()});
+		item->setData(0, kRoleId, s.id);
+		item->setData(0, kRoleName, s.folder);
+		item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+		item->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+		list->addTopLevelItem(item);
+		if (s.id == keep) {
+			list->setCurrentItem(item);
+		}
+	}
+	status->setText(T("Lucida.Stored.Status")
+				.arg(QDir::toNativeSeparators(node->Folder()),
+				     locale.formattedDataSize((qint64)node->UsedBytes()),
+				     locale.formattedDataSize((qint64)node->Quota())));
+}
+
+QString StoredDialog::SelectedFolder(bool log) const
+{
+	QTreeWidgetItem *item = list->currentItem();
+	if (!item) {
+		return QString();
+	}
+	lan::StoredSource s;
+	s.folder = item->data(0, kRoleName).toString();
+	return log ? s.LogPath() : s.folder;
 }
 
 /* --- being asked to pair ---------------------------------------------------------------- */

@@ -339,6 +339,62 @@ QWidget *SettingsDialog::NetworkPage(const Settings &s)
 	form->addRow(T("Lucida.Settings.LanPaired"), pairedList);
 	form->addRow(QString(), forget);
 	form->addRow(Note(T("Lucida.Settings.Lan.Firewall")));
+
+	/* storing on a storage PC */
+	storageNode = new QComboBox();
+	storageNode->addItem(T("Lucida.Settings.StorageNode.None"), QString());
+	for (const lan::PairedPeer &p :
+	     svc ? svc->Paired() : lan::Service(lan::Identity::Generate(), LanPeersPath(), {}).Paired()) {
+		std::optional<lan::Peer> seen = svc ? svc->FindPeer(p.id) : std::nullopt;
+		const QString state = !seen           ? T("Lucida.Settings.StorageNode.Offline")
+				      : seen->storage ? T("Lucida.Settings.StorageNode.Offers")
+						      : T("Lucida.Settings.StorageNode.NotOffering");
+		storageNode->addItem(QStringLiteral("%1 (%2)").arg(p.name, state), p.id);
+	}
+	if (!s.storageNode.isEmpty() && storageNode->findData(s.storageNode) < 0) {
+		storageNode->addItem(T("Lucida.Settings.StorageNode.Forgotten"), s.storageNode);
+	}
+	storageNode->setCurrentIndex(std::max(storageNode->findData(s.storageNode), 0));
+
+	/* being one */
+	storageOffer = Check("Lucida.Settings.StorageOffer", s.storageOffer);
+	storageFolder = new QLineEdit(QDir::toNativeSeparators(s.storageFolder));
+	{
+		Settings defaults = s;
+		defaults.storageFolder.clear();
+		storageFolder->setPlaceholderText(QDir::toNativeSeparators(defaults.StorageFolder()));
+	}
+	QWidget *folderRow = new QWidget();
+	QHBoxLayout *folderLayout = new QHBoxLayout(folderRow);
+	folderLayout->setContentsMargins(0, 0, 0, 0);
+	folderLayout->addWidget(storageFolder, 1);
+	QPushButton *browse = new QPushButton(T("Lucida.Settings.Browse"));
+	browse->setAutoDefault(false);
+	connect(browse, &QPushButton::clicked, this, [this] {
+		const QString start = storageFolder->text().isEmpty() ? storageFolder->placeholderText()
+								      : storageFolder->text();
+		const QString dir = QFileDialog::getExistingDirectory(this, T("Lucida.Settings.StorageFolder"), start);
+		if (!dir.isEmpty()) {
+			storageFolder->setText(QDir::toNativeSeparators(dir));
+		}
+	});
+	folderLayout->addWidget(browse);
+	storageQuota = new QSpinBox();
+	storageQuota->setRange(1, 100000);
+	storageQuota->setSuffix(QStringLiteral(" GB"));
+	storageQuota->setValue(s.storageQuotaGB);
+	auto updateOffer = [this, folderRow] {
+		folderRow->setEnabled(storageOffer->isChecked());
+		storageQuota->setEnabled(storageOffer->isChecked());
+	};
+	connect(storageOffer, &QCheckBox::toggled, this, updateOffer);
+	updateOffer();
+
+	form->addRow(Note(T("Lucida.Settings.Storage.Note")));
+	form->addRow(T("Lucida.Settings.StorageNode"), storageNode);
+	form->addRow(storageOffer);
+	form->addRow(T("Lucida.Settings.StorageFolder"), folderRow);
+	form->addRow(T("Lucida.Settings.StorageQuota"), storageQuota);
 	return Page(form);
 }
 
@@ -478,6 +534,10 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	speechWhen->setCurrentIndex(std::max(speechWhen->findData((int)sp.when), 0));
 	speechWhen->setToolTip(T("Lucida.Settings.Speech.When.Tip"));
 
+	speechOnStorage = Check("Lucida.Settings.Speech.OnStorage", sp.onStorage);
+	speechOnStorage->setToolTip(T("Lucida.Settings.Speech.OnStorage.Tip"));
+	speechForOthers = Check("Lucida.Settings.Speech.ForOthers", sp.forOthers);
+	speechForOthers->setToolTip(T("Lucida.Settings.Speech.ForOthers.Tip"));
 	speechGpu = Check("Lucida.Settings.Speech.Gpu", sp.useGpu);
 	speechGpu->setToolTip(T("Lucida.Settings.Speech.Gpu.Tip"));
 	speechMe = Check("Lucida.Settings.Speech.Me", sp.me);
@@ -516,6 +576,8 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	QFormLayout *form = new QFormLayout();
 	form->addRow(speechEnabled);
 	form->addRow(Note(T("Lucida.Settings.Speech.Note")));
+	form->addRow(speechOnStorage);
+	form->addRow(speechForOthers);
 	form->addRow(T("Lucida.Settings.Speech.Model"), modelRow);
 	form->addRow(QString(), speechModelState);
 	form->addRow(QString(), speechProgress);
@@ -798,6 +860,11 @@ Settings SettingsDialog::Collect() const
 
 	s.lanEnabled = lanEnabled->isChecked();
 	s.lanName = lanName->text().trimmed();
+	s.storageNode = storageNode->currentData().toString();
+	s.storageOffer = storageOffer->isChecked();
+	const QString folder = storageFolder->text().trimmed();
+	s.storageFolder = folder.isEmpty() ? QString() : QDir::cleanPath(QDir::fromNativeSeparators(folder));
+	s.storageQuotaGB = storageQuota->value();
 
 	SpeechSettings &sp = s.speech;
 	const bool wasEnabled = sp.enabled;
@@ -807,6 +874,8 @@ Settings SettingsDialog::Collect() const
 	sp.language = speechLanguage->currentData().toString();
 	sp.when = (SpeechSettings::When)speechWhen->currentData().toInt();
 	sp.useGpu = speechGpu->isChecked();
+	sp.onStorage = speechOnStorage->isChecked();
+	sp.forOthers = speechForOthers->isChecked();
 	sp.me = speechMe->isChecked();
 	sp.teamSpeak = speechTeamSpeak->isChecked();
 	sp.game = speechGame->isChecked();

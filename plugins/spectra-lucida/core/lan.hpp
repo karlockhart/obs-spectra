@@ -4,6 +4,7 @@
 #include "store.hpp"
 
 #include <QHostAddress>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
 #include <QPair>
@@ -21,6 +22,7 @@
 #include <thread>
 #include <vector>
 
+class QIODevice;
 class QTcpServer;
 class QUdpSocket;
 
@@ -34,7 +36,13 @@ namespace lucida::lan {
  * lines and screenshots and the clips folder, read-only. Pairing is done
  * once, by both people comparing a six-digit code; each side then keeps
  * the other's key. Nothing is copied: a peer's data is there while its
- * Spectra runs. */
+ * Spectra runs. The one exception is a storage PC (see lan-storage.hpp),
+ * which paired PCs send their loop recordings and log to.
+ *
+ * Broadcasts do not reach every PC on every network (mesh and guest Wi-Fi
+ * often drop them, other subnets never see them), so an install that hears
+ * another answers it directly, a PC can be added by its address, and paired
+ * PCs are remembered where they were last seen. */
 
 constexpr quint16 kDiscoveryPort = 47650;
 constexpr quint16 kDefaultPort = 47651;
@@ -42,6 +50,11 @@ constexpr quint16 kDefaultPort = 47651;
 constexpr int kChunk = 128 * 1024;
 /* How long each person has to compare the codes */
 constexpr int kPairTimeoutMs = 120000;
+
+/* Paired PCs also tell each other where they see the PCs they are paired
+ * with, and each looks for a paired PC it has lost at its last address and
+ * where the others say it is now: a PC whose address changed rejoins by
+ * itself. */
 
 /* Another install, as its broadcasts and its answers describe it */
 struct Peer {
@@ -56,6 +69,7 @@ struct Peer {
 	bool pairedThere = true; /* false: it forgot this install; pair again */
 	QString game;            /* the game its Lucida is reading, if any */
 	bool recording = false;  /* its loop recording is running */
+	bool storage = false;    /* it stores paired PCs' recordings and logs */
 	QString version;
 	QString error; /* why the last request failed */
 
@@ -66,6 +80,9 @@ struct PairedPeer {
 	QString id;
 	QString name;
 	double since = 0.0;
+	/* where it was last seen, so it is found without broadcasts */
+	QHostAddress address;
+	quint16 port = 0;
 };
 
 /* Someone asks to pair with this install */
@@ -86,6 +103,10 @@ struct Provider {
 	std::function<QJsonObject()> status;
 	/* Asks the person at this PC; resolves true to pair. Unset: refused. */
 	std::function<std::future<bool>(const PairPrompt &)> askPair;
+	/* Answers a paired PC's "store_*" request (this PC is a storage PC);
+	 * peerId is the proven key of the PC asking. Unset: refused. */
+	std::function<void(Channel &channel, const QString &peerId, const QString &peerName, const QJsonObject &request)>
+		store;
 };
 
 struct Result {
@@ -129,7 +150,19 @@ public:
 	/* Pairs with a peer: confirm gets the code to compare and blocks until
 	 * the person answers. Blocking. */
 	Result Pair(const Peer &peer, const std::function<bool(const QString &code)> &confirm);
+	/* One request that sends a file: if the peer answers with an "offset",
+	 * the data from there on follows and its final answer is the result;
+	 * any other answer is the result as it is. progress gets the bytes
+	 * sent so far and returns false to stop. Blocking. */
+	Result Upload(const Peer &peer, const QJsonObject &request, QIODevice &data,
+		      const std::function<bool(qint64 sent)> &progress = {}, int timeoutMs = 30000);
 
+	/* Finds the install at an address (a PC broadcasts do not reach) and
+	 * lists it; it is sent this install's announcements from then on, so it
+	 * finds this one too. Blocking. body: {"id", "name"} on success. */
+	Result AddAddress(const QString &host, quint16 port = kDefaultPort);
+	/* This PC's addresses on the local network, for people to type in */
+	static QStringList LocalAddresses();
 	/* Called on one of the service's threads when the peers or what they
 	 * report change */
 	std::function<void()> peersChanged;
@@ -155,6 +188,7 @@ private:
 		bool pairedThere = true;
 		QString game;
 		bool recording = false;
+		bool storage = false;
 		QString version;
 		QString error;
 	};
@@ -173,24 +207,43 @@ private:
 	std::map<QString, Seen> seen;
 	std::map<QString, Reported> reported;
 	std::map<QString, PairedPeer> paired;
+	/* added by address, or that reached this PC directly, this run:
+	 * announcements go there too */
+	std::set<QPair<quint32, quint16>> added;
+	std::set<QString> addedIds;
+	/* where other paired PCs see a paired PC this one has lost */
+	std::map<QString, QPair<QHostAddress, quint16>> gossip;
 
 	std::thread discoveryThread, serverThread, statusThread;
 	/* connections being answered, by socket handle (shut down on Stop) */
 	std::set<qintptr> handlers;
 	std::condition_variable handlersDone;
 	std::atomic<bool> pairing{false};
+	/* a paired PC was seen somewhere new; save it (guarded by mutex) */
+	bool pairedMoved = false;
+	void SaveIfMoved();
 
 	void LoadPaired();
 	void SavePaired();
-	void AddPaired(const QString &id, const QString &name);
+	void AddPaired(const QString &id, const QString &name, const QHostAddress &address, quint16 port);
 	void Changed();
+	/* An install was heard from (a beacon, or its hello); true if it is new
+	 * or moved. Call with mutex held. */
+	bool Saw(const QString &id, const QString &name, const QHostAddress &address, quint16 port);
+	/* Where announcements go besides the broadcast addresses */
+	QList<QPair<QHostAddress, quint16>> UnicastTargets() const;
+	/* Gossip between paired PCs: where each sees the others */
+	QJsonArray Gossip(const QString &asker) const;
+	void TakeGossip(const QString &from, const QJsonArray &peers);
+	/* Looks for paired PCs that went quiet where they may be now */
+	void ProbeQuiet(const std::set<QString> &online, std::map<QString, qint64> &probed);
 
 	void RunDiscovery(std::shared_ptr<std::promise<QString>> started);
 	void RunServer(std::shared_ptr<std::promise<QString>> started, quint16 wanted);
 	void RunStatus();
 	QByteArray Beacon() const;
 	void Handle(qintptr handle);
-	void Answer(Channel &channel);
+	void Answer(Channel &channel, const QHostAddress &from);
 	void AnswerPair(Channel &channel, const QJsonObject &request);
 	void AnswerLines(Channel &channel, const QJsonObject &request);
 	void AnswerShot(Channel &channel, const QJsonObject &request);
