@@ -2173,6 +2173,129 @@ int main(int argc, char **argv)
 		}
 	});
 
+	Test("lan_storage_pc_transcribes_and_each_segment_is_in_the_log_once", [&] {
+		const QString dbS = NewDb();
+		const QString dir = QFileInfo(dbS).absolutePath();
+		const QString loop = QDir(dir).filePath("loop");
+		QDir().mkpath(loop);
+		auto segment = [&](const QString &name) {
+			QFile f(QDir(loop).filePath(name));
+			CHECK(f.open(QIODevice::WriteOnly));
+			f.write(QByteArray(50 * 1024, 'x'));
+			return QDir::cleanPath(QFileInfo(f.fileName()).absoluteFilePath());
+		};
+		const QString done = segment("2026-09-21 20-00-00.mkv");  /* transcribed here already */
+		const QString stale = segment("2026-09-21 20-02-00.mkv"); /* an old transcript, of another size */
+		const QString fresh = segment("2026-09-21 20-04-00.mkv");
+		Store s(dbS);
+		CHECK(s.Open());
+		s.SetSegmentSpeech(done, 50 * 1024, {SpeechLine{1.0, "me", "said here", 0.9, VideoSpot{done, 1.0}}});
+		s.SetSegmentSpeech(stale, 1234,
+				   {SpeechLine{2.0, "me", "old reading one", 0.5, VideoSpot{stale, 2.0}},
+				    SpeechLine{3.0, "me", "old reading two", 0.5, VideoSpot{stale, 3.0}}});
+
+		lan::StorageNode node(QDir(dir).filePath("storage"), 1ull << 30);
+		lan::Provider nodeProvider{{},
+					   {},
+					   [] { return QJsonObject{{"storage", true}}; },
+					   yes,
+					   [&](lan::Channel &ch, const QString &id, const QString &name,
+					       const QJsonObject &req) { node.Answer(ch, id, name, req); }};
+		lan::Provider plain{{}, {}, {}, yes};
+		lan::Service n(lan::Identity::Generate(), QDir(dir).filePath("n.json"), nodeProvider);
+		lan::Service src(lan::Identity::Generate(), QDir(dir).filePath("s.json"), plain);
+		quick(n);
+		quick(src);
+		QString error;
+		CHECK(n.Start("Storage", &error, 0, 47741));
+		CHECK(src.Start("Gamer", &error, 0, 47742));
+		CHECK(src.AddAddress("127.0.0.1", n.Port()).ok);
+		std::optional<lan::Peer> peerN = src.FindPeer(n.Self().Id());
+		CHECK(peerN && src.Pair(*peerN, [](const QString &) { return true; }).ok);
+		peerN = src.FindPeer(n.Self().Id());
+		if (!peerN) {
+			return;
+		}
+
+		lan::StorageClient client(src, QDir(dir).filePath("sent.json"));
+		client.speech = true;
+		for (int i = 0; i < 10; i++) {
+			const lan::PushReport p = client.Step(*peerN, &s, loop, false);
+			CHECK(p.error.isEmpty());
+			if (!p.more) {
+				break;
+			}
+		}
+		std::vector<lan::StoredSource> sources = node.Sources();
+		CHECK(sources.size() == 1 && sources[0].speech && sources[0].segments == 3);
+		if (sources.size() != 1) {
+			return;
+		}
+		/* what was transcribed here is not transcribed there */
+		{
+			Store there(sources[0].SpeechLogPath());
+			CHECK(there.Open());
+			const auto seg = there.GetSpeechSegment(
+				QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath("2026-09-21 20-00-00.mkv")));
+			CHECK(seg && seg->state == "done" && seg->lines == 0);
+			CHECK(!there.GetSpeechSegment(
+				QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath("2026-09-21 20-04-00.mkv"))));
+		}
+
+		/* the storage PC transcribes the other two (as its speech worker would) */
+		{
+			Store there(sources[0].SpeechLogPath());
+			CHECK(there.Open());
+			for (const char *name : {"2026-09-21 20-02-00.mkv", "2026-09-21 20-04-00.mkv"}) {
+				const QString p = QDir::cleanPath(QDir(sources[0].LoopFolder()).filePath(name));
+				there.SetSegmentSpeech(p, 50 * 1024,
+						       {SpeechLine{10.0, "teamspeak",
+								   QStringLiteral("heard in %1").arg(name), 0.8,
+								   VideoSpot{p, 4.5}}});
+			}
+		}
+		lan::PushReport p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.transcripts == 2);
+
+		/* each segment's speech is in the log once, pointing at this PC's file */
+		auto speechOf = [&](const QString &segment) {
+			return s.SegmentSpeech(segment);
+		};
+		CHECK(speechOf(done).size() == 1 && speechOf(done)[0].body == "said here");
+		const std::vector<SpeechLine> replaced = speechOf(stale);
+		CHECK(replaced.size() == 1 && replaced[0].body == "heard in 2026-09-21 20-02-00.mkv" &&
+		      replaced[0].speaker == "teamspeak" && replaced[0].video.path == stale &&
+		      replaced[0].video.offset == 4.5);
+		CHECK(speechOf(fresh).size() == 1);
+		CHECK(s.Search("old reading").empty());
+		const auto freshSeg = s.GetSpeechSegment(fresh);
+		CHECK(freshSeg && freshSeg->size == 50 * 1024 && freshSeg->state == "done");
+
+		/* asking again changes nothing */
+		p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.transcripts == 0);
+		CHECK(speechOf(stale).size() == 1 && speechOf(fresh).size() == 1);
+
+		/* the returned lines go back to the storage PC's copy like any other */
+		for (int i = 0; i < 5 && s.Unsynced(SyncTarget::Lan).lines > 0; i++) {
+			client.Step(*peerN, &s, loop, false);
+		}
+		{
+			Store copy(sources[0].LogPath());
+			CHECK(copy.Open());
+			CHECK(copy.Search("heard").size() == 2 && copy.Search("old reading").empty());
+		}
+
+		/* turned off: the storage PC stops transcribing for it */
+		client.speech = false;
+		segment("2026-09-21 20-06-00.mkv");
+		p = client.Step(*peerN, &s, loop, false);
+		CHECK(p.error.isEmpty() && p.segments == 1);
+		CHECK(!node.Sources()[0].speech);
+		n.Stop();
+		src.Stop();
+	});
+
 	printf("\n%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

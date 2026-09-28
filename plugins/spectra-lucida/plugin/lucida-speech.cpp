@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
 
 #ifdef _WIN32
@@ -78,6 +79,16 @@ void SpeechController::Stop()
 	if (worker.joinable()) {
 		worker.join();
 	}
+}
+
+void SpeechController::SetStoredSources(std::function<std::vector<lan::StoredSource>()> sources)
+{
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		config.storedSources = std::move(sources);
+		configChanged = true;
+	}
+	wakeup.notify_all();
 }
 
 void SpeechController::Apply(const Settings &settings)
@@ -144,7 +155,7 @@ void SpeechController::Run()
 #endif
 	using namespace spectra::speech;
 
-	std::unique_ptr<Store> store;
+	std::map<QString, std::unique_ptr<Store>> stores; /* by path */
 	std::unique_ptr<Tagger> tagger;
 	std::unique_ptr<Model> model;
 	QString loadedModel;
@@ -212,72 +223,110 @@ void SpeechController::Run()
 			}
 		}
 
-		if (!c.speech.enabled) {
+		/* What to transcribe: this PC's loop, unless its storage PC does it,
+		 * and the loops paired PCs keep here and asked to have transcribed.
+		 * Each segment is transcribed on one PC only. */
+		struct Target {
+			QString loopDir;
+			QString dbPath;
+			bool recording = false;
+			double since = 0.0;
+			QString pc; /* empty: this PC */
+		};
+		std::vector<Target> targets;
+		const bool own = c.speech.enabled && !c.speech.onStorage;
+		const bool waitingForGame = own && c.speech.when == SpeechSettings::When::AfterGame && recording;
+		if (own && !waitingForGame) {
+			targets.push_back({dir, c.dbPath, recording, c.speech.since, QString()});
+		}
+		if (c.speech.forOthers && c.storedSources) {
+			for (const lan::StoredSource &s : c.storedSources()) {
+				if (s.speech) {
+					/* a transcript of its own: the copy of its log keeps its ids */
+					targets.push_back(
+						{s.LoopFolder(), s.SpeechLogPath(), false, s.speechSince, s.name});
+				}
+			}
+		}
+		if (targets.empty()) {
 			model.reset();
 			loadedModel.clear();
-			SetStatus(QString());
-			if (!Wait(60000)) {
+			SetStatus(waitingForGame                           ? Text("Lucida.Speech.Status.WaitingForGame")
+				  : c.speech.enabled && c.speech.onStorage ? Text("Lucida.Speech.Status.OnStorage")
+									   : QString());
+			if (!Wait(c.speech.forOthers ? kIdleWaitMs : 60000)) {
 				break;
 			}
 			continue;
 		}
 
-		if (!store || store->Path() != c.dbPath) {
-			store = std::make_unique<Store>(c.dbPath);
-			QString error;
-			if (!store->Open(&error)) {
-				store.reset();
-				SetStatus(Text("Lucida.Speech.Status.NoLog").arg(error));
-				if (!Wait(kIdleWaitMs)) {
-					break;
-				}
-				continue;
-			}
-		}
-		tagger = std::make_unique<Tagger>(c.tagRules, c.tolerateTypos);
-		Tagger *tags = tagger.get();
-		store->labeler = [tags](const QString &body) {
-			return tags->Tags(body);
-		};
-
-		if (c.speech.when == SpeechSettings::When::AfterGame && recording) {
-			SetStatus(Text("Lucida.Speech.Status.WaitingForGame"));
-			if (!Wait(kIdleWaitMs)) {
-				break;
-			}
-			continue;
-		}
-
-		/* The oldest finished segment without a transcript */
+		/* The oldest finished segment without a transcript, this PC's first */
 		std::optional<Next> next;
+		Store *store = nullptr;
+		QString pc;
 		int pending = 0;
-		{
-			QDir loop(dir);
+		bool failed = false;
+		for (const Target &t : targets) {
+			std::unique_ptr<Store> &slot = stores[t.dbPath];
+			if (!slot) {
+				slot = std::make_unique<Store>(t.dbPath);
+				QString error;
+				if (!slot->Open(&error)) {
+					slot.reset();
+					stores.erase(t.dbPath);
+					if (t.pc.isEmpty()) {
+						SetStatus(Text("Lucida.Speech.Status.NoLog").arg(error));
+						failed = true;
+					}
+					continue;
+				}
+			}
+			Store *s = slot.get();
+			if (t.pc.isEmpty()) {
+				/* this PC's own lines are tagged here; paired PCs tag theirs */
+				tagger = std::make_unique<Tagger>(c.tagRules, c.tolerateTypos);
+				Tagger *tags = tagger.get();
+				s->labeler = [tags](const QString &body) {
+					return tags->Tags(body);
+				};
+			}
+			QDir loop(t.loopDir);
 			const QFileInfoList files = loop.entryInfoList({"*.mkv"}, QDir::Files, QDir::Name);
 			const QDateTime settled = QDateTime::currentDateTime().addSecs(-kSettleSec);
 			for (qsizetype i = 0; i < files.size(); i++) {
 				const QFileInfo &fi = files[i];
 				const double start = SegmentStart(fi.fileName());
-				if (!(start > 0.0) || (c.speech.since > 0.0 && start < c.speech.since - 1.0)) {
+				if (!(start > 0.0) || (t.since > 0.0 && start < t.since - 1.0)) {
 					continue;
 				}
 				/* The newest one is still being written while the loop runs */
-				if ((recording && i == files.size() - 1) || fi.lastModified() > settled) {
+				if ((t.recording && i == files.size() - 1) ||
+				    (t.pc.isEmpty() && fi.lastModified() > settled)) {
 					continue;
 				}
 				const QString path = QDir::cleanPath(fi.absoluteFilePath());
-				const auto seg = store->GetSpeechSegment(path);
+				const auto seg = s->GetSpeechSegment(path);
 				if (seg && seg->size == fi.size()) {
 					continue;
 				}
 				pending++;
 				if (!next) {
 					next = Next{path, fi.size()};
+					store = s;
+					pc = t.pc;
 				}
 			}
 		}
+		/* forget logs of PCs no longer transcribed for */
+		for (auto it = stores.begin(); it != stores.end();) {
+			const bool used = std::any_of(targets.begin(), targets.end(),
+						      [&](const Target &t) { return t.dbPath == it->first; });
+			it = used ? std::next(it) : stores.erase(it);
+		}
 		if (!next) {
-			SetStatus(Text("Lucida.Speech.Status.UpToDate"));
+			if (!failed) {
+				SetStatus(Text("Lucida.Speech.Status.UpToDate"));
+			}
 			if (!Wait(kIdleWaitMs)) {
 				break;
 			}
@@ -321,7 +370,9 @@ void SpeechController::Run()
 			options.vadModelPath = ModelPath(VadModel());
 		}
 
-		const QString name = QFileInfo(next->path).completeBaseName();
+		const QString name =
+			pc.isEmpty() ? QFileInfo(next->path).completeBaseName()
+				     : QStringLiteral("%1: %2").arg(pc, QFileInfo(next->path).completeBaseName());
 		const double segmentStart = SegmentStart(QFileInfo(next->path).fileName());
 		std::vector<Job> jobs;
 		QString error;

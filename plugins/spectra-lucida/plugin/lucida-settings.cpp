@@ -534,6 +534,10 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	speechWhen->setCurrentIndex(std::max(speechWhen->findData((int)sp.when), 0));
 	speechWhen->setToolTip(T("Lucida.Settings.Speech.When.Tip"));
 
+	speechOnStorage = Check("Lucida.Settings.Speech.OnStorage", sp.onStorage);
+	speechOnStorage->setToolTip(T("Lucida.Settings.Speech.OnStorage.Tip"));
+	speechForOthers = Check("Lucida.Settings.Speech.ForOthers", sp.forOthers);
+	speechForOthers->setToolTip(T("Lucida.Settings.Speech.ForOthers.Tip"));
 	speechGpu = Check("Lucida.Settings.Speech.Gpu", sp.useGpu);
 	speechGpu->setToolTip(T("Lucida.Settings.Speech.Gpu.Tip"));
 	speechMe = Check("Lucida.Settings.Speech.Me", sp.me);
@@ -572,6 +576,8 @@ QWidget *SettingsDialog::SpeechPage(const Settings &s)
 	QFormLayout *form = new QFormLayout();
 	form->addRow(speechEnabled);
 	form->addRow(Note(T("Lucida.Settings.Speech.Note")));
+	form->addRow(speechOnStorage);
+	form->addRow(speechForOthers);
 	form->addRow(T("Lucida.Settings.Speech.Model"), modelRow);
 	form->addRow(QString(), speechModelState);
 	form->addRow(QString(), speechProgress);
@@ -868,6 +874,8 @@ Settings SettingsDialog::Collect() const
 	sp.language = speechLanguage->currentData().toString();
 	sp.when = (SpeechSettings::When)speechWhen->currentData().toInt();
 	sp.useGpu = speechGpu->isChecked();
+	sp.onStorage = speechOnStorage->isChecked();
+	sp.forOthers = speechForOthers->isChecked();
 	sp.me = speechMe->isChecked();
 	sp.teamSpeak = speechTeamSpeak->isChecked();
 	sp.game = speechGame->isChecked();

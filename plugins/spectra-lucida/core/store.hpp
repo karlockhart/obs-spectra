@@ -157,6 +157,14 @@ struct SpeechLine {
 };
 
 /* How far transcription of a loop segment got */
+/* A segment's transcript as it is now: the storage PC's copy of the log
+ * drops the segment's other speech lines */
+struct SpeechSegmentLines {
+	QString path;
+	double updated = 0.0;
+	std::vector<long long> lineIds;
+};
+
 struct SpeechSegment {
 	QString path;
 	long long size = 0; /* when transcribed; a different size is a new file */
@@ -233,6 +241,14 @@ public:
 						const std::vector<SpeechLine> &lines);
 	void MarkSpeechFailed(const QString &segment, long long size, const QString &error);
 	std::optional<SpeechSegment> GetSpeechSegment(const QString &segment);
+	/* A segment's transcript as SetSegmentSpeech stored it */
+	std::vector<SpeechLine> SegmentSpeech(const QString &segment);
+	/* Segments transcribed (again) since the storage PC last heard */
+	std::vector<SpeechSegmentLines> UnsyncedSpeechSegments(int limit);
+	void MarkSpeechSegmentSynced(const SpeechSegmentLines &segment, double at);
+	/* The storage PC's copy: drops a segment's speech lines not in keep
+	 * (replaced by a newer transcript); returns how many */
+	int KeepSpeechLines(const QString &segment, const std::vector<long long> &keep);
 
 	/* Tags lines as they are added (and when a better reading replaces one) */
 	std::function<QStringList(const QString &body)> labeler;

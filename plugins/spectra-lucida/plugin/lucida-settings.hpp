@@ -73,6 +73,7 @@ private:
 
 	/* Speech (Spectra) */
 	QCheckBox *speechEnabled, *speechAutoDownload, *speechGpu, *speechMe, *speechTeamSpeak, *speechGame;
+	QCheckBox *speechOnStorage, *speechForOthers;
 	QComboBox *speechModel, *speechLanguage, *speechWhen;
 	QPushButton *speechDownload, *speechOlder;
 	QProgressBar *speechProgress;

@@ -47,9 +47,15 @@ struct StoredSource {
 	int segments = 0;
 	qint64 bytes = 0;
 	qint64 newest = 0; /* when its newest segment arrived, s since the epoch */
+	/* it asks this PC to transcribe its speech, for segments from since on */
+	bool speech = false;
+	double speechSince = 0.0;
 
 	QString LoopFolder() const;
 	QString LogPath() const;
+	/* The transcripts made here for it: a log of its own, since the copy
+	 * of its log keeps its ids */
+	QString SpeechLogPath() const;
 };
 
 class StorageNode {
@@ -81,9 +87,15 @@ private:
 	QString root;
 	quint64 quota;
 
-	std::mutex mutex;                                       /* folders, receiving, the quota */
-	std::map<QString, std::pair<QString, QString>> folders; /* id -> name, folder */
-	std::set<QString> receiving;                            /* paths being written */
+	struct Source {
+		QString name;
+		QString folder;
+		bool speech = false;
+		double speechSince = 0.0;
+	};
+	std::mutex mutex;                  /* folders, receiving, the quota */
+	std::map<QString, Source> folders; /* by key */
+	std::set<QString> receiving;       /* paths being written */
 
 	std::mutex storesMutex;
 	std::map<QString, std::unique_ptr<Store>> stores; /* by log path */
@@ -93,11 +105,13 @@ private:
 	void SaveSources();
 	/* The folder for a PC's recordings and log, made on first use */
 	QString SourceFolder(const QString &id, const QString &name);
+	void SetWantsSpeech(const QString &id, bool speech);
 	Store *OpenStore(const QString &path);
 
 	void AnswerSegment(Channel &channel, const QString &folder, const QJsonObject &request);
 	void AnswerLog(Channel &channel, const QString &folder, const QJsonObject &request);
 	void AnswerFrame(Channel &channel, const QString &folder, const QJsonObject &request);
+	void AnswerSpeech(Channel &channel, const QString &folder, const QJsonObject &request);
 	/* Takes the data after an {"offset"} answer into file, up to size bytes */
 	bool Receive(Channel &channel, QFile &file, qint64 size, QString *error);
 	void Changed();
@@ -109,9 +123,10 @@ struct PushReport {
 	int frames = 0;
 	int lines = 0;
 	int segments = 0;
-	int skipped = 0;   /* segments it had no room for */
-	bool more = false; /* still waiting after this pass */
-	QString error;     /* the pass stopped here; try again later */
+	int skipped = 0;     /* segments it had no room for */
+	int transcripts = 0; /* segments' speech it transcribed, taken into the log */
+	bool more = false;   /* still waiting after this pass */
+	QString error;       /* the pass stopped here; try again later */
 };
 
 /* Sending this PC's loop recordings and log to its storage PC */
@@ -119,6 +134,11 @@ class StorageClient {
 public:
 	/* stateFile remembers which segments were sent (and to which PC) */
 	StorageClient(Service &service, const QString &stateFile);
+
+	/* The storage PC transcribes this PC's speech: its transcripts are
+	 * taken into the log (each replaces whatever the log had for that
+	 * segment, so a segment's speech is only ever there once) */
+	bool speech = false;
 
 	/* One pass: the log first (sessions, up to maxFrames screenshots, up to
 	 * maxBatches batches of lines), then the newest finished segment not
@@ -144,8 +164,9 @@ private:
 	/* A new storage PC starts from nothing */
 	void UseNode(const QString &id, Store *store);
 	bool SendLog(const Peer &node, Store &store, PushReport &report, int maxFrames, int maxBatches);
-	bool SendSegment(const Peer &node, const QString &path, PushReport &report,
+	bool SendSegment(const Peer &node, Store *store, const QString &path, PushReport &report,
 			 const std::function<bool(const QString &, qint64, qint64)> &progress);
+	bool PullSpeech(const Peer &node, Store &store, const QString &loopDir, PushReport &report);
 };
 
 } // namespace lucida::lan

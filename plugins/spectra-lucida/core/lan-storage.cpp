@@ -200,6 +200,11 @@ QString StoredSource::LogPath() const
 	return QDir(folder).filePath(QStringLiteral("Lucida/chatlog.db"));
 }
 
+QString StoredSource::SpeechLogPath() const
+{
+	return QDir(folder).filePath(QStringLiteral("Lucida/speech.db"));
+}
+
 StorageNode::StorageNode(const QString &folder, quint64 quotaBytes)
 	: root(QDir::cleanPath(folder)),
 	  quota(std::max<quint64>(quotaBytes, 1))
@@ -219,7 +224,8 @@ void StorageNode::LoadSources()
 		const QString id = o.value("id").toString();
 		const QString folder = o.value("folder").toString();
 		if (KeyFromId(id) && IsPlainName(folder)) {
-			folders[id] = {o.value("name").toString(), folder};
+			folders[id] = {o.value("name").toString(), folder, o.value("speech").toBool(),
+				       o.value("speech_since").toDouble()};
 		}
 	}
 }
@@ -228,7 +234,11 @@ void StorageNode::SaveSources()
 {
 	QJsonArray list;
 	for (const auto &[id, entry] : folders) {
-		list.append(QJsonObject{{"id", id}, {"name", entry.first}, {"folder", entry.second}});
+		list.append(QJsonObject{{"id", id},
+					{"name", entry.name},
+					{"folder", entry.folder},
+					{"speech", entry.speech},
+					{"speech_since", entry.speechSince}});
 	}
 	QDir().mkpath(root);
 	QSaveFile f(QDir(root).filePath(QStringLiteral("sources.json")));
@@ -248,17 +258,17 @@ QString StorageNode::SourceFolder(const QString &id, const QString &name)
 		const QString fingerprint = key ? Fingerprint(*key).left(4) : QStringLiteral("0000");
 		QString folder = QStringLiteral("%1 (%2)").arg(SafeName(name), fingerprint);
 		for (int n = 2; std::any_of(folders.begin(), folders.end(),
-					    [&](const auto &e) { return e.second.second == folder; });
+					    [&](const auto &e) { return e.second.folder == folder; });
 		     n++) {
 			folder = QStringLiteral("%1 (%2-%3)").arg(SafeName(name), fingerprint).arg(n);
 		}
-		it = folders.emplace(id, std::make_pair(name, folder)).first;
+		it = folders.emplace(id, Source{name, folder}).first;
 		SaveSources();
-	} else if (!name.isEmpty() && it->second.first != name) {
-		it->second.first = name; /* renamed: the folder stays */
+	} else if (!name.isEmpty() && it->second.name != name) {
+		it->second.name = name; /* renamed: the folder stays */
 		SaveSources();
 	}
-	const QString path = QDir(root).filePath(it->second.second);
+	const QString path = QDir(root).filePath(it->second.folder);
 	QDir().mkpath(QDir(path).filePath(QStringLiteral("Loop")));
 	QDir().mkpath(QDir(path).filePath(QStringLiteral("Lucida/frames")));
 	return path;
@@ -266,7 +276,7 @@ QString StorageNode::SourceFolder(const QString &id, const QString &name)
 
 std::vector<StoredSource> StorageNode::Sources()
 {
-	std::map<QString, std::pair<QString, QString>> known;
+	std::map<QString, Source> known;
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		known = folders;
@@ -275,8 +285,10 @@ std::vector<StoredSource> StorageNode::Sources()
 	for (const auto &[id, entry] : known) {
 		StoredSource s;
 		s.id = id;
-		s.name = entry.first;
-		s.folder = QDir(root).filePath(entry.second);
+		s.name = entry.name;
+		s.folder = QDir(root).filePath(entry.folder);
+		s.speech = entry.speech;
+		s.speechSince = entry.speechSince;
 		for (const QFileInfo &f : QDir(s.LoopFolder()).entryInfoList({QStringLiteral("*.mkv")}, QDir::Files)) {
 			s.segments++;
 			s.bytes += f.size();
@@ -357,15 +369,78 @@ void StorageNode::Answer(Channel &channel, const QString &peerId, const QString 
 	const QString op = request.value("op").toString();
 	const QString name = peerName.isEmpty() ? request.value("name").toString().left(64) : peerName;
 	const QString folder = SourceFolder(peerId, name);
+	if (request.value("speech").isBool()) {
+		SetWantsSpeech(peerId, request.value("speech").toBool());
+	}
 	if (op == QLatin1String("store_segment")) {
 		AnswerSegment(channel, folder, request);
 	} else if (op == QLatin1String("store_log")) {
 		AnswerLog(channel, folder, request);
 	} else if (op == QLatin1String("store_frame")) {
 		AnswerFrame(channel, folder, request);
+	} else if (op == QLatin1String("store_speech")) {
+		AnswerSpeech(channel, folder, request);
 	} else {
 		channel.SendJson(QJsonObject{{"error", "unknown_request"}});
 	}
+}
+
+void StorageNode::SetWantsSpeech(const QString &id, bool speech)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	auto it = folders.find(id);
+	if (it == folders.end() || it->second.speech == speech) {
+		return;
+	}
+	it->second.speech = speech;
+	/* from now on: not the whole backlog it sent before */
+	if (speech) {
+		it->second.speechSince = Now();
+	}
+	SaveSources();
+}
+
+void StorageNode::AnswerSpeech(Channel &channel, const QString &folder, const QJsonObject &request)
+{
+	const QString loop = QDir(folder).filePath(QStringLiteral("Loop"));
+	const QString path = QDir(folder).filePath(QStringLiteral("Lucida/speech.db"));
+	QJsonArray done;
+	qint64 bytes = 0;
+	std::lock_guard<std::mutex> lock(storesMutex);
+	Store *store = QFileInfo::exists(path) ? OpenStore(path) : nullptr;
+	for (const QJsonValue &v : request.value("segments").toArray()) {
+		const QJsonObject o = v.toObject();
+		const QString name = o.value("segment").toString();
+		if (!store || !IsSegmentName(name)) {
+			continue;
+		}
+		const QString segment = QDir::cleanPath(QDir(loop).filePath(name));
+		const std::optional<SpeechSegment> seg = store->GetSpeechSegment(segment);
+		if (!seg || seg->size != o.value("size").toInteger()) {
+			continue; /* not transcribed yet (or a different file) */
+		}
+		QJsonObject answer{{"segment", name}, {"state", seg->state}};
+		if (seg->state == QLatin1String("done")) {
+			QJsonArray lines;
+			for (const SpeechLine &l : store->SegmentSpeech(segment)) {
+				lines.append(QJsonObject{{"at", l.at},
+							 {"speaker", l.speaker},
+							 {"body", l.body},
+							 {"confidence", l.confidence},
+							 {"offset", l.video.offset}});
+			}
+			answer.insert("lines", lines);
+		} else {
+			answer.insert("error", seg->error.left(500));
+		}
+		/* what does not fit is asked for again */
+		bytes += QJsonDocument(answer).toJson(QJsonDocument::Compact).size();
+		if (bytes > Channel::kMaxMessage - 4096) {
+			break;
+		}
+		done.append(answer);
+	}
+	channel.SendJson(QJsonObject{{"segments", done}});
 }
 
 bool StorageNode::Receive(Channel &channel, QFile &file, qint64 size, QString *error)
@@ -400,8 +475,19 @@ void StorageNode::AnswerSegment(Channel &channel, const QString &folder, const Q
 	}
 	const QString dest = QDir(QDir(folder).filePath(QStringLiteral("Loop"))).filePath(name);
 	const QString partPath = dest + kPart;
+	/* its speech is in its log already: nothing to transcribe here */
+	auto transcribedThere = [&] {
+		if (!request.value("transcribed").toBool()) {
+			return;
+		}
+		std::lock_guard<std::mutex> lock(storesMutex);
+		if (Store *s = OpenStore(QDir(folder).filePath(QStringLiteral("Lucida/speech.db")))) {
+			s->SetSegmentSpeech(QDir::cleanPath(dest), size, {});
+		}
+	};
 	const QFileInfo existing(dest);
 	if (existing.exists() && existing.size() == size) {
+		transcribedThere();
 		channel.SendJson(QJsonObject{{"done", true}});
 		return;
 	}
@@ -487,6 +573,7 @@ void StorageNode::AnswerSegment(Channel &channel, const QString &folder, const Q
 		}
 	}
 	EnforceQuota(dest);
+	transcribedThere();
 	channel.SendJson(QJsonObject{{"stored", true}});
 	Changed();
 }
@@ -548,6 +635,19 @@ void StorageNode::AnswerLog(Channel &channel, const QString &folder, const QJson
 		}
 		store->ImportSessions(sessions);
 		store->ImportLines(lines);
+		/* a segment transcribed again: its old lines go */
+		for (const QJsonValue &v : request.value("speech_segments").toArray()) {
+			const QJsonObject o = v.toObject();
+			const QString name = BaseName(o.value("segment").toString());
+			if (!IsPlainName(name)) {
+				continue;
+			}
+			std::vector<long long> keep;
+			for (const QJsonValue &id : o.value("lines").toArray()) {
+				keep.push_back(id.toInteger());
+			}
+			store->KeepSpeechLines(QDir(loop).filePath(name), keep);
+		}
 		/* the stored logs keep what this PC's own log keeps */
 		const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
 		if (nowMs - pruned[path] >= kPruneEveryMs) {
@@ -748,10 +848,13 @@ PushReport StorageClient::Step(const Peer &peer, Store *store, const QString &lo
 	}
 	const QStringList waiting = loopDir.isEmpty() ? QStringList() : Waiting(loopDir, recording);
 	if (!waiting.isEmpty()) {
-		if (!SendSegment(peer, waiting.first(), report, progress)) {
+		if (!SendSegment(peer, store, waiting.first(), report, progress)) {
 			return report;
 		}
 		report.more = report.more || waiting.size() > 1;
+	}
+	if (speech && store && store->IsOpen() && !loopDir.isEmpty()) {
+		PullSpeech(peer, *store, loopDir, report);
 	}
 	return report;
 }
@@ -778,8 +881,10 @@ bool StorageClient::SendLog(const Peer &peer, Store &store, PushReport &report, 
 			}
 			list.append(o);
 		}
-		const Result r = service.Request(
-			peer, QJsonObject{{"op", "store_log"}, {"name", service.Name()}, {"sessions", list}});
+		const Result r = service.Request(peer, QJsonObject{{"op", "store_log"},
+								   {"name", service.Name()},
+								   {"speech", speech},
+								   {"sessions", list}});
 		if (!r.ok) {
 			return fail(r);
 		}
@@ -845,7 +950,10 @@ bool StorageClient::SendLog(const Peer &peer, Store &store, PushReport &report, 
 			for (const SyncLine &l : lines) {
 				list.append(StoredLineJson(l));
 			}
-			request = QJsonObject{{"op", "store_log"}, {"name", service.Name()}, {"lines", list}};
+			request = QJsonObject{{"op", "store_log"},
+					      {"name", service.Name()},
+					      {"speech", speech},
+					      {"lines", list}};
 			if (lines.size() <= 1 || QJsonDocument(request).toJson(QJsonDocument::Compact).size() <
 							 Channel::kMaxMessage - 1024) {
 				break;
@@ -859,12 +967,93 @@ bool StorageClient::SendLog(const Peer &peer, Store &store, PushReport &report, 
 		store.MarkLinesSynced(lines, Now(), SyncTarget::Lan);
 		report.lines += (int)lines.size();
 	}
+	/* segments transcribed again: the copy keeps only their current lines
+	 * (after the lines above, so the new ones are there) */
+	const std::vector<SpeechSegmentLines> replaced = store.UnsyncedSpeechSegments(100);
+	if (!replaced.empty()) {
+		QJsonArray list;
+		for (const SpeechSegmentLines &x : replaced) {
+			QJsonArray ids;
+			for (long long id : x.lineIds) {
+				ids.append((qint64)id);
+			}
+			list.append(QJsonObject{{"segment", BaseName(x.path)}, {"lines", ids}});
+		}
+		const Result r = service.Request(peer, QJsonObject{{"op", "store_log"},
+								   {"name", service.Name()},
+								   {"speech", speech},
+								   {"speech_segments", list}});
+		if (!r.ok) {
+			return fail(r);
+		}
+		const double at = Now();
+		for (const SpeechSegmentLines &x : replaced) {
+			store.MarkSpeechSegmentSynced(x, at);
+		}
+	}
 	const SyncBacklog left = store.Unsynced(SyncTarget::Lan);
-	report.more = left.lines + left.frames + left.sessions > 0;
+	report.more = left.lines + left.frames + left.sessions > 0 || replaced.size() >= 100;
 	return true;
 }
 
-bool StorageClient::SendSegment(const Peer &peer, const QString &path, PushReport &report,
+bool StorageClient::PullSpeech(const Peer &peer, Store &store, const QString &loopDir, PushReport &report)
+{
+	/* sent segments whose speech is not in the log yet, newest first */
+	QJsonArray wanted;
+	std::map<QString, QFileInfo> files;
+	const QFileInfoList all = QDir(loopDir).entryInfoList({QStringLiteral("*.mkv")}, QDir::Files, QDir::Name);
+	for (qsizetype i = all.size() - 1; i >= 0 && wanted.size() < 50; i--) {
+		const QFileInfo &f = all[i];
+		if (!sent.count(f.fileName())) {
+			continue;
+		}
+		const std::optional<SpeechSegment> seg = store.GetSpeechSegment(QDir::cleanPath(f.absoluteFilePath()));
+		if (seg && seg->size == f.size()) {
+			continue;
+		}
+		wanted.append(QJsonObject{{"segment", f.fileName()}, {"size", f.size()}});
+		files[f.fileName()] = f;
+	}
+	if (wanted.isEmpty()) {
+		return true;
+	}
+	const Result r = service.Request(
+		peer,
+		QJsonObject{{"op", "store_speech"}, {"name", service.Name()}, {"speech", true}, {"segments", wanted}});
+	if (!r.ok) {
+		/* the recordings are safe either way: try again next pass */
+		return false;
+	}
+	for (const QJsonValue &v : r.body.value("segments").toArray()) {
+		const QJsonObject o = v.toObject();
+		auto f = files.find(o.value("segment").toString());
+		if (f == files.end()) {
+			continue;
+		}
+		const QString path = QDir::cleanPath(f->second.absoluteFilePath());
+		if (o.value("state").toString() != QLatin1String("done")) {
+			store.MarkSpeechFailed(path, f->second.size(), o.value("error").toString());
+			continue;
+		}
+		std::vector<SpeechLine> lines;
+		for (const QJsonValue &l : o.value("lines").toArray()) {
+			const QJsonObject x = l.toObject();
+			const QString body = x.value("body").toString().left(4000);
+			if (!body.trimmed().isEmpty()) {
+				lines.push_back(SpeechLine{x.value("at").toDouble(),
+							   x.value("speaker").toString().left(32), body,
+							   x.value("confidence").toDouble(),
+							   VideoSpot{path, x.value("offset").toDouble()}});
+			}
+		}
+		/* replaces whatever the log had for this segment */
+		store.SetSegmentSpeech(path, f->second.size(), lines);
+		report.transcripts++;
+	}
+	return true;
+}
+
+bool StorageClient::SendSegment(const Peer &peer, Store *store, const QString &path, PushReport &report,
 				const std::function<bool(const QString &, qint64, qint64)> &progress)
 {
 	const QString name = QFileInfo(path).fileName();
@@ -875,11 +1064,19 @@ bool StorageClient::SendSegment(const Peer &peer, const QString &path, PushRepor
 		return true;
 	}
 	const qint64 size = file.size();
+	/* transcribed here already: the storage PC need not */
+	bool transcribed = false;
+	if (store && store->IsOpen()) {
+		const std::optional<SpeechSegment> seg = store->GetSpeechSegment(QDir::cleanPath(path));
+		transcribed = seg && seg->size == size;
+	}
 	const Result r = service.Upload(peer,
 					QJsonObject{{"op", "store_segment"},
 						    {"name", service.Name()},
 						    {"segment", name},
 						    {"size", size},
+						    {"speech", speech},
+						    {"transcribed", transcribed},
 						    {"modified", QFileInfo(path).lastModified().toSecsSinceEpoch()}},
 					file, [&](qint64 done) { return !progress || progress(name, done, size); });
 	if (!r.ok) {

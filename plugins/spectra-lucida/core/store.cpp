@@ -499,6 +499,17 @@ void Store::Migrate()
 			}
 		}
 	}
+	/* Spectra: which segments' speech the storage PC has as it is here */
+	{
+		bool synced = false;
+		Stmt s(db, "PRAGMA table_info(speech_segments)");
+		while (s.Step() == SQLITE_ROW) {
+			synced |= s.Text(1) == QLatin1String("lan_synced_at");
+		}
+		if (!synced) {
+			Exec("ALTER TABLE speech_segments ADD COLUMN lan_synced_at REAL");
+		}
+	}
 	/* Logs from before frame_lines: each screenshot had only its new lines */
 	Stmt any(db, "SELECT 1 FROM frame_lines LIMIT 1");
 	if (any.Step() != SQLITE_ROW) {
@@ -699,6 +710,23 @@ std::optional<SpeechSegment> Store::GetSpeechSegment(const QString &segment)
 		return std::nullopt;
 	}
 	return SpeechSegment{s.Text(0), s.Int(1), s.Text(2), (int)s.Int(3), s.Text(4)};
+}
+
+std::vector<SpeechLine> Store::SegmentSpeech(const QString &segment)
+{
+	std::vector<SpeechLine> out;
+	if (!db) {
+		return out;
+	}
+	Stmt s(db, "SELECT first_seen, channel, body, score, video_offset FROM lines WHERE source='speech' AND video=?"
+		   " ORDER BY sort_ts, seq, id");
+	s.Bind(1, segment);
+	while (s.Step() == SQLITE_ROW) {
+		const QString channel = s.Text(1);
+		const QString speaker = channel.startsWith(QLatin1String("voice/")) ? channel.mid(6) : QString();
+		out.push_back(SpeechLine{s.Real(0), speaker, s.Text(2), s.Real(3), VideoSpot{segment, s.Real(4)}});
+	}
+	return out;
 }
 
 void Store::Touch(WindowLine &hit, const QString &body, double score, long long frameTs, double now)
@@ -1287,7 +1315,76 @@ void Store::ResetSync(SyncTarget target)
 	Exec(SyncSql("UPDATE lines SET %1=NULL", target).c_str());
 	Exec(SyncSql("UPDATE frames SET %1=NULL", target).c_str());
 	Exec(SyncSql("UPDATE sessions SET %1=NULL", target).c_str());
+	if (target == SyncTarget::Lan) {
+		Exec("UPDATE speech_segments SET lan_synced_at=NULL");
+	}
 	Exec("COMMIT");
+}
+
+std::vector<SpeechSegmentLines> Store::UnsyncedSpeechSegments(int limit)
+{
+	std::vector<SpeechSegmentLines> out;
+	if (!db) {
+		return out;
+	}
+	{
+		Stmt s(db,
+		       "SELECT path, updated FROM speech_segments WHERE lan_synced_at IS NULL ORDER BY updated LIMIT ?");
+		s.Bind(1, limit);
+		while (s.Step() == SQLITE_ROW) {
+			out.push_back(SpeechSegmentLines{s.Text(0), s.Real(1), {}});
+		}
+	}
+	Stmt ids(db, "SELECT id FROM lines WHERE source='speech' AND video=?");
+	for (SpeechSegmentLines &x : out) {
+		ids.Reset();
+		ids.Bind(1, x.path);
+		while (ids.Step() == SQLITE_ROW) {
+			x.lineIds.push_back(ids.Int(0));
+		}
+	}
+	return out;
+}
+
+void Store::MarkSpeechSegmentSynced(const SpeechSegmentLines &segment, double at)
+{
+	/* not if it was transcribed again meanwhile */
+	Stmt u(db, "UPDATE speech_segments SET lan_synced_at=? WHERE path=? AND updated=?");
+	u.Bind(1, at).Bind(2, segment.path).Bind(3, segment.updated).Run();
+}
+
+int Store::KeepSpeechLines(const QString &segment, const std::vector<long long> &keep)
+{
+	if (!db) {
+		return 0;
+	}
+	const std::set<long long> kept(keep.begin(), keep.end());
+	std::vector<std::pair<long long, QString>> drop;
+	{
+		Stmt s(db, "SELECT id, body FROM lines WHERE source='speech' AND video=?");
+		s.Bind(1, segment);
+		while (s.Step() == SQLITE_ROW) {
+			if (!kept.count(s.Int(0))) {
+				drop.emplace_back(s.Int(0), s.Text(1));
+			}
+		}
+	}
+	if (drop.empty()) {
+		return 0;
+	}
+	Exec("BEGIN");
+	Stmt d(db, "DELETE FROM lines WHERE id=?");
+	Stmt f(db, "INSERT INTO lines_fts(lines_fts, rowid, body) VALUES ('delete', ?, ?)");
+	for (const auto &[id, body] : drop) {
+		d.Reset();
+		d.Bind(1, id).Run();
+		if (fts) {
+			f.Reset();
+			f.Bind(1, id).Bind(2, body).Run();
+		}
+	}
+	Exec("COMMIT");
+	return (int)drop.size();
 }
 
 /* ------------------------------------------------------------------------- */

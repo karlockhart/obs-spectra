@@ -112,6 +112,8 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "SpeechGame", sp.game);
 	config_set_default_string(c, SECTION, "SpeechPrompt", "");
 	config_set_default_double(c, SECTION, "SpeechSince", 0.0);
+	config_set_default_bool(c, SECTION, "SpeechOnStorage", sp.onStorage);
+	config_set_default_bool(c, SECTION, "SpeechForOthers", sp.forOthers);
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -200,6 +202,8 @@ Settings Settings::Load()
 	sp.game = config_get_bool(c, SECTION, "SpeechGame");
 	sp.prompt = ConfigString(c, SECTION, "SpeechPrompt");
 	sp.since = config_get_double(c, SECTION, "SpeechSince");
+	sp.onStorage = config_get_bool(c, SECTION, "SpeechOnStorage");
+	sp.forOthers = config_get_bool(c, SECTION, "SpeechForOthers");
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -256,6 +260,8 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "SpeechGame", speech.game);
 	config_set_string(c, SECTION, "SpeechPrompt", speech.prompt.toUtf8().constData());
 	config_set_double(c, SECTION, "SpeechSince", speech.since);
+	config_set_bool(c, SECTION, "SpeechOnStorage", speech.onStorage);
+	config_set_bool(c, SECTION, "SpeechForOthers", speech.forOthers);
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
@@ -372,6 +378,11 @@ Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Lo
 
 	speech = new SpeechController(this);
 	speech->Apply(settings);
+	/* as a storage PC, the paired PCs that leave their speech to this one */
+	speech->SetStoredSources([this]() {
+		std::shared_ptr<lan::StorageNode> node = StorageNode();
+		return node ? node->Sources() : std::vector<lan::StoredSource>();
+	});
 }
 
 Controller::~Controller()
@@ -1184,6 +1195,14 @@ void Controller::RunStorage(Settings s, std::shared_ptr<lan::Service> service)
 		}
 	}
 	lan::StorageClient client(*service, LanStorageStatePath());
+	client.speech = s.speech.enabled && s.speech.onStorage;
+	/* transcripts from the storage PC are tagged as this PC's own are */
+	Tagger tagger(s.tagRules, s.tolerateTypos);
+	if (store) {
+		store->labeler = [&tagger](const QString &body) {
+			return tagger.Tags(body);
+		};
+	}
 	int retry = kStorageRetry;
 	bool failing = false;
 	while (!stopping()) {
@@ -1242,10 +1261,15 @@ void Controller::RunStorage(Settings s, std::shared_ptr<lan::Service> service)
 				}
 				return !stopping();
 			});
-		if (r.segments || r.skipped || r.frames) {
+		if (r.transcripts) {
+			QMetaObject::invokeMethod(
+				this, [this, n = r.transcripts]() { emit transcriptsArrived(n); },
+				Qt::QueuedConnection);
+		}
+		if (r.segments || r.skipped || r.frames || r.transcripts) {
 			blog(LOG_DEBUG,
-			     "[Lucida] Stored on %s: %d segment(s), %d skipped, %d screenshot(s), %d line(s)",
-			     nodeName.toUtf8().constData(), r.segments, r.skipped, r.frames, r.lines);
+			     "[Lucida] Stored on %s: %d segment(s), %d skipped, %d screenshot(s), %d line(s), %d transcript(s)",
+			     nodeName.toUtf8().constData(), r.segments, r.skipped, r.frames, r.lines, r.transcripts);
 		}
 		if (!r.error.isEmpty()) {
 			if (stopping()) {

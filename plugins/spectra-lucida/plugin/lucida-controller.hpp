@@ -41,6 +41,11 @@ struct SpeechSettings {
 	QString prompt; /* names and jargon Whisper should know */
 	/* Only loop segments recorded after this (s since the epoch); 0 = all */
 	double since = 0.0;
+	/* Leave it to the storage PC (Settings::storageNode) instead of doing
+	 * it here; its transcripts come back into this PC's log */
+	bool onStorage = false;
+	/* As a storage PC: transcribe the paired PCs that leave it to this one */
+	bool forOthers = false;
 };
 
 /* Lucida settings, stored in the Spectra profile (section "Lucida") */
@@ -170,6 +175,8 @@ signals:
 	void storageStatusChanged(const QString &status);
 	/* a paired PC stored something here */
 	void storedChanged();
+	/* the storage PC's transcripts of this PC's speech arrived in the log */
+	void transcriptsArrived(int segments);
 
 private:
 	Settings settings;

@@ -127,6 +127,7 @@ Dock::Dock(Controller *controller_, QWidget *parent) : QWidget(parent), controll
 	connect(open, &QPushButton::clicked, this, [this] { OpenViewer(); });
 	connect(settings, &QPushButton::clicked, this, &Dock::OpenSettings);
 	connect(controller, &Controller::relabelled, this, &Dock::Reload);
+	connect(controller, &Controller::transcriptsArrived, this, &Dock::Reload);
 	connect(list, &QListWidget::itemDoubleClicked, this,
 		[this](QListWidgetItem *item) { OpenViewer(item->data(Qt::UserRole).toLongLong()); });
 	connect(pause, &QCheckBox::toggled, controller, &Controller::SetPaused);
