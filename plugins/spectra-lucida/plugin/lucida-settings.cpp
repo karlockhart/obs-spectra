@@ -98,6 +98,8 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	tabs->addTab(ScreenshotsPage(s), T("Lucida.Settings.Screenshots"));
 	tabs->addTab(CloudPage(s), T("Lucida.Settings.Cloud"));
 	tabs->addTab(NetworkPage(s), T("Lucida.Settings.Network"));
+	/* Only once every page exists: it reads them all through Collect() */
+	UpdateCloudFound();
 
 	QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
 	connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -289,7 +291,6 @@ QWidget *SettingsDialog::CloudPage(const Settings &s)
 	form->addRow(cloudFrames);
 	form->addRow(test, cloudTest);
 	form->addRow(Note(T("Lucida.Settings.CloudView.Note")));
-	UpdateCloudFound();
 	return Page(form);
 }
 
