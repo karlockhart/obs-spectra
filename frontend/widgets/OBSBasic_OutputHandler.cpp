@@ -60,6 +60,11 @@ bool OBSBasic::Active() const
 	return outputHandler->Active();
 }
 
+bool OBSBasic::ActiveExceptLoop() const
+{
+	return outputHandler && outputHandler->ActiveExceptLoop();
+}
+
 void OBSBasic::ResizeOutputSizeOfSource()
 {
 	if (obs_video_active()) {

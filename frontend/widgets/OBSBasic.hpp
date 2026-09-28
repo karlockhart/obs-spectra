@@ -776,6 +776,10 @@ private:
 
 public:
 	bool Active() const;
+	/* Streaming, recording, replay buffer or virtual camera: anything but background loop recording */
+	bool ActiveExceptLoop() const;
+	/* Closes without asking, for the in-app updater that takes over once Spectra has exited */
+	void CloseForUpdate();
 	void ResetOutputs();
 
 	inline void EnableOutputs(bool enable)
@@ -1147,6 +1151,7 @@ private:
 	long disableSaving = 1;
 	bool projectChanged = false;
 	bool clearingFailed = false;
+	bool closingForUpdate = false;
 
 	QPointer<OBSMissingFiles> missDialog;
 
