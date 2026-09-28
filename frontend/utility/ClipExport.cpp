@@ -244,11 +244,20 @@ bool Export(const std::vector<std::string> &inputs, double startSec, double endS
 	const unsigned streamCount = in->nb_streams;
 	std::vector<int> streamMap(streamCount, -1);
 	int videoIndex = -1;
+	/* Only the first audio track, the full mix: loop recordings can also
+	 * have one track per speaker, for transcripts */
+	bool audioCopied = false;
 
 	for (unsigned i = 0; i < streamCount; i++) {
 		AVStream *ist = in->streams[i];
 		if (!IsCopiedStream(ist)) {
 			continue;
+		}
+		if (ist->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+			if (audioCopied) {
+				continue;
+			}
+			audioCopied = true;
 		}
 		if (avformat_query_codec(oc->oformat, ist->codecpar->codec_id, FF_COMPLIANCE_NORMAL) != 1) {
 			error = std::string("Codec '") + avcodec_get_name(ist->codecpar->codec_id) +

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility/ClipCaptions.hpp>
 #include <utility/ClipRender.hpp>
 #include <utility/YouTubeUpload.hpp>
 
@@ -7,6 +8,7 @@
 
 #include <QDateTime>
 #include <QDialog>
+#include <QImage>
 #include <QPointer>
 #include <QTimer>
 
@@ -31,6 +33,7 @@ class QPushButton;
 class QSlider;
 class QSpinBox;
 class QLineEdit;
+class QTableWidget;
 
 /*
  * Spectra Clip Maker: an editor over the whole loop recording. The loop's
@@ -134,6 +137,13 @@ private:
 	QDoubleSpinBox *endEdit;
 	QSpinBox *xEdit, *yEdit, *wEdit, *hEdit;
 
+	/* Captions */
+	QPushButton *transcribeButton;
+	QLabel *captionInfo;
+	QTableWidget *captionTable;
+	QDoubleSpinBox *captionStart, *captionEnd;
+	QCheckBox *speakerCheck, *burnCaptionsCheck, *srtCheck;
+
 	/* A moment asked for with ShowMoment, placed once its segment is scanned */
 	struct Moment {
 		QString segment;
@@ -150,6 +160,7 @@ private:
 	QString clipFile;
 	std::vector<Segment> segments;
 	std::vector<CensorLayer> layers;
+	std::vector<ClipCaptions::Cue> captions;
 	int nextLayerId = 1;
 	int selectedLayer = -1;
 	double playhead = 0.0;
@@ -183,6 +194,11 @@ private:
 	std::mutex overlayMutex;
 	std::vector<ClipRender::Layer> overlay;
 	int overlaySelected = -1;
+	/* The caption at the playhead; the graphics thread makes the texture */
+	QImage captionImage;
+	bool captionImageChanged = false;
+	gs_texture_t *captionTexture = nullptr; /* graphics thread only */
+	int shownCaption = -2;
 
 	/* Shape dragging on the preview */
 	Handle dragHandle = Handle::None;
@@ -199,7 +215,9 @@ private:
 	QWidget *BuildLibrary();
 	QWidget *BuildPreview();
 	QWidget *BuildTimeline();
+	QWidget *BuildSidePanel();
 	QWidget *BuildLayerPanel();
+	QWidget *BuildCaptionPanel();
 	void BuildShortcuts();
 
 	/* Library */
@@ -256,7 +274,18 @@ private:
 	void PreviewMouseMove(QMouseEvent *event);
 	void PreviewMouseRelease(QMouseEvent *event);
 
-	/* A long job (export, upload) with a progress dialog */
+	/* Captions */
+	void Transcribe();
+	void TranscribeFinished(bool ok, const std::vector<ClipCaptions::Cue> &cues, const QString &error);
+	void CaptionsChanged();
+	void UpdateCaptionTable();
+	void UpdateCaptionProps();
+	int SelectedCaption() const;
+	/* Puts the caption at the playhead on the preview */
+	void UpdateCaptionPreview();
+	QSize VideoSize() const;
+
+	/* A long job (export, transcription) with a progress dialog */
 	std::shared_ptr<ExportState> StartJob(const QString &label);
 	/* Returns whether the job was cancelled */
 	bool EndJob();

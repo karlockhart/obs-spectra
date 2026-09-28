@@ -21,6 +21,27 @@
 
 namespace lucida {
 
+/* Transcribing speech in the loop recording into the log (Spectra) */
+struct SpeechSettings {
+	enum class When { AfterSegment = 0, AfterGame = 1 };
+
+	bool enabled = false;
+	/* Download the model when Spectra starts if it's missing (the Clip
+	 * Maker's captions use it too, so even when transcription is off) */
+	bool autoDownload = true;
+	QString model; /* spectra::speech::ModelInfo::id */
+	QString language = QStringLiteral("auto");
+	When when = When::AfterSegment; /* as each segment is finished, or once the game has closed */
+	bool useGpu = true;
+	/* Speaker tracks to transcribe; recordings without them use the mix */
+	bool me = true;
+	bool teamSpeak = true;
+	bool game = true;
+	QString prompt; /* names and jargon Whisper should know */
+	/* Only loop segments recorded after this (s since the epoch); 0 = all */
+	double since = 0.0;
+};
+
 /* Lucida settings, stored in the Spectra profile (section "Lucida") */
 struct Settings {
 	bool enabled = true;
@@ -46,6 +67,8 @@ struct Settings {
 	/* What other PCs on the network see this one as */
 	QString LanDisplayName() const;
 
+	SpeechSettings speech;
+
 	static Settings Load();
 	void Save() const;
 	/* Folder for the log, screenshots and crops (Spectra's Lucida folder) */
@@ -63,6 +86,8 @@ QString LoopDirectory();
 bool LoopRecordingActive();
 /* Where Spectra saves clips (as the frontend's LoopRecorder::ClipsDirectory) */
 QString ClipsDirectory();
+
+class SpeechController;
 
 /* Runs Lucida's sampling loop on a worker thread inside Spectra */
 class Controller : public QObject {
@@ -97,6 +122,9 @@ public:
 
 	/* Re-tags the whole log with the current rules in the background */
 	void Relabel();
+
+	/* Transcribes loop recording speech into the log, on its own thread */
+	SpeechController *Speech() const { return speech; }
 
 	QString Status() const { return status; }
 
@@ -164,6 +192,8 @@ private:
 	void WakeCloud();
 	void RunCloud(Settings s);
 	void SetCloudStatus(const QString &text);
+
+	SpeechController *speech = nullptr;
 
 	bool OpenReader();
 	void PollLoop();

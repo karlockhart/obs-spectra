@@ -7,6 +7,7 @@
 #include "lucida-controller.hpp"
 #include "lucida-dock.hpp"
 #include "lucida-host.hpp"
+#include "lucida-speech.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -96,6 +97,7 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		if (controller) {
 			controller->Stop();
 			controller->StopLan();
+			controller->Speech()->Stop();
 		}
 		break;
 	default:
@@ -114,5 +116,6 @@ void obs_module_unload(void)
 	obs_frontend_remove_event_callback(OnFrontendEvent, nullptr);
 	if (controller) {
 		controller->Stop();
+		controller->Speech()->Stop();
 	}
 }

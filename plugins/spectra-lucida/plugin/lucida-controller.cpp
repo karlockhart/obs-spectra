@@ -1,4 +1,7 @@
 #include "lucida-controller.hpp"
+#include "lucida-speech.hpp"
+
+#include <spectra-speech/models.hpp>
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -91,6 +94,19 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
 	config_set_default_bool(c, SECTION, "LanEnabled", d.lanEnabled);
 	config_set_default_string(c, SECTION, "LanName", "");
+	const SpeechSettings &sp = d.speech;
+	config_set_default_bool(c, SECTION, "SpeechEnabled", sp.enabled);
+	config_set_default_bool(c, SECTION, "SpeechAutoDownload", sp.autoDownload);
+	config_set_default_string(c, SECTION, "SpeechModel",
+				  spectra::speech::DefaultWhisperModel().toUtf8().constData());
+	config_set_default_string(c, SECTION, "SpeechLanguage", sp.language.toUtf8().constData());
+	config_set_default_int(c, SECTION, "SpeechWhen", (int)sp.when);
+	config_set_default_bool(c, SECTION, "SpeechGpu", sp.useGpu);
+	config_set_default_bool(c, SECTION, "SpeechMe", sp.me);
+	config_set_default_bool(c, SECTION, "SpeechTeamSpeak", sp.teamSpeak);
+	config_set_default_bool(c, SECTION, "SpeechGame", sp.game);
+	config_set_default_string(c, SECTION, "SpeechPrompt", "");
+	config_set_default_double(c, SECTION, "SpeechSince", 0.0);
 	const spectra::Region chat = spectra::kDefaultChatRegion, hud = spectra::kDefaultHudRegion;
 	for (auto [prefix, region] : {std::pair{"Chat", chat}, std::pair{"Hud", hud}}) {
 		const std::string p(prefix);
@@ -161,6 +177,20 @@ Settings Settings::Load()
 	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
 	s.lanEnabled = config_get_bool(c, SECTION, "LanEnabled");
 	s.lanName = ConfigString(c, SECTION, "LanName").trimmed();
+	SpeechSettings &sp = s.speech;
+	sp.enabled = config_get_bool(c, SECTION, "SpeechEnabled");
+	sp.autoDownload = config_get_bool(c, SECTION, "SpeechAutoDownload");
+	sp.model = ConfigString(c, SECTION, "SpeechModel");
+	sp.language = ConfigString(c, SECTION, "SpeechLanguage");
+	sp.when = config_get_int(c, SECTION, "SpeechWhen") == (int)SpeechSettings::When::AfterGame
+			  ? SpeechSettings::When::AfterGame
+			  : SpeechSettings::When::AfterSegment;
+	sp.useGpu = config_get_bool(c, SECTION, "SpeechGpu");
+	sp.me = config_get_bool(c, SECTION, "SpeechMe");
+	sp.teamSpeak = config_get_bool(c, SECTION, "SpeechTeamSpeak");
+	sp.game = config_get_bool(c, SECTION, "SpeechGame");
+	sp.prompt = ConfigString(c, SECTION, "SpeechPrompt");
+	sp.since = config_get_double(c, SECTION, "SpeechSince");
 	LoadRegion(c, "Chat", r.chatRegion);
 	LoadRegion(c, "Hud", r.hudRegion);
 	return s;
@@ -202,6 +232,17 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
 	config_set_bool(c, SECTION, "LanEnabled", lanEnabled);
 	config_set_string(c, SECTION, "LanName", lanName.toUtf8().constData());
+	config_set_bool(c, SECTION, "SpeechEnabled", speech.enabled);
+	config_set_bool(c, SECTION, "SpeechAutoDownload", speech.autoDownload);
+	config_set_string(c, SECTION, "SpeechModel", speech.model.toUtf8().constData());
+	config_set_string(c, SECTION, "SpeechLanguage", speech.language.toUtf8().constData());
+	config_set_int(c, SECTION, "SpeechWhen", (int)speech.when);
+	config_set_bool(c, SECTION, "SpeechGpu", speech.useGpu);
+	config_set_bool(c, SECTION, "SpeechMe", speech.me);
+	config_set_bool(c, SECTION, "SpeechTeamSpeak", speech.teamSpeak);
+	config_set_bool(c, SECTION, "SpeechGame", speech.game);
+	config_set_string(c, SECTION, "SpeechPrompt", speech.prompt.toUtf8().constData());
+	config_set_double(c, SECTION, "SpeechSince", speech.since);
 	SaveRegion(c, "Chat", r.chatRegion);
 	SaveRegion(c, "Hud", r.hudRegion);
 	config_save_safe(c, "tmp", nullptr);
@@ -302,6 +343,9 @@ Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Lo
 	loopPoll.start();
 	StartCloud();
 	StartLan();
+
+	speech = new SpeechController(this);
+	speech->Apply(settings);
 }
 
 Controller::~Controller()
@@ -461,6 +505,7 @@ void Controller::ApplySettings(const Settings &s)
 		regionsRead = 0;
 		emit carnivoreChanged(settings.recorder.carnivore);
 	}
+	speech->Apply(settings);
 	if ((wasRunning || !paused) && settings.enabled) {
 		Start();
 	} else if (!settings.enabled) {

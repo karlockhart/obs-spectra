@@ -44,6 +44,7 @@ target_link_libraries(
     OBS::json11
     OBS::bpm
     OBS::qt-obs-spinbox
+    $<$<TARGET_EXISTS:spectra-speech>:spectra-speech>
 )
 
 include(cmake/ui-components.cmake)

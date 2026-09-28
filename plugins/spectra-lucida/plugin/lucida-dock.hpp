@@ -32,6 +32,7 @@ private:
 	QPointer<Controller> controller;
 	QLabel *status, *cloud, *network;
 	PeersPanel *peers;
+	QLabel *speechStatus;
 	QLineEdit *search;
 	QCheckBox *pause, *carnivore;
 	QListWidget *list;
