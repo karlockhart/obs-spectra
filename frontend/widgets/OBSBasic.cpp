@@ -777,6 +777,8 @@ bool OBSBasic::InitBasicConfigDefaults()
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "StarlingVoice", true);
 	config_set_default_string(activeConfiguration, "SpectraLoop", "Processes", "FiveM*");
 	config_set_default_bool(activeConfiguration, "SpectraLoop", "AnyFullscreen", false);
+	/* One audio track per speaker next to the mix, for transcripts */
+	config_set_default_bool(activeConfiguration, "SpectraLoop", "SpeakerTracks", true);
 	config_set_default_bool(activeConfiguration, "SpectraOverlay", "Enabled", true);
 	config_set_default_int(activeConfiguration, "SpectraOverlay", "Corner", 0);
 	config_set_default_int(activeConfiguration, "SpectraOverlay", "DurationSec", 5);

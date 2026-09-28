@@ -10,17 +10,14 @@ fork of OBS Studio; upstream's layout applies. Spectra's own additions live in
 - `master` is the public product. Every release is built from it (or a version
   tag on it) by CI, with the Google API client for the YouTube upload coming from
   repository secrets.
-- **`feature/whisper` is a private build and is never merged to master.** It
-  carries the Whisper speech work: the `plugins/spectra-speech` plugin, speech
-  transcription into the Lucida log, and captioning in the Clip Maker
-  (`frontend/utility/ClipCaptions.*` and the Captions tab of
-  `SpectraClipMaker`). Everything else that lands on that branch is expected to
-  reach master separately.
+- The Whisper speech work is part of master: the `plugins/spectra-speech`
+  plugin, speech transcription into the Lucida log, and captioning in the Clip
+  Maker (`frontend/utility/ClipCaptions.*` and the Captions tab of
+  `SpectraClipMaker`). Transcribing the loop recording into the log is off by
+  default; users turn it on in Lucida's settings (Speech tab).
+  `feature/whisper`, where it was developed as a private build, is retired.
 - Work meant for master goes on a branch off `master` and lands through a pull
-  request; `feature/whisper` then merges master back in to stay current.
-- When a change is made on `feature/whisper` but belongs on master, cherry-pick
-  it onto a branch off master and strip the Whisper-specific parts (caption
-  code, `ClipCaptions`, `spectra-speech`). Don't let those parts reach master.
+  request.
 
 ## Building on Windows
 

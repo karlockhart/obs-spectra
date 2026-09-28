@@ -38,6 +38,7 @@ private:
 	QCheckBox *autoCapture;
 	QCheckBox *fitToCanvas;
 	QCheckBox *starlingVoice;
+	QCheckBox *speakerTracks;
 	QCheckBox *overlayEnabled;
 	QComboBox *overlayCorner;
 	QSpinBox *overlayDuration;

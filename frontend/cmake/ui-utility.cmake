@@ -23,6 +23,8 @@ target_sources(
     utility/GoLiveAPI_Network.hpp
     utility/GoLiveAPI_PostData.cpp
     utility/GoLiveAPI_PostData.hpp
+    utility/ClipCaptions.cpp
+    utility/ClipCaptions.hpp
     utility/YouTubeUpload.cpp
     utility/YouTubeUpload.hpp
     utility/LoopCapture.cpp
@@ -73,6 +75,8 @@ target_sources(
     utility/SpectraGamepad.hpp
     utility/SpectraOverlay.cpp
     utility/SpectraOverlay.hpp
+    utility/SpectraSpeakerTracks.cpp
+    utility/SpectraSpeakerTracks.hpp
     utility/SpectraSplash.cpp
     utility/SpectraSplash.hpp
     utility/SpectraUpdateCheck.cpp

@@ -608,8 +608,10 @@ inline void SimpleOutput::SetupOutputs()
 			if (flv) {
 				obs_encoder_set_audio(audioRecording, obs_get_audio());
 			} else {
+				/* The loop can record more tracks than recordings do */
+				const int used = tracks | main->LoopAudioTracks(tracks);
 				for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
-					if ((tracks & (1 << i)) != 0) {
+					if ((used & (1 << i)) != 0) {
 						obs_encoder_set_audio(audioTrack[i], obs_get_audio());
 					}
 				}
@@ -836,8 +838,9 @@ void SimpleOutput::UpdateRecording()
 		if (flv || strcmp(quality, "Stream") == 0) {
 			obs_output_set_audio_encoder(loopOutput, audioRecording, 0);
 		} else {
+			const int loopTracks = main->LoopAudioTracks(tracks);
 			for (int i = 0; i < MAX_AUDIO_MIXES; i++) {
-				if ((tracks & (1 << i)) != 0) {
+				if ((loopTracks & (1 << i)) != 0) {
 					obs_output_set_audio_encoder(loopOutput, audioTrack[i], idx3++);
 				}
 			}

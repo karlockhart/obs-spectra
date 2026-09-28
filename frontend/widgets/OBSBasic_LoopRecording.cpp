@@ -4,6 +4,9 @@
 #include <dialogs/SpectraAudioSetup.hpp>
 #include <dialogs/SpectraLoopSettings.hpp>
 #include <utility/SpectraDefaults.hpp>
+#include <utility/SpectraSpeakerTracks.hpp>
+
+#include <spectra-speech/models.hpp>
 
 #include <qt-wrappers.hpp>
 
@@ -50,6 +53,12 @@ void OBSBasic::InitSpectra()
 	/* Existing profiles on x264 move to the hardware encoder at startup */
 	if (!Active() && PreferHardwareEncoder()) {
 		ResetOutputs();
+	}
+
+	/* Speech models, shared by the Clip Maker and Lucida; follows portable mode */
+	char modelDir[512];
+	if (GetAppConfigPath(modelDir, sizeof(modelDir), "obs-studio/plugin_config/spectra-speech/models") > 0) {
+		spectra::speech::SetModelDirectory(QString::fromUtf8(modelDir));
 	}
 
 	loopRecorder = new LoopRecorder(this);
@@ -421,6 +430,12 @@ void OBSBasic::StopLoopRecording()
 bool OBSBasic::LoopRecordingActive() const
 {
 	return outputHandler && outputHandler->LoopRecordingActive();
+}
+
+int OBSBasic::LoopAudioTracks(int recordTracks) const
+{
+	return SpectraSpeakerTracks::Enabled(activeConfiguration) ? (int)SpectraSpeakerTracks::kLoopMixers
+								  : recordTracks;
 }
 
 uint64_t OBSBasic::LoopRecordingTotalBytes() const
