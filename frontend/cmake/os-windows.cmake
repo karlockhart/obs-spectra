@@ -9,6 +9,7 @@ endif()
 find_package(MbedTLS 3...<4 REQUIRED)
 find_package(Detours REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(ZLIB REQUIRED)
 
 configure_file(cmake/windows/obs.rc.in obs.rc)
 
@@ -18,12 +19,18 @@ target_sources(
     cmake/windows/obs.manifest
     dialogs/OBSUpdate.cpp
     dialogs/OBSUpdate.hpp
+    dialogs/SpectraUpdateDialog.cpp
+    dialogs/SpectraUpdateDialog.hpp
     forms/OBSUpdate.ui
     obs.rc
     utility/AutoUpdateThread.cpp
     utility/AutoUpdateThread.hpp
     utility/CrashHandler_Windows.cpp
     utility/NativeEventFilter_Windows.cpp
+    utility/SpectraUpdateJob.cpp
+    utility/SpectraUpdateJob.hpp
+    utility/SpectraZip.cpp
+    utility/SpectraZip.hpp
     utility/WhatsNewBrowserInitThread.cpp
     utility/WhatsNewBrowserInitThread.hpp
     utility/WhatsNewInfoThread.cpp
@@ -54,6 +61,7 @@ target_link_libraries(
     MbedTLS::mbedtls
     nlohmann_json::nlohmann_json
     Detours::Detours
+    ZLIB::ZLIB
 )
 
 target_compile_definitions(obs-studio PRIVATE PSAPI_VERSION=2)
@@ -70,6 +78,9 @@ endif()
 set_source_files_properties(utility/AutoUpdateThread.cpp PROPERTIES COMPILE_DEFINITIONS OBS_COMMIT="${OBS_COMMIT}")
 
 add_subdirectory(updater)
+
+# Spectra's in-app updater: its helper exe and tests (before obs-studio collects its executables)
+add_subdirectory(spectra-updater)
 
 set_property(TARGET obs-studio APPEND PROPERTY AUTORCC_OPTIONS --format-version 1)
 

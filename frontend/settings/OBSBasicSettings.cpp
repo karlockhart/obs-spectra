@@ -32,6 +32,7 @@
 #include <utility/FFmpegCodec.hpp>
 #include <utility/FFmpegFormat.hpp>
 #include <utility/SettingsEventFilter.hpp>
+#include <utility/SpectraUpdateCheck.hpp>
 #ifdef YOUTUBE_ENABLED
 #include <utility/YoutubeApiWrappers.hpp>
 #endif
@@ -1231,7 +1232,15 @@ void TranslateBranchInfo(const QString &name, QString &displayName, QString &des
 
 void OBSBasicSettings::LoadBranchesList()
 {
-#if defined(_WIN32) || defined(ENABLE_SPARKLE_UPDATER)
+#if defined(_WIN32)
+	/* Spectra's own channels over its GitHub releases (see SpectraUpdateCheck) */
+	using namespace SpectraReleases;
+	ui->updateChannelBox->clear();
+	ui->updateChannelBox->addItem(QTStr("Spectra.Update.Channel.Stable"), ChannelSetting(Channel::Stable));
+	ui->updateChannelBox->addItem(QTStr("Spectra.Update.Channel.RC"), ChannelSetting(Channel::ReleaseCandidates));
+	ui->updateChannelBox->setCurrentIndex(
+		ui->updateChannelBox->findData(ChannelSetting(SpectraUpdateCheck::CurrentChannel())));
+#elif defined(ENABLE_SPARKLE_UPDATER)
 	bool configBranchRemoved = true;
 	QString configBranch = config_get_string(App()->GetAppConfig(), "General", "UpdateBranch");
 
@@ -3056,7 +3065,11 @@ void OBSBasicSettings::SaveGeneralSettings()
 	QString branchName = ui->updateChannelBox->itemData(branchIdx).toString();
 
 	if (WidgetChanged(ui->updateChannelBox)) {
+#ifdef _WIN32
+		config_set_string(App()->GetAppConfig(), "Spectra", "UpdateChannel", QT_TO_UTF8(branchName));
+#else
 		config_set_string(App()->GetAppConfig(), "General", "UpdateBranch", QT_TO_UTF8(branchName));
+#endif
 		forceUpdateCheck = true;
 	}
 #endif

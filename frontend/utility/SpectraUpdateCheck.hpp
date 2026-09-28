@@ -1,38 +1,33 @@
 #pragma once
 
+#include "SpectraReleases.hpp"
+
 #include <QObject>
 #include <QPointer>
 #include <QString>
 
+#include <optional>
 #include <string>
 
 class QWidget;
 
 /*
- * Checks GitHub for a newer OBS-Spectra release and for a newer upstream
- * OBS Studio release than the one Spectra is currently based on.
+ * Checks GitHub for a newer OBS-Spectra release on the chosen update channel
+ * (Settings > General > Updates) and for a newer upstream OBS Studio release
+ * than the one Spectra is currently based on. A newer release can be
+ * installed from the notification (SpectraUpdateDialog).
  *
- * Spectra versions are "<OBS base>-spectra.<n>", e.g. 32.2.1-spectra.3.
+ * Spectra versions are "<OBS base>-spectra.<n>", e.g. 32.2.1-spectra.3, and
+ * release candidates "<OBS base>-spectra.<n>-rc.<m>".
  */
 class SpectraUpdateCheck : public QObject {
 	Q_OBJECT
 
 public:
-	struct Version {
-		int major = 0;
-		int minor = 0;
-		int patch = 0;
-		int spectra = 0;
-		int rc = 0; /* 32.2.1-spectra.1-rc.2: a release candidate, older than the final */
-
-		bool valid() const { return major || minor || patch; }
-		QString Base() const;
-		bool operator<(const Version &other) const;
-	};
-
-	static Version Parse(const QString &version);
-
 	SpectraUpdateCheck(QWidget *parent, bool manual);
+
+	/* The update channel from the settings (see SpectraReleases::ChannelFromSetting) */
+	static SpectraReleases::Channel CurrentChannel();
 
 	void Start();
 
@@ -41,11 +36,11 @@ private:
 	bool manual;
 	bool failed = false;
 
-	QString releaseTag;
-	QString releaseUrl;
-	QString releaseNotes;
+	SpectraReleases::Channel channel;
+	std::optional<SpectraReleases::Release> release;
 	QString upstreamTag;
 
-	void Apply(bool ok, long status, const std::string &body, const std::string &error, bool spectraRelease);
+	void ApplySpectra(bool ok, long status, const std::string &body, const std::string &error);
+	void ApplyUpstream(bool ok, long status, const std::string &body, const std::string &error);
 	void Finished();
 };

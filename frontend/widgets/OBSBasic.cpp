@@ -1983,6 +1983,10 @@ bool OBSBasic::isReadyToClose()
 
 bool OBSBasic::shouldPromptForClose()
 {
+	if (closingForUpdate) {
+		return false;
+	}
+
 	bool confirmOnExit = config_get_bool(App()->GetUserConfig(), "General", "ConfirmOnExit");
 	/* Background loop recording alone does not warrant a prompt */
 	if (confirmOnExit && outputHandler && outputHandler->ActiveExceptLoop() && !clearingFailed) {
@@ -2008,6 +2012,13 @@ bool OBSBasic::promptToClose()
 
 	isClosePromptOpen_ = false;
 	return true;
+}
+
+void OBSBasic::CloseForUpdate()
+{
+	closingForUpdate = true;
+	restart = false;
+	QTimer::singleShot(0, this, &OBSBasic::close);
 }
 
 void OBSBasic::closeWindow()

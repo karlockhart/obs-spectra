@@ -24,6 +24,7 @@
 #include <utility/SpectraUpdateCheck.hpp>
 #ifdef _WIN32
 #include <utility/AutoUpdateThread.hpp>
+#include <utility/SpectraUpdateJob.hpp>
 #endif
 #ifdef ENABLE_SPARKLE_UPDATER
 #include <utility/MacUpdateThread.hpp>
@@ -38,6 +39,8 @@
 #include <browser-panel.hpp>
 #endif
 #include <qt-wrappers.hpp>
+
+#include <thread>
 
 #define SPECTRA_UPDATE_CHECK_INTERVAL (60 * 60 * 24) /* 1 day */
 
@@ -174,6 +177,13 @@ void OBSBasic::ShowWhatsNew(const QString &url)
  * Spectra) with a check of Spectra's GitHub releases. */
 void OBSBasic::TimedCheckForUpdates()
 {
+#ifdef _WIN32
+	/* the updater's own copy, left next to the install by the last update */
+	std::thread([dir = SpectraUpdateJob::RunningInstallDir()]() {
+		SpectraUpdateJob::CleanUpLeftovers(dir);
+	}).detach();
+#endif
+
 	if (App()->IsUpdaterDisabled()) {
 		return;
 	}
