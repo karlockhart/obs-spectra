@@ -148,6 +148,10 @@ void OBSBasic::CreateHotkeys()
 		return false;                                              \
 	}
 
+#ifdef SPECTRA_ULTRALIGHT
+	/* No streaming in Ultralight */
+	streamingHotkeys = OBS_INVALID_HOTKEY_PAIR_ID;
+#else
 	streamingHotkeys = obs_hotkey_pair_register_frontend(
 		"OBSBasic.StartStreaming", Str("Basic.Main.StartStreaming"), "OBSBasic.StopStreaming",
 		Str("Basic.Main.StopStreaming"),
@@ -157,6 +161,7 @@ void OBSBasic::CreateHotkeys()
 			      "Stopping stream"),
 		this, this);
 	LoadHotkeyPair(streamingHotkeys, "OBSBasic.StartStreaming", "OBSBasic.StopStreaming");
+#endif
 
 	auto cb = [](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 		OBSBasic &basic = *static_cast<OBSBasic *>(data);

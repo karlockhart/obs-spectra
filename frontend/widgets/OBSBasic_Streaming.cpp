@@ -47,6 +47,12 @@ void OBSBasic::DisplayStreamStartError()
 
 void OBSBasic::StartStreaming()
 {
+#ifdef SPECTRA_ULTRALIGHT
+	/* Ultralight records only. Every way to start a stream (button, hotkey,
+	 * tray, frontend API, websocket, --startstreaming) ends up here. */
+	blog(LOG_INFO, "Streaming is not available in OBS-Spectra Ultralight");
+	return;
+#endif
 	if (outputHandler->StreamingActive()) {
 		return;
 	}

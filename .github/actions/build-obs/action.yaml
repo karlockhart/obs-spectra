@@ -28,10 +28,10 @@ inputs:
     description: Working directory for packaging
     required: false
     default: ${{ github.workspace }}
-  lite:
-    description: Build OBS-Spectra Lite (Windows only)
+  edition:
+    description: OBS-Spectra edition, Full, Lite or Ultralight (Windows only)
     required: false
-    default: 'false'
+    default: Full
 runs:
   using: composite
   steps:
@@ -94,14 +94,11 @@ runs:
         $BuildArgs = @{
           Target = '${{ inputs.target }}'
           Configuration = '${{ inputs.config }}'
+          Edition = '${{ inputs.edition }}'
         }
 
         if ( $Env:RUNNER_DEBUG -ne $null ) {
           $BuildArgs += @{ Debug = $true }
-        }
-
-        if ( '${{ inputs.lite }}' -eq 'true' ) {
-          $BuildArgs += @{ Lite = $true }
         }
 
         git fetch origin --no-tags --no-recurse-submodules -q

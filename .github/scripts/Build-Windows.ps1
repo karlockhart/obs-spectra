@@ -4,7 +4,8 @@ param(
     [string] $Target = 'x64',
     [ValidateSet('Debug', 'RelWithDebInfo', 'Release', 'MinSizeRel')]
     [string] $Configuration = 'RelWithDebInfo',
-    [switch] $Lite
+    [ValidateSet('Full', 'Lite', 'Ultralight')]
+    [string] $Edition = 'Full'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,12 +51,9 @@ function Build {
     Push-Location -Stack BuildTemp
     Ensure-Location $ProjectRoot
 
-    $CmakeArgs = @('--preset', "windows-ci-${Target}")
-
-    # OBS-Spectra Lite: no Lucida, Obscura, OCR or speech recognition
-    if ( $Lite ) {
-        $CmakeArgs += @('-DSPECTRA_LITE:BOOL=ON')
-    }
+    # OBS-Spectra edition: Full, Lite (no Lucida, Obscura, OCR or speech) or
+    # Ultralight (Lite without the browser and streaming)
+    $CmakeArgs = @('--preset', "windows-ci-${Target}", "-DSPECTRA_EDITION:STRING=${Edition}")
 
     $CmakeBuildArgs = @('--build')
     $CmakeInstallArgs = @()

@@ -28,7 +28,9 @@ using namespace SpectraReleases;
 #define SPECTRA_RELEASES_API "https://api.github.com/repos/karlockhart/obs-spectra/releases?per_page=30"
 #define UPSTREAM_RELEASES_API "https://api.github.com/repos/obsproject/obs-studio/releases/latest"
 
-#ifdef SPECTRA_LITE
+#if defined(SPECTRA_ULTRALIGHT)
+static constexpr Edition BUILD_EDITION = Edition::Ultralight;
+#elif defined(SPECTRA_LITE)
 static constexpr Edition BUILD_EDITION = Edition::Lite;
 #else
 static constexpr Edition BUILD_EDITION = Edition::Full;

@@ -11,12 +11,22 @@
 
 namespace SpectraReleases {
 
-/* Lite's names don't end like the full ones, so OBS-Spectra versions from
- * before Lite existed never mistake a Lite zip for theirs */
-static const QString PORTABLE_SUFFIX = QStringLiteral("-Windows-x64-Portable.zip");
-static const QString REGULAR_SUFFIX = QStringLiteral("-Windows-x64.zip");
-static const QString LITE_PORTABLE_SUFFIX = QStringLiteral("-Windows-x64-Lite-Portable.zip");
-static const QString LITE_REGULAR_SUFFIX = QStringLiteral("-Windows-x64-Lite.zip");
+/* -Windows-x64[-Lite|-Ultralight][-Portable].zip. No edition's names end like
+ * another's, so OBS-Spectra versions from before the editions existed never
+ * mistake a Lite or Ultralight zip for theirs. */
+static QString ZipSuffix(bool portable, Edition edition)
+{
+	QString suffix = QStringLiteral("-Windows-x64");
+	if (edition == Edition::Lite) {
+		suffix += QStringLiteral("-Lite");
+	} else if (edition == Edition::Ultralight) {
+		suffix += QStringLiteral("-Ultralight");
+	}
+	if (portable) {
+		suffix += QStringLiteral("-Portable");
+	}
+	return suffix + QStringLiteral(".zip");
+}
 
 QString Version::Base() const
 {
@@ -136,8 +146,7 @@ QList<Release> ParseReleases(const QByteArray &json, QString *error)
 
 static const Asset *FindZip(const Release &release, bool portable, Edition edition)
 {
-	const QString &suffix = edition == Edition::Lite ? (portable ? LITE_PORTABLE_SUFFIX : LITE_REGULAR_SUFFIX)
-							 : (portable ? PORTABLE_SUFFIX : REGULAR_SUFFIX);
+	const QString suffix = ZipSuffix(portable, edition);
 	for (const Asset &asset : release.assets) {
 		if (asset.name.endsWith(suffix, Qt::CaseInsensitive) && !asset.url.isEmpty()) {
 			return &asset;

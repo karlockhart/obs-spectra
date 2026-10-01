@@ -17,7 +17,12 @@ Get the latest build from [Releases](https://github.com/karlockhart/obs-spectra/
 - `OBS-Spectra-<version>-Windows-x64.zip` keeps its settings in `%APPDATA%\OBS-Spectra`. It never touches an existing OBS Studio install's settings.
 - `OBS-Spectra-<version>-Windows-x64-Portable.zip` keeps its settings next to the program, so you can run it from any folder or a USB drive.
 
-**OBS-Spectra Lite** comes as the same two zips with `-Lite` in the name (`...-Windows-x64-Lite.zip`, `...-Windows-x64-Lite-Portable.zip`). It has the loop recording, the Clip Maker (without captions) and everything under *Other additions* below, but leaves out Lucida, Obscura and speech recognition, along with the OCR and speech libraries they need. A Lite copy updates to the next Lite version, and a full copy to the next full one.
+There are two smaller editions, each as the same two zips with its name added (`...-Windows-x64-Lite.zip`, `...-Windows-x64-Lite-Portable.zip`, and likewise `-Ultralight`):
+
+- **OBS-Spectra Lite** has the loop recording, the Clip Maker (without captions) and everything under *Other additions* below, but leaves out Lucida, Obscura and speech recognition, along with the OCR and speech libraries they need.
+- **OBS-Spectra Ultralight** is Lite without the built-in browser (CEF) and without streaming: no browser sources, browser docks or stream settings, and nothing can start a stream. It is for recording only. The Clip Maker can still upload to YouTube, because it signs in through your own web browser.
+
+Each copy updates to the next version of its own edition.
 
 Unzip either one and run `bin\64bit\obs-spectra.exe`. OBS-Spectra checks this repository's releases once a day (and from **Help > Check For Updates**) and offers to update itself. **Settings > General > Updates** picks the channel: **Stable** offers only releases, **Release candidates** the newest release or release candidate, whichever is newer. A release candidate starts on the release-candidate channel.
 
@@ -69,9 +74,9 @@ cmake --preset windows-x64
 cmake --build build_x64 --config RelWithDebInfo
 ```
 
-For OBS-Spectra Lite, configure with `-DSPECTRA_LITE=ON` (in a build folder of its own, e.g. `cmake --preset windows-x64 -B build_lite -DSPECTRA_LITE=ON`).
+For Lite or Ultralight, set `SPECTRA_EDITION` in a build folder of its own, e.g. `cmake --preset windows-x64 -B build_ultralight -DSPECTRA_EDITION=Ultralight`.
 
-Pushing a version tag makes GitHub Actions build both editions and publish the release with all four zips (see `.github/workflows/push.yaml`).
+Pushing a version tag makes GitHub Actions build all three editions and publish the release with their six zips (see `.github/workflows/push.yaml`).
 
 ## License
 

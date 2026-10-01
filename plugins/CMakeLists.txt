@@ -99,8 +99,8 @@ add_obs_plugin(obs-x264)
 add_obs_plugin(oss-audio PLATFORMS FREEBSD OPENBSD)
 add_obs_plugin(rtmp-services)
 add_obs_plugin(sndio PLATFORMS LINUX FREEBSD OPENBSD)
-# OBS-Spectra Lite leaves out everything that needs OCR or speech models
-if(NOT SPECTRA_LITE)
+# OBS-Spectra Lite and Ultralight leave out everything that needs OCR or speech models
+if(SPECTRA_EDITION STREQUAL "Full")
   add_obs_plugin(spectra-lucida PLATFORMS WINDOWS ARCHITECTURES x64)
   add_obs_plugin(spectra-vision PLATFORMS WINDOWS ARCHITECTURES x64)
   add_obs_plugin(spectra-speech PLATFORMS WINDOWS ARCHITECTURES x64)

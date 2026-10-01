@@ -67,10 +67,10 @@ struct Release {
 /* The /repos/{repo}/releases list. Empty with *error set when it isn't one. */
 QList<Release> ParseReleases(const QByteArray &json, QString *error = nullptr);
 
-/* OBS-Spectra or OBS-Spectra Lite (no Lucida, Obscura or speech). Each updates
- * only from its own zips: OBS-Spectra-<tag>-Windows-x64[-Portable].zip and
- * OBS-Spectra-<tag>-Windows-x64-Lite[-Portable].zip. */
-enum class Edition { Full, Lite };
+/* OBS-Spectra, OBS-Spectra Lite (no Lucida, Obscura or speech) or OBS-Spectra
+ * Ultralight (Lite without the browser). Each updates only from its own zips:
+ * OBS-Spectra-<tag>-Windows-x64[-Lite|-Ultralight][-Portable].zip. */
+enum class Edition { Full, Lite, Ultralight };
 
 /* The newest release the channel offers that has a Windows zip of the
  * edition: Stable skips pre-releases, ReleaseCandidates takes the newest of

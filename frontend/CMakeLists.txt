@@ -47,9 +47,13 @@ target_link_libraries(
     $<$<TARGET_EXISTS:spectra-speech>:spectra-speech>
 )
 
-# Lite: no Lucida, Obscura or speech recognition (no Clip Maker captions)
-if(SPECTRA_LITE)
+# Lite and Ultralight: no Lucida, Obscura or speech recognition (no Clip Maker
+# captions). Ultralight has no browser either, which BROWSER_AVAILABLE covers.
+if(NOT SPECTRA_EDITION STREQUAL "Full")
   target_compile_definitions(obs-studio PRIVATE SPECTRA_LITE)
+endif()
+if(SPECTRA_EDITION STREQUAL "Ultralight")
+  target_compile_definitions(obs-studio PRIVATE SPECTRA_ULTRALIGHT)
 endif()
 
 include(cmake/ui-components.cmake)

@@ -65,13 +65,21 @@ jobs:
           merge-multiple: true
           path: lite
 
+      - name: Download Ultralight Build Artifacts 📥
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: fromJSON(steps.check.outputs.validTag)
+        with:
+          pattern: obs-studio-ultralight-windows-x64-*
+          merge-multiple: true
+          path: ultralight
+
       - name: Package Release 📦
         if: fromJSON(steps.check.outputs.validTag)
         run: |
           : Package Release 📦
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          # Every release ships OBS-Spectra and OBS-Spectra Lite, each as an
+          # Every release ships OBS-Spectra, Lite and Ultralight, each as an
           # installed-style zip and a portable one. All leave out debug symbols
           # and Spectra's own test programs; the obs-*-test encoder probes stay
           # because OBS runs them at startup.
@@ -95,8 +103,9 @@ jobs:
           }
 
           package obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64"
-          # Lite's names must not end like the full zips' (see SpectraReleases.cpp)
+          # No edition's names may end like another's (see SpectraReleases.cpp)
           package lite/obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64-Lite"
+          package ultralight/obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64-Ultralight"
 
       - name: Generate Checksums 🪪
         if: fromJSON(steps.check.outputs.validTag)
@@ -129,3 +138,7 @@ jobs:
             ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite.zip.sha256
             ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite-Portable.zip
             ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite-Portable.zip.sha256
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight.zip
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight.zip.sha256
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight-Portable.zip
+            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight-Portable.zip.sha256

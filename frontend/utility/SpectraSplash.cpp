@@ -57,7 +57,11 @@ static QPixmap RenderSplash(const QString &version)
 		const char *name;
 	};
 #ifdef SPECTRA_LITE
+#ifdef SPECTRA_ULTRALIGHT
+	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra Ultralight");
+#else
 	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra Lite");
+#endif
 	const Tool tools[] = {{":/res/images/spectra/spectra.svg", "Spectra"}};
 #else
 	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra");

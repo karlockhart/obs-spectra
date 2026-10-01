@@ -56,7 +56,9 @@ void OBSBasic::SystemTrayInit()
 	trayMenu->addMenu(previewProjector);
 	trayMenu->addMenu(studioProgramProjector);
 	trayMenu->addSeparator();
+#ifndef SPECTRA_ULTRALIGHT
 	trayMenu->addAction(sysTrayStream);
+#endif
 	trayMenu->addAction(sysTrayRecord);
 	trayMenu->addAction(sysTrayReplayBuffer);
 	trayMenu->addAction(sysTrayVirtualCam);
