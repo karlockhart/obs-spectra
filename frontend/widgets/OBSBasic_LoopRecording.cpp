@@ -368,7 +368,7 @@ void OBSBasic::ResetSourcesToDefaults()
 		}
 	}
 
-	SpectraDefaults::EnsureTeamSpeakAudio(GetProgramScene());
+	SpectraDefaults::EnsureTeamSpeakAudio(Config(), GetProgramScene());
 
 	if (loopRecorder) {
 		loopRecorder->ResetCapture();

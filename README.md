@@ -55,7 +55,7 @@ It shares its settings and learning data with the standalone Obscura app.
 - An audio setup dialog with push-to-talk, including on gamepad buttons.
 - An app picker for choosing which games and programs to capture.
 - Settings for Spectra's keyboard shortcuts.
-- Default scene sources, including TeamSpeak audio.
+- Default scene sources. TeamSpeak audio is one of them if you turn on *Capture TeamSpeak audio* in the audio setup (off by default).
 - A setup wizard page and the update check.
 
 ## Building
