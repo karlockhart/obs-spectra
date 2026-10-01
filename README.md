@@ -17,6 +17,8 @@ Get the latest build from [Releases](https://github.com/karlockhart/obs-spectra/
 - `OBS-Spectra-<version>-Windows-x64.zip` keeps its settings in `%APPDATA%\OBS-Spectra`. It never touches an existing OBS Studio install's settings.
 - `OBS-Spectra-<version>-Windows-x64-Portable.zip` keeps its settings next to the program, so you can run it from any folder or a USB drive.
 
+**OBS-Spectra Lite** comes as the same two zips with `-Lite` in the name (`...-Windows-x64-Lite.zip`, `...-Windows-x64-Lite-Portable.zip`). It has the loop recording, the Clip Maker (without captions) and everything under *Other additions* below, but leaves out Lucida, Obscura and speech recognition, along with the OCR and speech libraries they need. A Lite copy updates to the next Lite version, and a full copy to the next full one.
+
 Unzip either one and run `bin\64bit\obs-spectra.exe`. OBS-Spectra checks this repository's releases once a day (and from **Help > Check For Updates**) and offers to update itself. **Settings > General > Updates** picks the channel: **Stable** offers only releases, **Release candidates** the newest release or release candidate, whichever is newer. A release candidate starts on the release-candidate channel.
 
 **Update Now** downloads the zip that matches your copy (portable or not), checks it against its `.sha256`, unpacks it into a `<folder>.update` folder next to OBS-Spectra's, then closes OBS-Spectra. The small `spectra-updater.exe` waits for it (and Lucida Viewer) to exit, renames the old folder aside, moves the new version into its place and starts OBS-Spectra again. The folder keeps its `config` (profiles, scenes, plugin settings, logs and downloaded speech models), its portable mode, and any file or folder of your own in its root; `bin`, `data` and `obs-plugins` are the new version's, so a plugin you added there has to be added again. If anything goes wrong the old folder is renamed back and starts as before. What the updater did is in `<folder>.update.log` next to the folder. Lucida's chat log, screenshots and loop recordings are kept outside the folder, so they're untouched.
@@ -67,7 +69,9 @@ cmake --preset windows-x64
 cmake --build build_x64 --config RelWithDebInfo
 ```
 
-Pushing a version tag makes GitHub Actions build the release and publish it with both zips (see `.github/workflows/push.yaml`).
+For OBS-Spectra Lite, configure with `-DSPECTRA_LITE=ON` (in a build folder of its own, e.g. `cmake --preset windows-x64 -B build_lite -DSPECTRA_LITE=ON`).
+
+Pushing a version tag makes GitHub Actions build both editions and publish the release with all four zips (see `.github/workflows/push.yaml`).
 
 ## License
 

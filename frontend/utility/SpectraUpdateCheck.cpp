@@ -28,6 +28,12 @@ using namespace SpectraReleases;
 #define SPECTRA_RELEASES_API "https://api.github.com/repos/karlockhart/obs-spectra/releases?per_page=30"
 #define UPSTREAM_RELEASES_API "https://api.github.com/repos/obsproject/obs-studio/releases/latest"
 
+#ifdef SPECTRA_LITE
+static constexpr Edition BUILD_EDITION = Edition::Lite;
+#else
+static constexpr Edition BUILD_EDITION = Edition::Full;
+#endif
+
 /* Longest part of the release notes shown in the update dialog */
 static constexpr int MAX_NOTES_CHARS = 1500;
 
@@ -101,7 +107,7 @@ void SpectraUpdateCheck::ApplySpectra(bool ok, long status, const std::string &b
 		failed = true;
 		return;
 	}
-	release = SelectRelease(releases, channel);
+	release = SelectRelease(releases, channel, BUILD_EDITION);
 }
 
 void SpectraUpdateCheck::ApplyUpstream(bool ok, long status, const std::string &body, const std::string &error)
@@ -179,7 +185,8 @@ void SpectraUpdateCheck::Finished()
 			     QT_TO_UTF8(currentString));
 		} else if (installDir.isEmpty() || !QFileInfo::exists(helper)) {
 			blog(LOG_INFO, "[Spectra] Update can't be installed from here: not a release package layout");
-		} else if (!(download = SelectDownload(*release, SpectraUpdateJob::IsPortableInstall(installDir))) ||
+		} else if (!(download = SelectDownload(*release, SpectraUpdateJob::IsPortableInstall(installDir),
+						       BUILD_EDITION)) ||
 			   download->checksum.name.isEmpty()) {
 			blog(LOG_INFO, "[Spectra] Update can't be installed from here: %s has no verifiable zip",
 			     QT_TO_UTF8(releaseTag));

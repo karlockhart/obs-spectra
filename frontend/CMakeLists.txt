@@ -47,6 +47,11 @@ target_link_libraries(
     $<$<TARGET_EXISTS:spectra-speech>:spectra-speech>
 )
 
+# Lite: no Lucida, Obscura or speech recognition (no Clip Maker captions)
+if(SPECTRA_LITE)
+  target_compile_definitions(obs-studio PRIVATE SPECTRA_LITE)
+endif()
+
 include(cmake/ui-components.cmake)
 include(cmake/ui-dialogs.cmake)
 include(cmake/ui-docks.cmake)

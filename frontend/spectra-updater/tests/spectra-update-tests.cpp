@@ -29,6 +29,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <functional>
@@ -298,7 +299,7 @@ static void TestVersions()
 }
 
 static QByteArray ReleaseJson(const char *tag, bool prerelease, bool draft, bool portable, bool regular,
-			      bool checksums = true)
+			      bool checksums = true, bool lite = false)
 {
 	QString assets;
 	auto add = [&](const QString &name) {
@@ -320,6 +321,12 @@ static QByteArray ReleaseJson(const char *tag, bool prerelease, bool draft, bool
 		if (checksums) {
 			add(QStringLiteral("OBS-Spectra-%1-Windows-x64.zip.sha256").arg(tag));
 		}
+	}
+	if (lite) {
+		add(QStringLiteral("OBS-Spectra-%1-Windows-x64-Lite.zip").arg(tag));
+		add(QStringLiteral("OBS-Spectra-%1-Windows-x64-Lite.zip.sha256").arg(tag));
+		add(QStringLiteral("OBS-Spectra-%1-Windows-x64-Lite-Portable.zip").arg(tag));
+		add(QStringLiteral("OBS-Spectra-%1-Windows-x64-Lite-Portable.zip.sha256").arg(tag));
 	}
 	return QStringLiteral("{\"tag_name\":\"%1\",\"html_url\":\"https://example.invalid/%1\",\"body\":\"notes\","
 			      "\"prerelease\":%2,\"draft\":%3,\"assets\":[%4]}")
@@ -413,6 +420,37 @@ static void TestReleases()
 
 		Release none = ParseReleases(List({ReleaseJson("32.2.1-spectra.1", false, false, false, false)}))[0];
 		CHECK(!SelectDownload(none, true));
+	});
+
+	Test("releases: Lite and full installs each take their own zips", []() {
+		/* Lite zips listed first, as an older full install's lookup would see them */
+		Release all =
+			ParseReleases(List({ReleaseJson("32.2.2-spectra.4", false, false, true, true, true, true)}))[0];
+		std::rotate(all.assets.begin(), all.assets.begin() + 4, all.assets.end());
+		CHECK(all.assets[0].name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip");
+
+		std::optional<Download> full = SelectDownload(all, false);
+		CHECK(full && full->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64.zip");
+		std::optional<Download> fullPortable = SelectDownload(all, true);
+		CHECK(fullPortable &&
+		      fullPortable->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Portable.zip");
+
+		std::optional<Download> lite = SelectDownload(all, false, Edition::Lite);
+		CHECK(lite && !lite->portable && lite->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip");
+		CHECK(lite && lite->checksum.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip.sha256");
+		std::optional<Download> litePortable = SelectDownload(all, true, Edition::Lite);
+		CHECK(litePortable && litePortable->portable &&
+		      litePortable->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite-Portable.zip");
+
+		/* Releases from before Lite have nothing for it */
+		QList<Release> r = ParseReleases(List({
+			ReleaseJson("32.2.2-spectra.4", false, false, true, true, true, true),
+			ReleaseJson("32.2.2-spectra.5", false, false, true, true),
+		}));
+		CHECK(SelectRelease(r, Channel::Stable)->tag == "32.2.2-spectra.5");
+		CHECK(SelectRelease(r, Channel::Stable, Edition::Lite)->tag == "32.2.2-spectra.4");
+		Release fullOnly = ParseReleases(List({ReleaseJson("32.2.2-spectra.5", false, false, true, true)}))[0];
+		CHECK(!SelectDownload(fullOnly, false, Edition::Lite));
 	});
 
 	Test("sha256 files", []() {

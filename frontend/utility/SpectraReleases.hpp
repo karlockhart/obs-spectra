@@ -67,9 +67,15 @@ struct Release {
 /* The /repos/{repo}/releases list. Empty with *error set when it isn't one. */
 QList<Release> ParseReleases(const QByteArray &json, QString *error = nullptr);
 
-/* The newest release the channel offers that has a Windows zip: Stable skips
- * pre-releases, ReleaseCandidates takes the newest of all. */
-std::optional<Release> SelectRelease(const QList<Release> &releases, Channel channel);
+/* OBS-Spectra or OBS-Spectra Lite (no Lucida, Obscura or speech). Each updates
+ * only from its own zips: OBS-Spectra-<tag>-Windows-x64[-Portable].zip and
+ * OBS-Spectra-<tag>-Windows-x64-Lite[-Portable].zip. */
+enum class Edition { Full, Lite };
+
+/* The newest release the channel offers that has a Windows zip of the
+ * edition: Stable skips pre-releases, ReleaseCandidates takes the newest of
+ * all. */
+std::optional<Release> SelectRelease(const QList<Release> &releases, Channel channel, Edition edition = Edition::Full);
 
 struct Download {
 	Asset zip;
@@ -80,7 +86,7 @@ struct Download {
 /* A portable install gets the -Portable.zip, any other the regular zip; each
  * falls back to the other kind (the updater keeps the install's own portable
  * mode either way). */
-std::optional<Download> SelectDownload(const Release &release, bool portable);
+std::optional<Download> SelectDownload(const Release &release, bool portable, Edition edition = Edition::Full);
 
 /* The hash in a sha256sum line ("<hex>  <name>"), lower case; empty when the
  * text doesn't start with 64 hex digits. */

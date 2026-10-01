@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QScreen>
 
+#include <iterator>
+
 #include "moc_SpectraSplash.cpp"
 
 SpectraSplash *SpectraSplash::current = nullptr;
@@ -50,15 +52,19 @@ static QPixmap RenderSplash(const QString &version)
 	title.setBold(true);
 	p.setFont(title);
 	p.setPen(QColor(0xf2, 0xf2, 0xf2));
-	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra");
-
 	struct Tool {
 		const char *icon;
 		const char *name;
 	};
+#ifdef SPECTRA_LITE
+	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra Lite");
+	const Tool tools[] = {{":/res/images/spectra/spectra.svg", "Spectra"}};
+#else
+	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra");
 	const Tool tools[] = {{":/res/images/spectra/spectra.svg", "Spectra"},
 			      {":/res/images/spectra/obscura.svg", "Obscura"},
 			      {":/res/images/spectra/lucida.svg", "Lucida"}};
+#endif
 
 	QFont label = p.font();
 	label.setPixelSize(16);
@@ -66,7 +72,8 @@ static QPixmap RenderSplash(const QString &version)
 	p.setFont(label);
 
 	const int gap = 72;
-	const int rowWidth = 3 * ICON_SIZE + 2 * gap;
+	const int count = (int)std::size(tools);
+	const int rowWidth = count * ICON_SIZE + (count - 1) * gap;
 	int x = (SPLASH_WIDTH - rowWidth) / 2;
 	const int iconTop = 116;
 	for (const Tool &tool : tools) {

@@ -11,8 +11,12 @@
 
 namespace SpectraReleases {
 
+/* Lite's names don't end like the full ones, so OBS-Spectra versions from
+ * before Lite existed never mistake a Lite zip for theirs */
 static const QString PORTABLE_SUFFIX = QStringLiteral("-Windows-x64-Portable.zip");
 static const QString REGULAR_SUFFIX = QStringLiteral("-Windows-x64.zip");
+static const QString LITE_PORTABLE_SUFFIX = QStringLiteral("-Windows-x64-Lite-Portable.zip");
+static const QString LITE_REGULAR_SUFFIX = QStringLiteral("-Windows-x64-Lite.zip");
 
 QString Version::Base() const
 {
@@ -130,9 +134,10 @@ QList<Release> ParseReleases(const QByteArray &json, QString *error)
 	return releases;
 }
 
-static const Asset *FindZip(const Release &release, bool portable)
+static const Asset *FindZip(const Release &release, bool portable, Edition edition)
 {
-	const QString &suffix = portable ? PORTABLE_SUFFIX : REGULAR_SUFFIX;
+	const QString &suffix = edition == Edition::Lite ? (portable ? LITE_PORTABLE_SUFFIX : LITE_REGULAR_SUFFIX)
+							 : (portable ? PORTABLE_SUFFIX : REGULAR_SUFFIX);
 	for (const Asset &asset : release.assets) {
 		if (asset.name.endsWith(suffix, Qt::CaseInsensitive) && !asset.url.isEmpty()) {
 			return &asset;
@@ -141,7 +146,7 @@ static const Asset *FindZip(const Release &release, bool portable)
 	return nullptr;
 }
 
-std::optional<Release> SelectRelease(const QList<Release> &releases, Channel channel)
+std::optional<Release> SelectRelease(const QList<Release> &releases, Channel channel, Edition edition)
 {
 	std::optional<Release> best;
 	for (const Release &r : releases) {
@@ -151,7 +156,7 @@ std::optional<Release> SelectRelease(const QList<Release> &releases, Channel cha
 		if (channel == Channel::Stable && (r.prerelease || r.version.prerelease())) {
 			continue;
 		}
-		if (!FindZip(r, true) && !FindZip(r, false)) {
+		if (!FindZip(r, true, edition) && !FindZip(r, false, edition)) {
 			continue;
 		}
 		if (!best || best->version < r.version) {
@@ -161,12 +166,12 @@ std::optional<Release> SelectRelease(const QList<Release> &releases, Channel cha
 	return best;
 }
 
-std::optional<Download> SelectDownload(const Release &release, bool portable)
+std::optional<Download> SelectDownload(const Release &release, bool portable, Edition edition)
 {
-	const Asset *zip = FindZip(release, portable);
+	const Asset *zip = FindZip(release, portable, edition);
 	bool gotPortable = portable;
 	if (!zip) {
-		zip = FindZip(release, !portable);
+		zip = FindZip(release, !portable, edition);
 		gotPortable = !portable;
 	}
 	if (!zip) {

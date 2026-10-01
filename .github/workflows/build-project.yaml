@@ -62,6 +62,8 @@ jobs:
     strategy:
       matrix:
         architecture: [x64]
+        # OBS-Spectra and OBS-Spectra Lite (no Lucida, Obscura, OCR or speech)
+        edition: [full, lite]
     runs-on: windows-2025-vs2026
     needs: check-event
     defaults:
@@ -88,6 +90,7 @@ jobs:
         with:
           target: ${{ matrix.architecture }}
           config: ${{ needs.check-event.outputs.config }}
+          lite: ${{ matrix.edition == 'lite' }}
 
       - name: Package OBS Studio 📀
         uses: ./.github/actions/package-obs
@@ -101,5 +104,5 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ fromJSON(needs.check-event.outputs.package) }}
         with:
-          name: obs-studio-windows-${{ matrix.architecture }}-${{ needs.check-event.outputs.commitHash }}
+          name: ${{ matrix.edition == 'lite' && 'obs-studio-lite' || 'obs-studio' }}-windows-${{ matrix.architecture }}-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/build_${{ matrix.architecture }}/obs-studio-*-windows-${{ matrix.architecture }}.zip

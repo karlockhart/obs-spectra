@@ -18,6 +18,7 @@ include(helpers)
 option(ENABLE_FRONTEND "Enable building with UI (requires Qt)" ON)
 option(ENABLE_SCRIPTING "Enable scripting support" ON)
 option(ENABLE_HEVC "Enable HEVC encoders" ON)
+option(SPECTRA_LITE "Build OBS-Spectra Lite: without Lucida, Obscura, OCR and speech recognition" OFF)
 
 add_subdirectory(libobs)
 if(OS_WINDOWS)
