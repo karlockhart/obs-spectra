@@ -220,10 +220,25 @@ QString FindTeamSpeakExecutable()
 	return QString();
 }
 
-void EnsureTeamSpeakAudio(obs_scene_t *scene)
+bool IsTeamSpeakExecutable(const QString &exe)
 {
+	return exe.compare(QStringLiteral("TeamSpeak.exe"), Qt::CaseInsensitive) == 0 ||
+	       exe.compare(QStringLiteral("ts3client_win64.exe"), Qt::CaseInsensitive) == 0 ||
+	       exe.compare(QStringLiteral("ts3client_win32.exe"), Qt::CaseInsensitive) == 0;
+}
+
+bool TeamSpeakEnabled(config_t *profile)
+{
+	return profile && config_get_bool(profile, "SpectraAudio", "TeamSpeak");
+}
+
+void EnsureTeamSpeakAudio(config_t *profile, obs_scene_t *scene)
+{
+	if (!TeamSpeakEnabled(profile) || !scene) {
+		return;
+	}
 	QString exe = FindTeamSpeakExecutable();
-	if (exe.isEmpty() || !scene) {
+	if (exe.isEmpty()) {
 		return;
 	}
 

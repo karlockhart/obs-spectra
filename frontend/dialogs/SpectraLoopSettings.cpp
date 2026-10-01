@@ -110,7 +110,13 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 	form->addRow(QString(), autoCapture);
 	form->addRow(QString(), fitToCanvas);
 	form->addRow(QString(), starlingVoice);
+#ifdef SPECTRA_LITE
+	/* Speaker tracks are for Lucida's transcripts; the setting is kept */
+	speakerTracks->setParent(this);
+	speakerTracks->hide();
+#else
 	form->addRow(QString(), speakerTracks);
+#endif
 
 	QGroupBox *overlayGroup = new QGroupBox(QTStr("Spectra.Overlay.Settings"));
 	auto *overlayForm = new QFormLayout(overlayGroup);
@@ -141,8 +147,10 @@ SpectraLoopSettings::SpectraLoopSettings(OBSBasic *main_, LoopRecorder *recorder
 				QTStr("Spectra.Overlay.LoopStartedText").arg(QTStr("Spectra.Loop.Minutes").arg(2)));
 		overlay->Notify(SpectraOverlay::Kind::Clip, QTStr("Spectra.Overlay.ClipSaved"),
 				QStringLiteral("FiveM 2026-09-23 21-04-12.mp4"));
+#ifndef SPECTRA_LITE
 		overlay->Notify(SpectraOverlay::Kind::Obscura, QTStr("Spectra.Overlay.Test.Obscura"),
 				QTStr("Spectra.Overlay.Test.ObscuraText"));
+#endif
 	});
 	overlayForm->addRow(overlayEnabled);
 	overlayForm->addRow(QTStr("Spectra.Overlay.Settings.Corner"), overlayCorner);

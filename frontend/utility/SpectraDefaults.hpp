@@ -34,10 +34,17 @@ void SetFrontendHotkeyKeys(config_t *config, const char *name, const std::vector
 
 /* Executable of an installed TeamSpeak client, or empty if none is found. */
 QString FindTeamSpeakExecutable();
+/* Whether `exe` is a TeamSpeak client (TeamSpeak.exe, ts3client_win*.exe) */
+bool IsTeamSpeakExecutable(const QString &exe);
 
-/* Adds an audio-only TeamSpeak application audio capture to `scene` if
- * TeamSpeak is installed and the scene doesn't capture it already. */
-void EnsureTeamSpeakAudio(obs_scene_t *scene);
+/* The profile's "Capture TeamSpeak audio" toggle (Audio Setup), off by
+ * default */
+bool TeamSpeakEnabled(config_t *profile);
+
+/* Adds an audio-only TeamSpeak application audio capture to `scene` if the
+ * profile's TeamSpeak toggle is on, TeamSpeak is installed and the scene
+ * doesn't capture it already. */
+void EnsureTeamSpeakAudio(config_t *profile, obs_scene_t *scene);
 
 /* Spectra's recording video target (canvas and output resolution) */
 constexpr int DefaultCanvasCX = 1920;

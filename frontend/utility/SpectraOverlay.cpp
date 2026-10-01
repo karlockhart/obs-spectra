@@ -233,7 +233,9 @@ const QList<SpectraOverlay::Category> &SpectraOverlay::Categories()
 		{"ShowLoop", "Spectra.Overlay.Show.Loop"},
 		{"ShowClips", "Spectra.Overlay.Show.Clips"},
 		{"ShowScreenshots", "Spectra.Overlay.Show.Screenshots"},
+#ifndef SPECTRA_LITE
 		{"ShowObscura", "Spectra.Overlay.Show.Obscura"},
+#endif
 		{"ShowUploads", "Spectra.Overlay.Show.Uploads"},
 		{"ShowCapture", "Spectra.Overlay.Show.Capture"},
 		{"ShowErrors", "Spectra.Overlay.Show.Errors"},

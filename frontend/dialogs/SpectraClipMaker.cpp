@@ -720,7 +720,15 @@ QWidget *SpectraClipMaker::BuildSidePanel()
 {
 	QTabWidget *tabs = new QTabWidget();
 	tabs->addTab(BuildLayerPanel(), QTStr("Spectra.ClipMaker.CensorTab"));
-	tabs->addTab(BuildCaptionPanel(), QTStr("Spectra.ClipMaker.CaptionsTab"));
+	QWidget *captionPanel = BuildCaptionPanel();
+#ifdef SPECTRA_LITE
+	/* No speech recognition to make captions with; the panel's widgets
+	 * stay, unshown, because the export reads them */
+	captionPanel->setParent(tabs);
+	captionPanel->hide();
+#else
+	tabs->addTab(captionPanel, QTStr("Spectra.ClipMaker.CaptionsTab"));
+#endif
 	return tabs;
 }
 
