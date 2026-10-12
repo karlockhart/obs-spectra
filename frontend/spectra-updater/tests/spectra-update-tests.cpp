@@ -29,6 +29,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <functional>
@@ -298,7 +299,7 @@ static void TestVersions()
 }
 
 static QByteArray ReleaseJson(const char *tag, bool prerelease, bool draft, bool portable, bool regular,
-			      bool checksums = true)
+			      bool checksums = true, bool editions = false)
 {
 	QString assets;
 	auto add = [&](const QString &name) {
@@ -319,6 +320,14 @@ static QByteArray ReleaseJson(const char *tag, bool prerelease, bool draft, bool
 		add(QStringLiteral("OBS-Spectra-%1-Windows-x64.zip").arg(tag));
 		if (checksums) {
 			add(QStringLiteral("OBS-Spectra-%1-Windows-x64.zip.sha256").arg(tag));
+		}
+	}
+	if (editions) {
+		for (const char *edition : {"Lite", "Ultralight"}) {
+			add(QStringLiteral("OBS-Spectra-%1-Windows-x64-%2.zip").arg(tag, edition));
+			add(QStringLiteral("OBS-Spectra-%1-Windows-x64-%2.zip.sha256").arg(tag, edition));
+			add(QStringLiteral("OBS-Spectra-%1-Windows-x64-%2-Portable.zip").arg(tag, edition));
+			add(QStringLiteral("OBS-Spectra-%1-Windows-x64-%2-Portable.zip.sha256").arg(tag, edition));
 		}
 	}
 	return QStringLiteral("{\"tag_name\":\"%1\",\"html_url\":\"https://example.invalid/%1\",\"body\":\"notes\","
@@ -413,6 +422,49 @@ static void TestReleases()
 
 		Release none = ParseReleases(List({ReleaseJson("32.2.1-spectra.1", false, false, false, false)}))[0];
 		CHECK(!SelectDownload(none, true));
+	});
+
+	Test("releases: each edition takes its own zips", []() {
+		/* Lite and Ultralight zips listed first, as an older full install's
+		 * lookup would see them */
+		Release all =
+			ParseReleases(List({ReleaseJson("32.2.2-spectra.4", false, false, true, true, true, true)}))[0];
+		std::rotate(all.assets.begin(), all.assets.begin() + 4, all.assets.end());
+		CHECK(all.assets[0].name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip");
+
+		std::optional<Download> full = SelectDownload(all, false);
+		CHECK(full && full->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64.zip");
+		std::optional<Download> fullPortable = SelectDownload(all, true);
+		CHECK(fullPortable &&
+		      fullPortable->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Portable.zip");
+
+		std::optional<Download> lite = SelectDownload(all, false, Edition::Lite);
+		CHECK(lite && !lite->portable && lite->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip");
+		CHECK(lite && lite->checksum.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite.zip.sha256");
+		std::optional<Download> litePortable = SelectDownload(all, true, Edition::Lite);
+		CHECK(litePortable && litePortable->portable &&
+		      litePortable->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Lite-Portable.zip");
+
+		std::optional<Download> ultra = SelectDownload(all, false, Edition::Ultralight);
+		CHECK(ultra && !ultra->portable &&
+		      ultra->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Ultralight.zip");
+		CHECK(ultra &&
+		      ultra->checksum.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Ultralight.zip.sha256");
+		std::optional<Download> ultraPortable = SelectDownload(all, true, Edition::Ultralight);
+		CHECK(ultraPortable && ultraPortable->portable &&
+		      ultraPortable->zip.name == "OBS-Spectra-32.2.2-spectra.4-Windows-x64-Ultralight-Portable.zip");
+
+		/* Releases from before Lite have nothing for it */
+		QList<Release> r = ParseReleases(List({
+			ReleaseJson("32.2.2-spectra.4", false, false, true, true, true, true),
+			ReleaseJson("32.2.2-spectra.5", false, false, true, true),
+		}));
+		CHECK(SelectRelease(r, Channel::Stable)->tag == "32.2.2-spectra.5");
+		CHECK(SelectRelease(r, Channel::Stable, Edition::Lite)->tag == "32.2.2-spectra.4");
+		CHECK(SelectRelease(r, Channel::Stable, Edition::Ultralight)->tag == "32.2.2-spectra.4");
+		Release fullOnly = ParseReleases(List({ReleaseJson("32.2.2-spectra.5", false, false, true, true)}))[0];
+		CHECK(!SelectDownload(fullOnly, false, Edition::Lite));
+		CHECK(!SelectDownload(fullOnly, true, Edition::Ultralight));
 	});
 
 	Test("sha256 files", []() {

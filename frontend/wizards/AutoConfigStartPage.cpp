@@ -13,6 +13,11 @@ AutoConfigStartPage::AutoConfigStartPage(QWidget *parent) : QWizardPage(parent),
 	ui->setupUi(this);
 	setTitle(QTStr("Basic.AutoConfig.StartPage"));
 	setSubTitle(QTStr("Basic.AutoConfig.StartPage.SubTitle"));
+#ifdef SPECTRA_ULTRALIGHT
+	/* Ultralight records only (AutoConfig starts on Recording) */
+	ui->prioritizeStreaming->hide();
+	ui->prioritizeRecording->setChecked(true);
+#endif
 
 	OBSBasic *main = OBSBasic::Get();
 	if (main->VCamEnabled()) {

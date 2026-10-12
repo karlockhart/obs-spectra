@@ -48,7 +48,13 @@ void Route(obs_source_t *source, Speaker speaker)
 
 bool Enabled(config_t *profile)
 {
+#ifdef SPECTRA_LITE
+	/* Only Lucida's transcripts use the extra tracks */
+	UNUSED_PARAMETER(profile);
+	return false;
+#else
 	return config_get_bool(profile, "SpectraLoop", "SpeakerTracks");
+#endif
 }
 
 void Apply()

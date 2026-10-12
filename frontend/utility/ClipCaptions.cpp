@@ -1,8 +1,10 @@
 #include "ClipCaptions.hpp"
 
+#ifndef SPECTRA_LITE
 #include <spectra-speech/audio.hpp>
 #include <spectra-speech/models.hpp>
 #include <spectra-speech/speech.hpp>
+#endif
 
 #include <OBSApp.hpp>
 
@@ -20,6 +22,7 @@ namespace ClipCaptions {
 
 namespace {
 
+#ifndef SPECTRA_LITE
 /* Loop tracks with speaker tracks on: 1 mix, 2 me, 3 TeamSpeak, 4 game */
 constexpr int kSpeakerTracks = 4;
 
@@ -40,6 +43,7 @@ bool IsSilent(const std::vector<float> &samples)
 {
 	return std::none_of(samples.begin(), samples.end(), [](float s) { return std::fabs(s) > 1e-3f; });
 }
+#endif
 
 QString SrtTime(double seconds)
 {
@@ -53,6 +57,22 @@ QString SrtTime(double seconds)
 
 } // namespace
 
+#ifdef SPECTRA_LITE
+/* Lite has no speech recognition; its Clip Maker has no Captions tab */
+bool LoadSettings(config_t *, Settings &, QString &error)
+{
+	error = QTStr("Spectra.ClipMaker.Captions.Lite");
+	return false;
+}
+
+bool Transcribe(const std::vector<Source> &, const Settings &, std::vector<Cue> &cues,
+		const std::function<bool(float)> &, QString &error)
+{
+	cues.clear();
+	error = QTStr("Spectra.ClipMaker.Captions.Lite");
+	return false;
+}
+#else
 bool LoadSettings(config_t *profile, Settings &settings, QString &error)
 {
 	using namespace spectra::speech;
@@ -150,6 +170,7 @@ bool Transcribe(const std::vector<Source> &sources, const Settings &settings, st
 	}
 	return true;
 }
+#endif
 
 QString SpeakerName(const QString &speaker)
 {

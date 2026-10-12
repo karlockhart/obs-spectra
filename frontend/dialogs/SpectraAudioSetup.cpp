@@ -211,11 +211,41 @@ SpectraAudioSetup::SpectraAudioSetup(OBSBasic *main_) : QDialog(main_), main(mai
 	for (const AppAudioItem &item : AppAudioItems(main->GetProgramScene())) {
 		exes << item.exe;
 	}
-	if (exes.isEmpty() && !config_get_bool(config, AUDIO_SECTION, "Configured")) {
+	if (exes.isEmpty() && !config_get_bool(config, AUDIO_SECTION, "Configured") &&
+	    SpectraDefaults::TeamSpeakEnabled(config)) {
 		QString teamSpeak = SpectraDefaults::FindTeamSpeakExecutable();
 		exes << (teamSpeak.isEmpty() ? QStringLiteral("TeamSpeak.exe") : teamSpeak);
 	}
 	apps->SetPatterns(exes.join(", "));
+
+	/* Shortcut for TeamSpeak in the list above; kept in step with it */
+	teamSpeak = new QCheckBox(QTStr("Spectra.Audio.TeamSpeak"));
+	teamSpeak->setToolTip(QTStr("Spectra.Audio.TeamSpeakTip"));
+	auto listHasTeamSpeak = [this]() {
+		for (const QString &exe : apps->Patterns().split(',', Qt::SkipEmptyParts)) {
+			if (SpectraDefaults::IsTeamSpeakExecutable(exe.trimmed())) {
+				return true;
+			}
+		}
+		return false;
+	};
+	teamSpeak->setChecked(listHasTeamSpeak());
+	connect(apps, &SpectraAppPicker::PatternsChanged, this, [this, listHasTeamSpeak]() {
+		QSignalBlocker block(teamSpeak);
+		teamSpeak->setChecked(listHasTeamSpeak());
+	});
+	connect(teamSpeak, &QCheckBox::toggled, this, [this](bool on) {
+		if (on) {
+			QString exe = SpectraDefaults::FindTeamSpeakExecutable();
+			apps->AddPattern(exe.isEmpty() ? QStringLiteral("TeamSpeak.exe") : exe);
+			return;
+		}
+		for (const QString &exe : apps->Patterns().split(',', Qt::SkipEmptyParts)) {
+			if (SpectraDefaults::IsTeamSpeakExecutable(exe.trimmed())) {
+				apps->RemovePattern(exe);
+			}
+		}
+	});
 
 	OBSSourceAutoRelease desktop = obs_get_output_source(DESKTOP_CHANNEL);
 	desktopAudio = new QCheckBox(QTStr("Spectra.Audio.DesktopAudio"));
@@ -228,6 +258,7 @@ SpectraAudioSetup::SpectraAudioSetup(OBSBasic *main_) : QDialog(main_), main(mai
 	auto *appLayout = new QVBoxLayout(appGroup);
 	appLayout->addWidget(appNote);
 	appLayout->addWidget(apps);
+	appLayout->addWidget(teamSpeak);
 	appLayout->addWidget(desktopAudio);
 
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -368,6 +399,7 @@ void SpectraAudioSetup::accept()
 	ApplyApplicationAudio(exes);
 
 	config_set_bool(config, AUDIO_SECTION, "Configured", true);
+	config_set_bool(config, AUDIO_SECTION, "TeamSpeak", teamSpeak->isChecked());
 	config_save_safe(config, "tmp", nullptr);
 
 	blog(LOG_INFO,

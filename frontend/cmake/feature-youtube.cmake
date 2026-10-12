@@ -71,6 +71,13 @@ if(
   target_enable_feature(obs-studio "YouTube API connection" YOUTUBE_ENABLED)
 else()
   target_disable_feature(obs-studio "YouTube API connection")
-  set(YOUTUBE_SECRET_HASH 0)
-  set(YOUTUBE_CLIENTID_HASH 0)
+  # The Clip Maker's upload (utility/YouTubeUpload) signs in with the system
+  # browser and uses the client without browser panels, so a client's hashes
+  # are kept; zeroing them would leave it obfuscated
+  if(NOT YOUTUBE_SECRET_HASH MATCHES "^(0|[a-fA-F0-9]+)$")
+    set(YOUTUBE_SECRET_HASH 0)
+  endif()
+  if(NOT YOUTUBE_CLIENTID_HASH MATCHES "^(0|[a-fA-F0-9]+)$")
+    set(YOUTUBE_CLIENTID_HASH 0)
+  endif()
 endif()

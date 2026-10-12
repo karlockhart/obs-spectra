@@ -28,6 +28,10 @@ inputs:
     description: Working directory for packaging
     required: false
     default: ${{ github.workspace }}
+  edition:
+    description: OBS-Spectra edition, Full, Lite or Ultralight (Windows only)
+    required: false
+    default: Full
 runs:
   using: composite
   steps:
@@ -90,6 +94,7 @@ runs:
         $BuildArgs = @{
           Target = '${{ inputs.target }}'
           Configuration = '${{ inputs.config }}'
+          Edition = '${{ inputs.edition }}'
         }
 
         if ( $Env:RUNNER_DEBUG -ne $null ) {
