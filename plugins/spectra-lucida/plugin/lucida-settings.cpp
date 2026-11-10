@@ -242,7 +242,15 @@ QWidget *SettingsDialog::ScreenshotsPage(const Settings &s)
 	keepFrames = Check("Lucida.Settings.KeepFrames", r.keepFrames);
 	keepFrames->setToolTip(T("Lucida.Settings.KeepFrames.Tip"));
 	framesDir = new QLineEdit(QDir::toNativeSeparators(r.framesDir));
+	frameFormat = new QComboBox();
+	frameFormat->addItem(T("Lucida.Settings.Format.Png"), true);
+	frameFormat->addItem(T("Lucida.Settings.Format.Jpg"), false);
+	frameFormat->setCurrentIndex(r.framesLossless ? 0 : 1);
+	frameFormat->setToolTip(T("Lucida.Settings.Format.Tip"));
 	frameQuality = Int(r.frameQuality, 10, 100, QStringLiteral(" %"));
+	frameQuality->setEnabled(!r.framesLossless);
+	connect(frameFormat, &QComboBox::currentIndexChanged, frameQuality,
+		[this] { frameQuality->setEnabled(!frameFormat->currentData().toBool()); });
 	frameRetention = Int(r.frameRetentionDays, 0, 3650, T("Lucida.Settings.Days"));
 	frameRetention->setSpecialValueText(T("Lucida.Settings.KeepForever"));
 	keepCrops = Check("Lucida.Settings.KeepCrops", r.keepCrops);
@@ -255,6 +263,7 @@ QWidget *SettingsDialog::ScreenshotsPage(const Settings &s)
 	QFormLayout *form = new QFormLayout();
 	form->addRow(keepFrames);
 	form->addRow(T("Lucida.Settings.Folder"), PathRow(framesDir, false));
+	form->addRow(T("Lucida.Settings.Format"), frameFormat);
 	form->addRow(T("Lucida.Settings.Quality"), frameQuality);
 	form->addRow(T("Lucida.Settings.Retention"), frameRetention);
 	form->addRow(keepCrops);
@@ -843,6 +852,7 @@ Settings SettingsDialog::Collect() const
 
 	r.keepFrames = keepFrames->isChecked();
 	r.framesDir = QDir::cleanPath(QDir::fromNativeSeparators(framesDir->text().trimmed()));
+	r.framesLossless = frameFormat->currentData().toBool();
 	r.frameQuality = frameQuality->value();
 	r.frameRetentionDays = frameRetention->value();
 	r.keepCrops = keepCrops->isChecked();

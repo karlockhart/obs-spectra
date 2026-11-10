@@ -73,6 +73,11 @@ QList<SpectraHotkeyEdit *> SpectraHotkeyEdit::AddShortcutRows(QFormLayout *form)
 			continue;
 		}
 		form->addRow(QTStr(shortcut.label), edit);
+		const std::string tipKey = std::string(shortcut.label) + ".Tip";
+		const char *tip = nullptr;
+		if (App()->TranslateString(tipKey.c_str(), &tip) && tip) {
+			edit->setToolTip(QT_UTF8(tip));
+		}
 		edits << edit;
 	}
 	return edits;
