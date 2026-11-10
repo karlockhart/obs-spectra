@@ -81,6 +81,7 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "KeepFrames", true);
 	config_set_default_string(c, SECTION, "FramesDir", QDir(folder).filePath("frames").toUtf8().constData());
 	config_set_default_int(c, SECTION, "FrameQuality", r.frameQuality);
+	config_set_default_string(c, SECTION, "FrameFormat", "png");
 	config_set_default_int(c, SECTION, "FrameRetentionDays", r.frameRetentionDays);
 	config_set_default_bool(c, SECTION, "KeepCrops", r.keepCrops);
 	config_set_default_string(c, SECTION, "CropsDir", QDir(folder).filePath("crops").toUtf8().constData());
@@ -170,6 +171,7 @@ Settings Settings::Load()
 	r.keepFrames = config_get_bool(c, SECTION, "KeepFrames");
 	r.framesDir = ConfigString(c, SECTION, "FramesDir");
 	r.frameQuality = (int)config_get_int(c, SECTION, "FrameQuality");
+	r.framesLossless = ConfigString(c, SECTION, "FrameFormat") != QLatin1String("jpg");
 	r.frameRetentionDays = (int)config_get_int(c, SECTION, "FrameRetentionDays");
 	r.keepCrops = config_get_bool(c, SECTION, "KeepCrops");
 	r.cropsDir = ConfigString(c, SECTION, "CropsDir");
@@ -231,6 +233,7 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "KeepFrames", r.keepFrames);
 	config_set_string(c, SECTION, "FramesDir", r.framesDir.toUtf8().constData());
 	config_set_int(c, SECTION, "FrameQuality", r.frameQuality);
+	config_set_string(c, SECTION, "FrameFormat", r.framesLossless ? "png" : "jpg");
 	config_set_int(c, SECTION, "FrameRetentionDays", r.frameRetentionDays);
 	config_set_bool(c, SECTION, "KeepCrops", r.keepCrops);
 	config_set_string(c, SECTION, "CropsDir", r.cropsDir.toUtf8().constData());

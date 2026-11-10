@@ -881,6 +881,47 @@ int main(int argc, char **argv)
 		CHECK(bodies.size() == kUntimed.size() - 1);
 	});
 
+	Test("kept_screenshots_are_lossless_png_by_default", [] {
+		Rig r({kChat}, true);
+		const spectra::Image source = r.frames[0];
+		r.recorder->Step();
+		auto frames = r.store.Frames();
+		CHECK(frames.size() == 1);
+		if (frames.empty()) {
+			return;
+		}
+		CHECK(frames[0].frame.path.endsWith(".png"));
+		QImage shot = QImage(frames[0].frame.path).convertToFormat(QImage::Format_RGB888);
+		CHECK(shot.width() == source.width && shot.height() == source.height);
+		bool same = shot.width() == source.width && shot.height() == source.height;
+		for (int y = 0; same && y < source.height; y++) {
+			const uint8_t *src = source.row(y); /* BGR */
+			const uchar *dst = shot.constScanLine(y);
+			for (int x = 0; x < source.width; x++) {
+				if (dst[x * 3] != src[x * 3 + 2] || dst[x * 3 + 1] != src[x * 3 + 1] ||
+				    dst[x * 3 + 2] != src[x * 3]) {
+					same = false;
+					break;
+				}
+			}
+		}
+		CHECK(same);
+	});
+
+	Test("kept_screenshots_can_still_be_jpeg", [] {
+		Rig r({kChat}, true);
+		r.cfg.framesLossless = false;
+		r.recorder = std::make_unique<Recorder>(r.cfg, r.store, r.ocr, [&r]() -> std::optional<GrabbedFrame> {
+			if (r.next >= r.frames.size()) {
+				return std::nullopt;
+			}
+			return GrabbedFrame{r.frames[r.next++], QStringLiteral("test")};
+		});
+		r.recorder->Step();
+		auto frames = r.store.Frames();
+		CHECK(frames.size() == 1 && frames[0].frame.path.endsWith(".jpg"));
+	});
+
 	Test("each_kept_screenshot_boxes_the_lines_drawn_on_it", [] {
 		/* chat scrolls: the first line leaves the top, two arrive below */
 		const QStringList second{kChat[1], kChat[2], "[16:38:20] Bob says: here now",

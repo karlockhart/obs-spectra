@@ -48,6 +48,7 @@ private:
 	/* Screenshots */
 	QCheckBox *keepFrames, *keepCrops;
 	QLineEdit *framesDir, *cropsDir;
+	QComboBox *frameFormat;
 	QSpinBox *frameQuality, *frameRetention, *cropQuality, *cropRetention;
 
 	/* Cloud */

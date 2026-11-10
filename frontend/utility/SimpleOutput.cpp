@@ -547,9 +547,14 @@ void SimpleOutput::UpdateRecordingSettings_amd_cqp(int cqp)
 void SimpleOutput::UpdateRecordingSettings()
 {
 	bool ultra_hq = (videoQuality == "HQ");
-	int crf = CalcCRF(ultra_hq ? 16 : 23);
+	bool software = astrcmp_n(videoEncoder.c_str(), "x264", 4) == 0;
 
-	if (astrcmp_n(videoEncoder.c_str(), "x264", 4) == 0) {
+	/* Spectra: hardware encoders run constant-QP, and 23 comes out near 40 Mbps
+	 * on busy game footage. 28 keeps on-screen text readable at a fraction of
+	 * the size. x264 uses CRF, which is already efficient at 23. */
+	int crf = CalcCRF(ultra_hq ? 16 : (software ? 23 : 28));
+
+	if (software) {
 		UpdateRecordingSettings_x264_crf(crf);
 
 	} else if (videoEncoder == SIMPLE_ENCODER_QSV) {

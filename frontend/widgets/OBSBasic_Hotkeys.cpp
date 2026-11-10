@@ -329,8 +329,8 @@ void OBSBasic::CreateHotkeys()
 
 	auto screenshot = [](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 		if (pressed) {
-			QMetaObject::invokeMethod(static_cast<OBSBasic *>(data), &OBSBasic::Screenshot,
-						  Qt::QueuedConnection, nullptr);
+			QMetaObject::invokeMethod(static_cast<OBSBasic *>(data), &OBSBasic::ScreenshotGame,
+						  Qt::QueuedConnection);
 		}
 	};
 
