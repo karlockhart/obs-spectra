@@ -343,8 +343,9 @@ void Recorder::KeepFrame(const spectra::Image &img, long long frameTs, const std
 	if (config.framesDir.isEmpty()) {
 		return;
 	}
-	QString path = DatedPath(config.framesDir, frameTs, QStringLiteral(".jpg"));
-	if (ToQImage(img).save(path, "JPG", config.frameQuality)) {
+	const bool png = config.framesLossless;
+	QString path = DatedPath(config.framesDir, frameTs, png ? QStringLiteral(".png") : QStringLiteral(".jpg"));
+	if (png ? ToQImage(img).save(path, "PNG") : ToQImage(img).save(path, "JPG", config.frameQuality)) {
 		store.AttachFrame(lines, path, img.width, img.height, frameTs, sessionId);
 	}
 }
@@ -367,6 +368,7 @@ int Recorder::PruneImages()
 		}
 	}
 	removed += PruneFiles(config.framesDir, QStringLiteral("*.jpg"), config.frameRetentionDays);
+	removed += PruneFiles(config.framesDir, QStringLiteral("*.png"), config.frameRetentionDays);
 	removed += PruneFiles(config.cropsDir, QStringLiteral("*.webp"), config.cropRetentionDays);
 	return removed;
 }

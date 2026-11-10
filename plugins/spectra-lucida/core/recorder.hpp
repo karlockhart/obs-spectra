@@ -35,6 +35,9 @@ struct RecorderConfig {
 	double gateThreshold = 0.06;
 	bool keepFrames = false;
 	QString framesDir;
+	/* Lossless PNG keeps every pixel of the game; JPEG at frameQuality is
+	 * a fraction of the size but blurs small coloured text */
+	bool framesLossless = true;
 	int frameQuality = 80;
 	int frameRetentionDays = 14;
 	bool keepCrops = false;
