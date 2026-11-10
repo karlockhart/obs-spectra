@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.28...3.30)
 
+# OBS-Spectra editions: Full; Lite, without Lucida, Obscura, OCR and speech
+# recognition; Ultralight, Lite without the browser (CEF): no browser sources
+# or docks. Set before the bootstrap, which skips downloading CEF without it.
+set(SPECTRA_EDITION Full CACHE STRING "OBS-Spectra edition: Full, Lite or Ultralight")
+set_property(CACHE SPECTRA_EDITION PROPERTY STRINGS Full Lite Ultralight)
+if(NOT SPECTRA_EDITION MATCHES "^(Full|Lite|Ultralight)$")
+  message(FATAL_ERROR "SPECTRA_EDITION must be Full, Lite or Ultralight, not '${SPECTRA_EDITION}'")
+endif()
+if(SPECTRA_EDITION STREQUAL "Ultralight")
+  set(ENABLE_BROWSER OFF)
+endif()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCOPE)
 
 project(obs-studio VERSION ${OBS_VERSION_CANONICAL})

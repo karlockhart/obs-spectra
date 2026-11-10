@@ -39,6 +39,8 @@ public:
 	/* Comma-separated patterns as stored in the "Processes" setting */
 	void SetPatterns(const QString &patterns);
 	QString Patterns() const;
+	void AddPattern(const QString &pattern);
+	void RemovePattern(const QString &pattern);
 
 	void SetAnyFullscreen(bool enabled);
 	bool AnyFullscreen() const;
@@ -55,5 +57,8 @@ private:
 
 	void AddEntry();
 	void RemoveSelected();
-	void AddPattern(const QString &pattern);
+
+signals:
+	/* An application was added to or removed from the list */
+	void PatternsChanged();
 };

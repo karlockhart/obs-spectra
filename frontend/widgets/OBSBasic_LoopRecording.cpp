@@ -6,7 +6,9 @@
 #include <utility/SpectraDefaults.hpp>
 #include <utility/SpectraSpeakerTracks.hpp>
 
+#ifndef SPECTRA_LITE
 #include <spectra-speech/models.hpp>
+#endif
 
 #include <qt-wrappers.hpp>
 
@@ -55,11 +57,13 @@ void OBSBasic::InitSpectra()
 		ResetOutputs();
 	}
 
+#ifndef SPECTRA_LITE
 	/* Speech models, shared by the Clip Maker and Lucida; follows portable mode */
 	char modelDir[512];
 	if (GetAppConfigPath(modelDir, sizeof(modelDir), "obs-studio/plugin_config/spectra-speech/models") > 0) {
 		spectra::speech::SetModelDirectory(QString::fromUtf8(modelDir));
 	}
+#endif
 
 	loopRecorder = new LoopRecorder(this);
 	gamepadPTT = new SpectraGamepadPTT(this);
@@ -368,7 +372,7 @@ void OBSBasic::ResetSourcesToDefaults()
 		}
 	}
 
-	SpectraDefaults::EnsureTeamSpeakAudio(GetProgramScene());
+	SpectraDefaults::EnsureTeamSpeakAudio(Config(), GetProgramScene());
 
 	if (loopRecorder) {
 		loopRecorder->ResetCapture();

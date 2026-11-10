@@ -121,6 +121,9 @@ SpectraAppPicker::SpectraAppPicker(bool fullscreenOption, QWidget *parent) : QWi
 	list = new QListWidget();
 	list->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	list->setMaximumHeight(110);
+	connect(list->model(), &QAbstractItemModel::rowsInserted, this, &SpectraAppPicker::PatternsChanged);
+	connect(list->model(), &QAbstractItemModel::rowsRemoved, this, &SpectraAppPicker::PatternsChanged);
+	connect(list->model(), &QAbstractItemModel::modelReset, this, &SpectraAppPicker::PatternsChanged);
 
 	entry = new SpectraRunningAppsCombo();
 	entry->setToolTip(QTStr("Spectra.Loop.Settings.ProcessesTip"));
@@ -200,6 +203,15 @@ void SpectraAppPicker::AddPattern(const QString &pattern_)
 		}
 	}
 	list->addItem(pattern);
+}
+
+void SpectraAppPicker::RemovePattern(const QString &pattern)
+{
+	for (int i = list->count() - 1; i >= 0; i--) {
+		if (list->item(i)->text().compare(pattern.trimmed(), Qt::CaseInsensitive) == 0) {
+			delete list->takeItem(i);
+		}
+	}
 }
 
 void SpectraAppPicker::RemoveSelected()

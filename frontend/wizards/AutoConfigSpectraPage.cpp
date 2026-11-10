@@ -29,7 +29,11 @@
 
 #define wiz reinterpret_cast<AutoConfig *>(wizard())
 
+#ifdef SPECTRA_LITE
+static const char *spectraFolders[] = {"Loop", "Clips", "Screenshots"};
+#else
 static const char *spectraFolders[] = {"Loop", "Clips", "Screenshots", "Lucida", "Obscura"};
+#endif
 
 static QString DefaultBaseFolder()
 {
@@ -187,8 +191,10 @@ void AutoConfigSpectraPage::Save()
 	if (!foldersLocked) {
 		config_set_string(config, "Spectra", "BaseFolder", QT_TO_UTF8(QDir::toNativeSeparators(base.path())));
 		config_set_string(config, "Spectra", "ScreenshotsPath", QT_TO_UTF8(folder("Screenshots")));
+#ifndef SPECTRA_LITE
 		config_set_string(config, "Spectra", "LucidaPath", QT_TO_UTF8(folder("Lucida")));
 		config_set_string(config, "Spectra", "ObscuraPath", QT_TO_UTF8(folder("Obscura")));
+#endif
 
 		config_set_string(config, "SpectraLoop", "Path", QT_TO_UTF8(folder("Loop")));
 		config_set_string(config, "SpectraLoop", "ClipsPath", QT_TO_UTF8(folder("Clips")));

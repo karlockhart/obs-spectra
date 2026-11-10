@@ -1044,7 +1044,7 @@ void OBSBasic::CreateDefaultScene(bool firstStart)
 
 	if (firstStart) {
 		CreateFirstRunSources();
-		SpectraDefaults::EnsureTeamSpeakAudio(scene);
+		SpectraDefaults::EnsureTeamSpeakAudio(Config(), scene);
 	}
 
 	SetCurrentScene(scene, true);

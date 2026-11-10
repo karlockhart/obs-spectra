@@ -89,6 +89,10 @@ AutoConfig::AutoConfig(QWidget *parent) : QWizard(parent)
 	setPage(StreamPage, streamPage);
 	setPage(TestPage, new AutoConfigTestPage());
 	setPage(SpectraPage, new AutoConfigSpectraPage());
+#ifdef SPECTRA_ULTRALIGHT
+	/* No streaming in Ultralight: never the stream page or its tests */
+	type = Type::Recording;
+#endif
 	setWindowTitle(QTStr("Basic.AutoConfig"));
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 

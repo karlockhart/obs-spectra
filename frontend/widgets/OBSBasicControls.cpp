@@ -17,6 +17,10 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	startStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StartStreaming"));
 	stopStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StopStreaming"));
 	QAction *forceStopStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.ForceStopStreaming"));
+#ifdef SPECTRA_ULTRALIGHT
+	/* Ultralight records only */
+	ui->streamButton->hide();
+#endif
 
 	/* Transfer buttons signals as OBSBasicControls signals */
 	connect(

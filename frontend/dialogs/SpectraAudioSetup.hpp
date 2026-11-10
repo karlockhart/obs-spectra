@@ -18,8 +18,8 @@ class QSpinBox;
 /*
  * Spectra's audio setup in one place: the microphone with push-to-talk on
  * keys, mouse buttons and gamepad buttons, the applications whose audio is
- * recorded (TeamSpeak by default), and whether all desktop audio is
- * recorded.
+ * recorded (with a TeamSpeak toggle, off by default), and whether all
+ * desktop audio is recorded.
  */
 class SpectraAudioSetup : public QDialog {
 	Q_OBJECT
@@ -43,6 +43,7 @@ private:
 	int gamepadListenPolls = 0;
 
 	SpectraAppPicker *apps;
+	QCheckBox *teamSpeak;
 	QCheckBox *desktopAudio;
 
 	void AddKey(obs_key_combination_t key);
