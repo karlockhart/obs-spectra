@@ -103,3 +103,7 @@ jobs:
         with:
           name: obs-studio-windows-${{ matrix.architecture }}-${{ needs.check-event.outputs.commitHash }}
           path: ${{ github.workspace }}/build_${{ matrix.architecture }}/obs-studio-*-windows-${{ matrix.architecture }}.zip
+          # Spectra: ~350 MB per push/PR build. The default 90-day retention filled the
+          # account-wide Actions storage quota (shared with starling and lucida) within
+          # days. Tag releases download this within the same run, so 3 days is plenty.
+          retention-days: 3
