@@ -1413,6 +1413,8 @@ private:
 
 private slots:
 	void Screenshot(OBSSource source_ = nullptr);
+	/* The game at its own resolution when it is captured, else the output */
+	void ScreenshotGame();
 	void ScreenshotSelectedSource();
 	void ScreenshotProgram();
 	void ScreenshotScene();
