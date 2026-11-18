@@ -58,8 +58,9 @@ constexpr DWORD RENAME_RETRY_MS = 10000;
 /* The log is started over once it grows past this */
 constexpr long MAX_LOG_BYTES = 1 << 20;
 
-/* Top-level folders of an OBS-Spectra install: always the new version's */
-constexpr const wchar_t *PROGRAM_DIRS[] = {L"bin", L"data", L"obs-plugins"};
+/* Top-level folders of an OBS-Spectra install: always the new version's. OBS 33
+ * keeps its modules in core; obs-plugins is where OBS 32 and older kept them. */
+constexpr const wchar_t *PROGRAM_DIRS[] = {L"bin", L"core", L"data", L"obs-plugins"};
 /* Left behind by Update-Portable.ps1, which this replaces: not carried over */
 constexpr const wchar_t *OBSOLETE_FILES[] = {L"Update-Portable.cmd", L"Update-Portable.ps1", L"spectra-version.txt",
 					     L".spectra-update"};
@@ -479,7 +480,7 @@ struct Swap {
 			return Result::RolledBack;
 		}
 		Log(L"ROLLBACK FAILED. The previous version is in %s, the new one in %s. To get OBS-Spectra back, "
-		    L"move everything from the new version's folder that isn't bin, data or obs-plugins (config, "
+		    L"move everything from the new version's folder that isn't bin, core, data or obs-plugins (config, "
 		    L"portable_mode.txt, your own files) back into %s, then rename %s to %s.",
 		    backup.c_str(), stagingIsInstall ? install.c_str() : staging.c_str(), backup.c_str(),
 		    backup.c_str(), install.c_str());

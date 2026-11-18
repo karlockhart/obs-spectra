@@ -7,10 +7,12 @@ if(OS_WINDOWS AND NOT OBS_PARENT_ARCHITECTURE STREQUAL CMAKE_VS_PLATFORM_NAME)
   return()
 endif()
 
+include(cmake/obs-core-modules.cmake)
+
 find_package(SIMDe REQUIRED)
 find_package(Threads REQUIRED)
 
-find_package(FFmpeg 6.1 REQUIRED avformat avutil swscale swresample OPTIONAL_COMPONENTS avcodec)
+find_package(FFmpeg 8.0 REQUIRED avformat avutil swscale swresample OPTIONAL_COMPONENTS avcodec)
 
 find_package(ZLIB REQUIRED)
 find_package(Uthash REQUIRED)
@@ -37,6 +39,10 @@ target_sources(
     obs-avc.h
     obs-canvas.c
     obs-config.h
+    $<$<PLATFORM_ID:Darwin>:obs-core-modules-loader-mac.m>
+    $<$<PLATFORM_ID:Windows>:obs-core-modules-loader-win.c>
+    $<$<PLATFORM_ID:Linux,FreeBSD,OpenBSD>:obs-core-modules-loader-nix.c>
+    obs-core-modules-loader.h
     obs-data.c
     obs-data.h
     obs-defs.h
@@ -242,6 +248,7 @@ target_link_libraries(
   libobs
   PRIVATE
     OBS::caption
+    OBS::libobs-core-modules
     OBS::libobs-version
     FFmpeg::avcodec
     FFmpeg::avformat

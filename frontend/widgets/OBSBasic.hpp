@@ -43,6 +43,7 @@
 #include <util/util.hpp>
 
 #include <QAccessible>
+#include <QPointer>
 #include <QSystemTrayIcon>
 
 #include <deque>
@@ -61,6 +62,7 @@ class OBSLogViewer;
 class OBSMissingFiles;
 class OBSProjector;
 class SpectraClipMaker;
+class ScreenshotObj;
 class VolumeControl;
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
@@ -219,7 +221,6 @@ class OBSBasic : public OBSMainWindow {
 	friend class OBSYoutubeActions;
 	friend struct BasicOutputHandler;
 	friend struct OBSStudioAPI;
-	friend class ScreenshotObj;
 
 	enum class MoveDir { Up, Down, Left, Right };
 
@@ -887,6 +888,7 @@ private slots:
 	void TogglePreview();
 
 public:
+	void addSnapGuide(SnapGuide guide);
 	inline void GetDisplayRect(int &x, int &y, int &cx, int &cy)
 	{
 		x = previewX;
@@ -1408,7 +1410,7 @@ public:
 	 * -------------------------------------
 	 */
 private:
-	QPointer<QObject> screenshotData;
+	QPointer<ScreenshotObj> screenshotData;
 	std::string lastScreenshot;
 
 private slots:
