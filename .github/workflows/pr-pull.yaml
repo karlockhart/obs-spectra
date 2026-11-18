@@ -2,9 +2,20 @@ name: Pull
 run-name: ${{ github.event.pull_request.title }} pull request run 🚀
 on:
   workflow_dispatch:
+    inputs:
+      editions:
+        description: 'Editions to build: "full", or "all" for Lite and Ultralight too'
+        type: choice
+        options: [full, all]
+        default: full
   pull_request:
+    # nothing to build when only documentation changed
     paths-ignore:
       - '**.md'
+      - '**.rst'
+      - 'docs/**'
+      - 'AUTHORS'
+      - '.github/ISSUE_TEMPLATE/**'
     branches: [master, 'feature/**']
     types: [ opened, synchronize, reopened ]
 permissions:
@@ -18,5 +29,7 @@ jobs:
     name: Build 🧱
     uses: ./.github/workflows/build-project.yaml
     secrets: inherit
+    with:
+      editions: ${{ inputs.editions }}
     permissions:
       contents: read

@@ -286,6 +286,18 @@ static void TestVersions()
 		CHECK(!IsReleaseTag(""));
 	});
 
+	Test("versions: the release stamp of a package", []() {
+		/* a PR build released as 33.0.1-spectra.1 */
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "33.0.1-spectra.1\r\n") == "33.0.1-spectra.1");
+		CHECK(StampedVersion("33.0.1-spectra.1", "33.0.1-spectra.1") == "33.0.1-spectra.1");
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "33.0.1-spectra.2-rc.1") == "33.0.1-spectra.2-rc.1");
+		/* another OBS base, not a tag, or nothing: the compiled version */
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "32.2.2-spectra.3") == "33.0.1-3-g3588d94");
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "33.0.1-3-g3588d94") == "33.0.1-3-g3588d94");
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "") == "33.0.1-3-g3588d94");
+		CHECK(StampedVersion("33.0.1-3-g3588d94", "garbage") == "33.0.1-3-g3588d94");
+	});
+
 	Test("channel setting", []() {
 		CHECK(ChannelFromSetting("rc", "32.2.2-spectra.2") == Channel::ReleaseCandidates);
 		CHECK(ChannelFromSetting("stable", "32.2.2-spectra.3-rc.6") == Channel::Stable);

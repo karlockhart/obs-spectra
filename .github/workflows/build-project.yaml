@@ -1,6 +1,11 @@
 name: Build Project
 on:
   workflow_call:
+    inputs:
+      editions:
+        description: '"all" also builds Lite and Ultralight'
+        type: string
+        default: ''
 jobs:
   check-event:
     name: Event Data 🔎
@@ -14,6 +19,7 @@ jobs:
       notarize: ${{ steps.setup.outputs.notarize }}
       config: ${{ steps.setup.outputs.config }}
       commitHash: ${{ steps.setup.outputs.commitHash }}
+      editions: ${{ steps.setup.outputs.editions }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -28,12 +34,10 @@ jobs:
 
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              config_data=('codesign:false' 'notarize:false' 'package:false' 'config:RelWithDebInfo')
-              if gh pr view ${{ github.event.number }} --json labels \
-                | jq -e -r '.labels[] | select(.name == "Seeking Testers")' > /dev/null; then
-                config_data[0]='codesign:true'
-                config_data[2]='package:true'
-              fi
+              # Spectra: built and packaged as a release would be, so a release
+              # tagged on the merge can ship this build instead of making its
+              # own (push.yaml, find-build)
+              config_data=('codesign:false' 'notarize:false' 'package:true' 'config:Release')
               ;;
             push)
               config_data=('codesign:true' 'notarize:false' 'package:true' 'config:RelWithDebInfo')
@@ -57,21 +61,29 @@ jobs:
           done
           echo "commitHash=${GITHUB_SHA:0:9}" >> $GITHUB_OUTPUT
 
+          # Spectra: Full, which switches down to Lite or Ultralight at run time
+          # (Spectra > Features). Lite and Ultralight are built too when asked:
+          # the input "all", the repository variable SPECTRA_EDITIONS=all, or a
+          # pull request labelled "all editions".
+          all='${{ inputs.editions == 'all' || vars.SPECTRA_EDITIONS == 'all' }}'
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request ]] && gh pr view ${{ github.event.number }} --json labels \
+            | jq -e -r '.labels[] | select(.name == "all editions")' > /dev/null; then
+            all=true
+          fi
+          if [[ "${all}" == true ]]; then
+            echo 'editions=["Full","Lite","Ultralight"]' >> $GITHUB_OUTPUT
+          else
+            echo 'editions=["Full"]' >> $GITHUB_OUTPUT
+          fi
+
   windows-build:
     name: Windows 🪟
     strategy:
       matrix:
         architecture: [x64]
-        # OBS-Spectra, Lite (no Lucida, Obscura, OCR or speech) and Ultralight
-        # (Lite without the browser and streaming)
-        edition: [Full, Lite, Ultralight]
-        include:
-          - edition: Full
-            artifact: obs-studio
-          - edition: Lite
-            artifact: obs-studio-lite
-          - edition: Ultralight
-            artifact: obs-studio-ultralight
+        # OBS-Spectra, and when asked Lite (no Lucida, Obscura, OCR or speech)
+        # and Ultralight (Lite without the browser and streaming)
+        edition: ${{ fromJSON(needs.check-event.outputs.editions) }}
     runs-on: windows-2025-vs2026
     needs: check-event
     defaults:
@@ -108,9 +120,34 @@ jobs:
           config: ${{ needs.check-event.outputs.config }}
           package: ${{ fromJSON(needs.check-event.outputs.package) }}
 
+      # What the build was made from: a release reuses it only when the source
+      # tree is exactly the one it tags
+      - name: Record the Build Source 🧾
+        if: ${{ fromJSON(needs.check-event.outputs.package) }}
+        run: |
+          $source = @(
+            "tree=$(git rev-parse 'HEAD^{tree}')"
+            "commit=$(git rev-parse HEAD)"
+            "event=${env:GITHUB_EVENT_NAME}"
+            "edition=${{ matrix.edition }}"
+            "config=${{ needs.check-event.outputs.config }}"
+          ) -join "`n"
+          Set-Content -Path build_${{ matrix.architecture }}/spectra-build-source.txt -Value $source -NoNewline -Encoding ascii
+          Get-Content build_${{ matrix.architecture }}/spectra-build-source.txt
+
       - name: Upload Artifacts 📡
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ fromJSON(needs.check-event.outputs.package) }}
         with:
-          name: ${{ matrix.artifact }}-windows-${{ matrix.architecture }}-${{ needs.check-event.outputs.commitHash }}
-          path: ${{ github.workspace }}/build_${{ matrix.architecture }}/obs-studio-*-windows-${{ matrix.architecture }}.zip
+          name: ${{ matrix.edition == 'Full' && 'obs-studio' || matrix.edition == 'Lite' && 'obs-studio-lite' || 'obs-studio-ultralight' }}-windows-${{ matrix.architecture }}-${{ needs.check-event.outputs.commitHash }}
+          path: |
+            ${{ github.workspace }}/build_${{ matrix.architecture }}/obs-studio-*-windows-${{ matrix.architecture }}.zip
+            ${{ github.workspace }}/build_${{ matrix.architecture }}/spectra-build-source.txt
+
+      # The same, on its own, for checking a build without downloading it
+      - name: Upload Build Source 🧾
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ fromJSON(needs.check-event.outputs.package) }}
+        with:
+          name: spectra-source-${{ matrix.edition }}
+          path: ${{ github.workspace }}/build_${{ matrix.architecture }}/spectra-build-source.txt

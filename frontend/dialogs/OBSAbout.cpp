@@ -27,7 +27,8 @@ OBSAbout::OBSAbout(QWidget *parent) : QDialog(parent), ui(new Ui::OBSAbout)
 		bitness = " (64 bit)";
 	}
 
-	QString ver = obs_get_version_string();
+	/* the release this copy is, which may be stamped on the package */
+	QString ver = QString::fromStdString(App()->GetVersionString(false));
 
 	ui->version->setText(ver + bitness);
 

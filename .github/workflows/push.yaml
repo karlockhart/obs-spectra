@@ -3,11 +3,17 @@ run-name: ${{ github.ref_name }} push run 🚀
 on:
   # Not master: everything reaches it through a pull request, whose build
   # already compiled the merge result, so building it again on the merge
-  # only repeats that. Version tags build the release (the version is
-  # compiled in from the tag, so the PR's binaries can't be shipped).
+  # only repeats that. A version tag releases: it ships the build of the pull
+  # request it tags when that is the very same source (find-build), and
+  # builds otherwise.
   push:
+    # (not for tags, which always release)
     paths-ignore:
       - '**.md'
+      - '**.rst'
+      - 'docs/**'
+      - 'AUTHORS'
+      - '.github/ISSUE_TEMPLATE/**'
     branches:
       - 'release/**'
     tags:
@@ -16,8 +22,81 @@ permissions:
   contents: read
 jobs:
   # Spectra CI only builds Windows x64 and releases it for version tags.
+
+  # A tag on the merge of a pull request from this repository reuses that
+  # pull request's last successful build, when its recorded source tree is
+  # exactly the tagged one in the release configuration (build-project.yaml,
+  # spectra-build-source.txt). A fork's build is never used.
+  find-build:
+    name: Find a Pull Request Build 🔍
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      run-id: ${{ steps.find.outputs.run-id }}
+      run-url: ${{ steps.find.outputs.run-url }}
+    env:
+      # Full, and Lite and Ultralight with SPECTRA_EDITIONS=all (build-project.yaml)
+      EDITIONS: ${{ vars.SPECTRA_EDITIONS == 'all' && 'Full Lite Ultralight' || 'Full' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Find a Pull Request Build 🔍
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          : Find a Pull Request Build 🔍
+          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
+
+          repo="${GITHUB_REPOSITORY}"
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "Tagged commit ${GITHUB_SHA}, tree ${tree}"
+          found=''
+          prs=$(gh api "repos/${repo}/commits/${GITHUB_SHA}/pulls" \
+            --jq ".[] | select(.merge_commit_sha == \"${GITHUB_SHA}\" and .head.repo.full_name == \"${repo}\") | .number")
+          for pr in ${prs}; do
+            head=$(gh api "repos/${repo}/pulls/${pr}" --jq .head.sha)
+            runs=$(gh api "repos/${repo}/actions/workflows/pr-pull.yaml/runs?event=pull_request&status=success&head_sha=${head}&per_page=10" \
+              --jq '.workflow_runs[].id')
+            for run in ${runs}; do
+              matches=true
+              for edition in ${EDITIONS}; do
+                rm -rf source
+                if ! gh run download "${run}" --repo "${repo}" --name "spectra-source-${edition}" --dir source 2> /dev/null \
+                  || ! grep -qx "tree=${tree}" source/spectra-build-source.txt \
+                  || ! grep -qx "config=Release" source/spectra-build-source.txt; then
+                  matches=false
+                  break
+                fi
+              done
+              if ${matches}; then
+                echo "Reusing pull request #${pr}'s build, run ${run}"
+                found="${run}"
+                break 2
+              fi
+              echo "Run ${run} of pull request #${pr} isn't this source"
+            done
+          done
+          if [[ -z "${found}" ]]; then
+            echo 'No pull request build of this source: building it'
+          fi
+          echo "run-id=${found}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${found}" ]]; then
+            echo "run-url=${GITHUB_SERVER_URL}/${repo}/actions/runs/${found}" >> "${GITHUB_OUTPUT}"
+          fi
+
   build-project:
     name: Build 🧱
+    needs: find-build
+    # branches always; tags only without a pull request build to reuse
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.find-build.outputs.run-id == '') }}
     uses: ./.github/workflows/build-project.yaml
     secrets: inherit
     permissions:
@@ -25,10 +104,13 @@ jobs:
 
   create-release:
     name: Create Release 🛫
-    if: github.ref_type == 'tag'
+    # after this run's build, or with a pull request's build to reuse
+    if: >-
+      ${{ !cancelled() && github.ref_type == 'tag' && (needs.build-project.result == 'success'
+      || (needs.build-project.result == 'skipped' && needs.find-build.outputs.run-id != '')) }}
     # Windows: signtool, the Artifact Signing dlib and Inno Setup only run there
     runs-on: windows-2025-vs2026
-    needs: build-project
+    needs: [find-build, build-project]
     # The Azure sign-in trusts this environment's OIDC token (subject
     # repo:karlockhart/obs-spectra:environment:release), whatever the tag is
     environment:
@@ -36,6 +118,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      actions: read
     defaults:
       run:
         shell: pwsh
@@ -45,6 +128,9 @@ jobs:
       SPECTRA_SIGNING_ENDPOINT: ${{ vars.SPECTRA_SIGNING_ENDPOINT }}
       SPECTRA_SIGNING_ACCOUNT: ${{ vars.SPECTRA_SIGNING_ACCOUNT }}
       SPECTRA_SIGNING_PROFILE: ${{ vars.SPECTRA_SIGNING_PROFILE }}
+      # whose build is released: a pull request's, or this run's own
+      BUILD_RUN: ${{ needs.find-build.outputs.run-id || github.run_id }}
+      BUILD_RUN_URL: ${{ needs.find-build.outputs.run-url || format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
     steps:
       - name: Check Release Tag ☑️
         id: check
@@ -81,6 +167,8 @@ jobs:
         with:
           pattern: obs-studio-windows-x64-*
           merge-multiple: true
+          run-id: ${{ env.BUILD_RUN }}
+          github-token: ${{ github.token }}
           path: full
 
       - name: Download Lite Build Artifacts 📥
@@ -89,6 +177,8 @@ jobs:
         with:
           pattern: obs-studio-lite-windows-x64-*
           merge-multiple: true
+          run-id: ${{ env.BUILD_RUN }}
+          github-token: ${{ github.token }}
           path: lite
 
       - name: Download Ultralight Build Artifacts 📥
@@ -97,7 +187,34 @@ jobs:
         with:
           pattern: obs-studio-ultralight-windows-x64-*
           merge-multiple: true
+          run-id: ${{ env.BUILD_RUN }}
+          github-token: ${{ github.token }}
           path: ultralight
+
+      - name: Check the Build Source 🧾
+        if: fromJSON(steps.check.outputs.validTag)
+        shell: bash
+        run: |
+          : Check the Build Source 🧾
+          # every edition was built from exactly the tagged source, as a release
+          tree="$(git -C repo rev-parse 'HEAD^{tree}')"
+          for pair in full:Full lite:Lite ultralight:Ultralight; do
+            dir="${pair%%:*}"
+            edition="${pair##*:}"
+            source="${dir}/spectra-build-source.txt"
+            # Lite and Ultralight are built only when asked for
+            if [[ "${edition}" != Full && ! -d "${dir}" ]]; then
+              echo "No ${edition} build: the release is without it"
+              continue
+            fi
+            if [[ ! -f "${source}" ]] || ! grep -qx "tree=${tree}" "${source}" \
+              || ! grep -qx "edition=${edition}" "${source}" || ! grep -qx "config=Release" "${source}"; then
+              echo "::error::The ${edition} build in ${BUILD_RUN_URL} isn't this source (${tree})"
+              cat "${source}" 2> /dev/null || true
+              exit 1
+            fi
+          done
+          echo "The editions are from ${BUILD_RUN_URL}, tree ${tree}"
 
       - name: Sign In to Azure 🔑
         if: fromJSON(steps.check.outputs.validTag) && env.SIGN == 'true'
@@ -111,7 +228,6 @@ jobs:
       - name: Set Up Inno Setup and the VC++ Runtime 🧰
         if: fromJSON(steps.check.outputs.validTag)
         run: |
-          : Set Up Inno Setup and the VC++ Runtime 🧰
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             choco install innosetup --no-progress -y
@@ -123,18 +239,23 @@ jobs:
       - name: Package Release 📦
         if: fromJSON(steps.check.outputs.validTag)
         run: |
-          : Package Release 📦
-          # Every release ships OBS-Spectra, Lite and Ultralight, each as an
-          # installed-style zip, a portable one and an installer; signed when
-          # the Azure sign-in is set up
+          # Every release ships OBS-Spectra, and Lite and Ultralight when they
+          # were built, each as an installed-style zip, a portable one and an
+          # installer; signed when the Azure sign-in is set up
           $version = '${{ steps.check.outputs.version }}'
           $sign = $env:SIGN -eq 'true'
           foreach ($edition in @(
               @{ Name = 'Full'; Dir = 'full' },
               @{ Name = 'Lite'; Dir = 'lite' },
               @{ Name = 'Ultralight'; Dir = 'ultralight' })) {
-            $zip = Get-ChildItem -Path $edition.Dir -Filter 'obs-studio-*-windows-x64.zip' | Select-Object -First 1
-            if (-not $zip) { throw "No $($edition.Name) build" }
+            $zip = Get-ChildItem -Path $edition.Dir -Filter 'obs-studio-*-windows-x64.zip' -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if (-not $zip) {
+              # Lite and Ultralight are built only when asked for (SPECTRA_EDITIONS=all)
+              if ($edition.Name -eq 'Full') { throw 'No Full build' }
+              Write-Host "No $($edition.Name) build: released without it"
+              continue
+            }
             ./repo/.github/scripts/Package-Spectra-Windows.ps1 -Build $zip.FullName -Edition $edition.Name `
               -Version $version -OutputDir release -Redist vc_redist.x64.exe -Sign:$sign
           }
@@ -155,6 +276,7 @@ jobs:
           if [[ "${SIGN}" != 'true' ]]; then
             printf '\nThese builds are not code signed.\n' >> ../CHECKSUMS.txt
           fi
+          printf '\nBuilt in %s.\n' "${BUILD_RUN_URL}" >> ../CHECKSUMS.txt
 
       - name: Create Release 🛫
         if: fromJSON(steps.check.outputs.validTag)

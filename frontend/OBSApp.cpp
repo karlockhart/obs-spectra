@@ -18,6 +18,7 @@
 #include "OBSApp.hpp"
 
 #include <utility/SpectraConfigLocation.hpp>
+#include <utility/SpectraReleases.hpp>
 #include <utility/SpectraSplash.hpp>
 
 #include <components/Multiview.hpp>
@@ -39,6 +40,8 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #if defined(_WIN32) || defined(ENABLE_SPARKLE_UPDATER)
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #endif
 
@@ -1387,11 +1390,31 @@ bool OBSApp::OBSInit()
 	return true;
 }
 
+/* The version this copy is: the compiled one, or the release stamped on the
+ * package (SpectraReleases::StampedVersion), read once */
+static const std::string &SpectraVersion()
+{
+	static const std::string version = [] {
+		const QString compiled = QString::fromUtf8(obs_get_version_string());
+		QFile stamp(QDir(QCoreApplication::applicationDirPath())
+				    .filePath(QString::fromLatin1(SpectraReleases::RELEASE_STAMP)));
+		if (!stamp.open(QIODevice::ReadOnly)) {
+			return compiled.toStdString();
+		}
+		const QString stamped = SpectraReleases::StampedVersion(compiled, QString::fromUtf8(stamp.read(64)));
+		if (stamped != compiled) {
+			blog(LOG_INFO, "[Spectra] Release %s (built as %s)", QT_TO_UTF8(stamped), QT_TO_UTF8(compiled));
+		}
+		return stamped.toStdString();
+	}();
+	return version;
+}
+
 string OBSApp::GetVersionString(bool platform) const
 {
 	stringstream ver;
 
-	ver << obs_get_version_string();
+	ver << SpectraVersion();
 
 	if (platform) {
 		ver << " (";
