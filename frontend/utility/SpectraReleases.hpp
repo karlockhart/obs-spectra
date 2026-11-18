@@ -78,15 +78,22 @@ enum class Edition { Full, Lite, Ultralight };
 std::optional<Release> SelectRelease(const QList<Release> &releases, Channel channel, Edition edition = Edition::Full);
 
 struct Download {
-	Asset zip;
+	Asset zip;      /* the zip, or the installer when installer is set */
 	Asset checksum; /* <zip>.sha256; empty name when the release has none */
 	bool portable = false;
+	/* OBS-Spectra-<tag>-Windows-x64[-Lite|-Ultralight]-Setup.exe, which updates
+	 * a copy the installer put in place by running over it */
+	bool installer = false;
 };
 
 /* A portable install gets the -Portable.zip, any other the regular zip; each
  * falls back to the other kind (the updater keeps the install's own portable
  * mode either way). */
 std::optional<Download> SelectDownload(const Release &release, bool portable, Edition edition = Edition::Full);
+
+/* The edition's installer and its checksum, for a copy the installer put in
+ * place; none when the release has no installer for the edition */
+std::optional<Download> SelectInstaller(const Release &release, Edition edition = Edition::Full);
 
 /* The hash in a sha256sum line ("<hex>  <name>"), lower case; empty when the
  * text doesn't start with 64 hex digits. */

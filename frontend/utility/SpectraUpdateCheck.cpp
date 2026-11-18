@@ -182,9 +182,20 @@ void SpectraUpdateCheck::Finished()
 		QString installDir = SpectraUpdateJob::RunningInstallDir();
 		std::optional<Download> download;
 		QString helper = QDir(QCoreApplication::applicationDirPath()).filePath("spectra-updater.exe");
+		const bool setupInstall = SpectraUpdateJob::InstalledBySetup(installDir) !=
+					  SpectraUpdateJob::SetupScope::None;
 		if (!IsReleaseTag(currentString)) {
 			blog(LOG_INFO, "[Spectra] Update can't be installed from here: %s is a developer build",
 			     QT_TO_UTF8(currentString));
+		} else if (setupInstall) {
+			/* the installer put this copy in place: the new installer updates it */
+			if (!(download = SelectInstaller(*release, BUILD_EDITION)) ||
+			    download->checksum.name.isEmpty()) {
+				blog(LOG_INFO,
+				     "[Spectra] Update can't be installed from here: %s has no verifiable installer",
+				     QT_TO_UTF8(releaseTag));
+				download.reset();
+			}
 		} else if (installDir.isEmpty() || !QFileInfo::exists(helper)) {
 			blog(LOG_INFO, "[Spectra] Update can't be installed from here: not a release package layout");
 		} else if (!(download = SelectDownload(*release, SpectraUpdateJob::IsPortableInstall(installDir),

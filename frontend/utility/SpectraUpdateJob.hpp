@@ -40,6 +40,12 @@ public:
 	/* Windows command-line quoting of arguments, for --relaunch-args */
 	static QString QuoteArguments(const QStringList &args);
 
+	/* How the installer put the install in place, when it did: its Uninstall
+	 * entry (HKCU for the current user, HKLM for all users) points at the
+	 * install. Such a copy updates by running the new installer over it. */
+	enum class SetupScope { None, CurrentUser, AllUsers };
+	static SetupScope InstalledBySetup(const QString &installDir);
+
 	QString WorkDir() const;
 	QString StagingDir() const;
 	QString LogPath() const;
@@ -53,6 +59,11 @@ public:
 	 * helperExe is the install's own spectra-updater.exe. */
 	bool LaunchHelper(const QString &helperExe, const QString &version, const QString &relaunchArgs,
 			  QString *error);
+
+	/* After Finished(true) for an installer download: starts the installer to
+	 * wait for this process to exit, update the install silently and start
+	 * OBS-Spectra again. */
+	bool LaunchInstaller(SetupScope scope, QString *error);
 
 	/* Deletes the work folder (after a cancel or failure) */
 	void Discard();
