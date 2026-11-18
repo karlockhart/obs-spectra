@@ -1,4 +1,5 @@
 #include "OBSBasicControls.hpp"
+#include <utility/SpectraFeatures.hpp>
 #include "OBSBasic.hpp"
 #include "qt-wrappers.hpp"
 
@@ -17,10 +18,10 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	startStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StartStreaming"));
 	stopStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StopStreaming"));
 	QAction *forceStopStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.ForceStopStreaming"));
-#ifdef SPECTRA_ULTRALIGHT
-	/* Ultralight records only */
-	ui->streamButton->hide();
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		/* Recording only (Ultralight, or streaming switched off) */
+		ui->streamButton->hide();
+	}
 
 	/* Transfer buttons signals as OBSBasicControls signals */
 	connect(

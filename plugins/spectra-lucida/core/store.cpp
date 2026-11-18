@@ -623,6 +623,9 @@ long long Store::Insert(const spectra::ChatEntry &entry, const QString &body, co
 		.Bind(16, entry.region.isEmpty() ? std::nullopt : std::optional<QString>(entry.region))
 		.Run();
 	long long rowId = sqlite3_last_insert_rowid(db);
+	if (onNewLine) {
+		onNewLine(body, now, false);
+	}
 	if (fts) {
 		Stmt f(db, "INSERT INTO lines_fts(rowid, body) VALUES (?,?)");
 		f.Bind(1, rowId).Bind(2, body).Run();
@@ -681,6 +684,9 @@ std::vector<long long> Store::SetSegmentSpeech(const QString &segment, long long
 			.Bind(11, line.video.offset)
 			.Run();
 		const long long rowId = sqlite3_last_insert_rowid(db);
+		if (onNewLine) {
+			onNewLine(body, line.at, true);
+		}
 		if (fts) {
 			Stmt f(db, "INSERT INTO lines_fts(rowid, body) VALUES (?,?)");
 			f.Bind(1, rowId).Bind(2, body).Run();

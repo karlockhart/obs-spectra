@@ -1,5 +1,6 @@
 #include "lucida-speech.hpp"
 #include "lucida-host.hpp"
+#include "lucida-events.hpp"
 #include "tagger.hpp"
 #include "video.hpp"
 
@@ -8,6 +9,7 @@
 #include <spectra-speech/speech.hpp>
 
 #include <obs-module.h>
+#include <spectra-grab/spectra-features.hpp>
 
 #include <QDateTime>
 #include <QDir>
@@ -96,6 +98,8 @@ void SpeechController::Apply(const Settings &settings)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
 		config.speech = settings.speech;
+		/* Spectra > Features can switch speech recognition off for the session */
+		config.speech.enabled = config.speech.enabled && spectra::FeatureEnabled("Speech");
 		config.dbPath = settings.dbPath;
 		config.tagRules = settings.tagRules;
 		config.tolerateTypos = settings.tolerateTypos;
@@ -288,6 +292,10 @@ void SpeechController::Run()
 				Tagger *tags = tagger.get();
 				s->labeler = [tags](const QString &body) {
 					return tags->Tags(body);
+				};
+				/* this PC's transcripts can pin events and clip too */
+				s->onNewLine = [](const QString &body, double wallTs, bool speech) {
+					EventTriggers::Get().Check(body, wallTs, speech);
 				};
 			}
 			QDir loop(t.loopDir);

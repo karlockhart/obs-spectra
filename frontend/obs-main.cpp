@@ -23,6 +23,7 @@
 #endif
 #include <utility/BaseLexer.hpp>
 #include <utility/OBSTranslator.hpp>
+#include <utility/SpectraConfigLocation.hpp>
 #include <utility/platform.hpp>
 
 #include <qt-wrappers.hpp>
@@ -1079,6 +1080,12 @@ int main(int argc, char *argv[])
 						  os_file_exists(BASE_PATH "/disable_missing_files_check.txt");
 	}
 #endif
+
+	/* Settings moved from %APPDATA%\OBS-Spectra to %USERPROFILE%\Spectra:
+	 * before anything opens them (the log says what happened) */
+	if (!portable_mode) {
+		SpectraConfigLocation::MigrateConfig();
+	}
 
 	fstream logFile;
 

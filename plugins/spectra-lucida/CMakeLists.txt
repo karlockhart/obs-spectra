@@ -96,6 +96,10 @@ target_sources(
     plugin/lucida-plugin.cpp
     plugin/lucida-regions.cpp
     plugin/lucida-regions.hpp
+    plugin/lucida-events.cpp
+    plugin/lucida-events.hpp
+    plugin/lucida-prisma.cpp
+    plugin/lucida-prisma.hpp
     plugin/lucida-settings.cpp
     plugin/lucida-settings.hpp
     plugin/lucida-speech.cpp

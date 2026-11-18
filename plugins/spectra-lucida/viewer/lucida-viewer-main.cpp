@@ -26,8 +26,8 @@
 
 namespace {
 
-/* As the frontend's SPECTRA_CONFIG_DIR: Spectra never shares OBS Studio's */
-constexpr const char *kConfigDir = "OBS-Spectra";
+/* Where OBS-Spectra 32 and older kept their settings, under %APPDATA% */
+constexpr const char *kLegacyConfigDir = "OBS-Spectra";
 
 struct ConfigDeleter {
 	void operator()(config_t *c) const { config_close(c); }
@@ -83,11 +83,16 @@ QString ConfigRoot(bool portable)
 	if (portable) {
 		return QDir(InstallRoot()).filePath(QStringLiteral("config"));
 	}
+	/* %USERPROFILE%\Spectra, as the frontend (SpectraConfigLocation); until
+	 * OBS-Spectra has moved them there once, the old %APPDATA%\OBS-Spectra */
+	const QString home = QDir::cleanPath(QDir::homePath() + QStringLiteral("/Spectra"));
 	char path[512];
-	if (os_get_config_path(path, sizeof(path), kConfigDir) <= 0) {
-		return QString();
+	if (QFileInfo::exists(home + QStringLiteral("/obs-studio/global.ini")) ||
+	    os_get_config_path(path, sizeof(path), kLegacyConfigDir) <= 0) {
+		return home;
 	}
-	return QDir::cleanPath(QString::fromUtf8(path));
+	const QString legacy = QDir::cleanPath(QString::fromUtf8(path));
+	return QFileInfo::exists(legacy + QStringLiteral("/obs-studio/global.ini")) ? legacy : home;
 }
 
 /* Opens the current profile's basic.ini, following the frontend's rules for

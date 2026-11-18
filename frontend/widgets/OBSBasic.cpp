@@ -18,6 +18,7 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <utility/SpectraDefaults.hpp>
 #include <utility/SpectraSplash.hpp>
@@ -952,8 +953,15 @@ void OBSBasic::OBSInit()
 	App()->loadAppModules();
 
 #ifdef BROWSER_AVAILABLE
-	cef = obs_browser_init_panel();
-	cef_js_avail = cef && obs_browser_qcef_version() >= 3;
+	/* With the browser switched off (Spectra > Features) there are no browser
+	 * docks or logins, so CEF only starts for a browser source already in a
+	 * scene */
+	if (SpectraFeatures::Enabled(SpectraFeatures::Feature::Browser)) {
+		cef = obs_browser_init_panel();
+		cef_js_avail = cef && obs_browser_qcef_version() >= 3;
+	} else {
+		blog(LOG_INFO, "[Spectra] Browser docks are switched off");
+	}
 #endif
 
 	vcamEnabled = (obs_get_output_flags(VIRTUAL_CAM_ID) & OBS_OUTPUT_VIDEO) != 0;

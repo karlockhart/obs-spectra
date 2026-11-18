@@ -53,6 +53,8 @@ public:
 	 * `segment`, with In and Out `before` / `after` seconds either side.
 	 * Waits for the segment being recorded to be finalized if needed. */
 	void ShowMoment(const QString &segment, double offset, double before, double after);
+	/* Re-reads the loop folder's events and pins them on the timeline */
+	void ReloadEvents();
 
 	/* The export quality choices, keyed "Original", "High", "Medium",
 	 * "Small" and "YouTube". QualityFromKey is false for Original, which
@@ -244,6 +246,16 @@ private:
 	void UnloadSegment(Player &player);
 	void SwapToStandby();
 	void Seek(double t);
+
+	/* the events behind the timeline's pins (Pin::id is the index), and
+	 * the file each is kept in */
+	struct PinEvent {
+		QString file;
+		QDateTime time;
+		QString name;
+	};
+	std::vector<PinEvent> pinEvents;
+	void RenameEvent(int id);
 	void SetPlaying(bool play);
 	void Step(double seconds);
 	void Poll();

@@ -41,9 +41,19 @@ public:
 		bool visible = true;
 	};
 
-	explicit ClipTimeline(QWidget *parent = nullptr);
+	/* An event marked with the event hotkeys: a pin on the ruler whose head
+	 * shows its name (or "Event") when the pointer is over it */
+	struct Pin {
+		double time = 0.0;
+		QString text;
+		QColor color;
+		/* the owner's own reference, handed back by pinDoubleClicked */
+		int id = -1;
+	};
 
+	explicit ClipTimeline(QWidget *parent = nullptr);
 	void SetSegments(const QVector<Segment> &segments);
+	void SetPins(const QVector<Pin> &pins);
 	void SetBars(const QVector<Bar> &bars);
 	void SetSelectedBar(int id);
 	int SelectedBar() const { return selectedBar; }
@@ -97,6 +107,9 @@ signals:
 	void inOutChanged(double in, double out);
 	void barSelected(int id);
 	void barChanged(int id, double start, double end);
+	/* A pinhead was clicked / double-clicked (to name its event) */
+	void pinClicked(double t);
+	void pinDoubleClicked(int id);
 	void zoomChanged(double pixelsPerSecond);
 
 protected:
@@ -116,6 +129,9 @@ private:
 
 	QVector<Segment> segments;
 	QVector<Bar> bars;
+	QVector<Pin> pins;
+	int hoverPin = -1;
+	int PinAt(const QPoint &pos) const;
 	QScrollBar *scroll;
 	QString videoLabel = QStringLiteral("Loop video");
 	QString emptyLabel = QStringLiteral("No loop recordings");

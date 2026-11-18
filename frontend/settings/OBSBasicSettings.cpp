@@ -17,6 +17,7 @@
  ******************************************************************************/
 
 #include "OBSBasicSettings.hpp"
+#include <utility/SpectraFeatures.hpp>
 #include "OBSHotkeyLabel.hpp"
 #include "OBSHotkeyWidget.hpp"
 
@@ -607,11 +608,12 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	}
 #endif
 
-#ifdef SPECTRA_ULTRALIGHT
-	/* Ultralight records only: no Stream page. Output's streaming encoder
-	 * settings stay, because recording can use them ("Same as stream"). */
-	ui->listWidget->item(Pages::STREAM)->setHidden(true);
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		/* Recording only (Ultralight, or streaming switched off): no Stream page.
+		 * Output's streaming encoder settings stay, because recording can use
+		 * them ("Same as stream"). */
+		ui->listWidget->item(Pages::STREAM)->setHidden(true);
+	}
 
 	// Remove the Advanced Audio section if monitoring is not supported, as the monitoring device selection is the only item in the group box.
 	if (!obs_audio_monitoring_available()) {

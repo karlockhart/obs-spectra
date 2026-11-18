@@ -31,6 +31,11 @@ private:
 	QWidget *loopPathRow;
 	QWidget *clipsPathRow;
 	QSpinBox *quotaGB;
+	/* where the quota moves the oldest recording instead of deleting it */
+	QCheckBox *overflowEnabled;
+	QLineEdit *overflowPath;
+	QWidget *overflowPathRow;
+	QSpinBox *overflowQuotaGB;
 	QSpinBox *segmentSec;
 	QSpinBox *clipSec;
 	QCheckBox *autoStart;
@@ -48,6 +53,8 @@ private:
 	SpectraAppPicker *processes;
 	QLabel *usage;
 	QList<SpectraHotkeyEdit *> shortcuts;
+	QList<QLineEdit *> eventNames;
+	QCheckBox *prismaClips;
 
 	QWidget *PathRow(QLineEdit *edit);
 	/* The folders can't change while the loop records into them */

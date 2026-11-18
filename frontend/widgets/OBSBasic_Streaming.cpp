@@ -18,6 +18,7 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <components/UIValidation.hpp>
 #ifdef YOUTUBE_ENABLED
@@ -47,12 +48,13 @@ void OBSBasic::DisplayStreamStartError()
 
 void OBSBasic::StartStreaming()
 {
-#ifdef SPECTRA_ULTRALIGHT
-	/* Ultralight records only. Every way to start a stream (button, hotkey,
-	 * tray, frontend API, websocket, --startstreaming) ends up here. */
-	blog(LOG_INFO, "Streaming is not available in OBS-Spectra Ultralight");
-	return;
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		/* Recording only (Ultralight, or streaming switched off in Spectra >
+		 * Features). Every way to start a stream (button, hotkey, tray,
+		 * frontend API, websocket, --startstreaming) ends up here. */
+		blog(LOG_INFO, "Streaming is not available: OBS-Spectra is set up to record only");
+		return;
+	}
 	if (outputHandler->StreamingActive()) {
 		return;
 	}

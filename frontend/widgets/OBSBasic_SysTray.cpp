@@ -18,6 +18,7 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 extern bool opt_minimize_tray;
 
@@ -56,9 +57,9 @@ void OBSBasic::SystemTrayInit()
 	trayMenu->addMenu(previewProjector);
 	trayMenu->addMenu(studioProgramProjector);
 	trayMenu->addSeparator();
-#ifndef SPECTRA_ULTRALIGHT
-	trayMenu->addAction(sysTrayStream);
-#endif
+	if (SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		trayMenu->addAction(sysTrayStream);
+	}
 	trayMenu->addAction(sysTrayRecord);
 	trayMenu->addAction(sysTrayReplayBuffer);
 	trayMenu->addAction(sysTrayVirtualCam);

@@ -18,6 +18,7 @@
 ******************************************************************************/
 
 #include "OBSBasic.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <widgets/OBSBasicStats.hpp>
 
@@ -148,20 +149,20 @@ void OBSBasic::CreateHotkeys()
 		return false;                                              \
 	}
 
-#ifdef SPECTRA_ULTRALIGHT
-	/* No streaming in Ultralight */
-	streamingHotkeys = OBS_INVALID_HOTKEY_PAIR_ID;
-#else
-	streamingHotkeys = obs_hotkey_pair_register_frontend(
-		"OBSBasic.StartStreaming", Str("Basic.Main.StartStreaming"), "OBSBasic.StopStreaming",
-		Str("Basic.Main.StopStreaming"),
-		MAKE_CALLBACK(!basic.outputHandler->StreamingActive() && !basic.streamingStarting, basic.StartStreaming,
-			      "Starting stream"),
-		MAKE_CALLBACK(basic.outputHandler->StreamingActive() && !basic.streamingStarting, basic.StopStreaming,
-			      "Stopping stream"),
-		this, this);
-	LoadHotkeyPair(streamingHotkeys, "OBSBasic.StartStreaming", "OBSBasic.StopStreaming");
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		/* No streaming (Ultralight, or switched off) */
+		streamingHotkeys = OBS_INVALID_HOTKEY_PAIR_ID;
+	} else {
+		streamingHotkeys = obs_hotkey_pair_register_frontend(
+			"OBSBasic.StartStreaming", Str("Basic.Main.StartStreaming"), "OBSBasic.StopStreaming",
+			Str("Basic.Main.StopStreaming"),
+			MAKE_CALLBACK(!basic.outputHandler->StreamingActive() && !basic.streamingStarting,
+				      basic.StartStreaming, "Starting stream"),
+			MAKE_CALLBACK(basic.outputHandler->StreamingActive() && !basic.streamingStarting,
+				      basic.StopStreaming, "Stopping stream"),
+			this, this);
+		LoadHotkeyPair(streamingHotkeys, "OBSBasic.StartStreaming", "OBSBasic.StopStreaming");
+	}
 
 	auto cb = [](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 		OBSBasic &basic = *static_cast<OBSBasic *>(data);
@@ -269,6 +270,30 @@ void OBSBasic::CreateHotkeys()
 						      clipLastCallback, this);
 	LoadHotkeyOrDefault(clipLastHotkey, "Spectra.ClipLast", {INTERACT_CONTROL_KEY, OBS_KEY_F10});
 
+	auto eventCallback = [](void *data, obs_hotkey_id id, obs_hotkey_t *, bool pressed) {
+		OBSBasic *basic = static_cast<OBSBasic *>(data);
+		if (!pressed) {
+			return;
+		}
+		for (int slot = 0; slot <= SpectraEvents::NamedSlots; slot++) {
+			if (basic->eventHotkeys[slot] == id) {
+				basic->MarkEvent(slot);
+				return;
+			}
+		}
+	};
+	for (int slot = 0; slot <= SpectraEvents::NamedSlots; slot++) {
+		const std::string name = slot == 0 ? std::string("Spectra.Event")
+						   : "Spectra.Event." + std::to_string(slot);
+		eventHotkeys[slot] = obs_hotkey_register_frontend(name.c_str(), name.c_str(), eventCallback, this);
+		if (slot == 0) {
+			LoadHotkeyOrDefault(eventHotkeys[slot], name.c_str(), {INTERACT_CONTROL_KEY, OBS_KEY_F9});
+		} else {
+			LoadHotkey(eventHotkeys[slot], name.c_str());
+		}
+	}
+	UpdateEventHotkeyNames();
+
 	if (vcamEnabled) {
 		vcamHotkeys = obs_hotkey_pair_register_frontend(
 			"OBSBasic.StartVirtualCam", Str("Basic.Main.StartVirtualCam"), "OBSBasic.StopVirtualCam",
@@ -359,6 +384,10 @@ void OBSBasic::ClearHotkeys()
 	obs_hotkey_pair_unregister(replayBufHotkeys);
 	obs_hotkey_pair_unregister(loopHotkeys);
 	obs_hotkey_unregister(clipLastHotkey);
+	for (obs_hotkey_id &id : eventHotkeys) {
+		obs_hotkey_unregister(id);
+		id = 0;
+	}
 	obs_hotkey_unregister(saveReplayBufferHotkey);
 	obs_hotkey_pair_unregister(vcamHotkeys);
 	obs_hotkey_pair_unregister(togglePreviewHotkeys);

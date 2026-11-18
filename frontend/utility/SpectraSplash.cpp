@@ -1,4 +1,7 @@
 #include "SpectraSplash.hpp"
+#include <utility/SpectraFeatures.hpp>
+
+#include <vector>
 
 #include <QGuiApplication>
 #include <QIcon>
@@ -56,19 +59,21 @@ static QPixmap RenderSplash(const QString &version)
 		const char *icon;
 		const char *name;
 	};
-#ifdef SPECTRA_LITE
-#ifdef SPECTRA_ULTRALIGHT
+#if defined(SPECTRA_ULTRALIGHT)
 	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra Ultralight");
-#else
+#elif defined(SPECTRA_LITE)
 	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra Lite");
-#endif
-	const Tool tools[] = {{":/res/images/spectra/spectra.svg", "Spectra"}};
 #else
 	p.drawText(QRectF(0, 36, SPLASH_WIDTH, 52), Qt::AlignHCenter | Qt::AlignVCenter, "OBS-Spectra");
-	const Tool tools[] = {{":/res/images/spectra/spectra.svg", "Spectra"},
-			      {":/res/images/spectra/obscura.svg", "Obscura"},
-			      {":/res/images/spectra/lucida.svg", "Lucida"}};
 #endif
+	/* The tools this session runs: Spectra > Features can switch them off */
+	std::vector<Tool> tools = {{":/res/images/spectra/spectra.svg", "Spectra"}};
+	if (SpectraFeatures::Enabled(SpectraFeatures::Feature::Obscura)) {
+		tools.push_back({":/res/images/spectra/obscura.svg", "Obscura"});
+	}
+	if (SpectraFeatures::Enabled(SpectraFeatures::Feature::Lucida)) {
+		tools.push_back({":/res/images/spectra/lucida.svg", "Lucida"});
+	}
 
 	QFont label = p.font();
 	label.setPixelSize(16);

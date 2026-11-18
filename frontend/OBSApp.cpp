@@ -17,6 +17,7 @@
 
 #include "OBSApp.hpp"
 
+#include <utility/SpectraConfigLocation.hpp>
 #include <utility/SpectraSplash.hpp>
 
 #include <components/Multiview.hpp>
@@ -1336,6 +1337,9 @@ bool OBSApp::OBSInit()
 
 	blog(LOG_INFO, "Qt Version: %s (runtime), %s (compiled)", qVersion(), QT_VERSION_STR);
 	blog(LOG_INFO, "Portable mode: %s", portable_mode ? "true" : "false");
+	if (!SpectraConfigLocation::Note().empty()) {
+		blog(LOG_INFO, "[Spectra] %s", SpectraConfigLocation::Note().c_str());
+	}
 
 	if (safe_mode) {
 		blog(LOG_WARNING, "Safe Mode enabled.");
@@ -1779,17 +1783,32 @@ vector<pair<string, string>> GetLocaleNames()
 #endif
 
 /* Outside portable mode Spectra keeps its configuration in its own folder,
- * so it never reads or overwrites an installed OBS Studio's settings. */
-#define SPECTRA_CONFIG_DIR "OBS-Spectra"
-
-static std::string SpectraConfigName(const char *name)
+ * %USERPROFILE%\Spectra (SpectraConfigLocation), so it never reads or
+ * overwrites an installed OBS Studio's settings. */
+static std::string SpectraConfigPath(const char *name)
 {
-	std::string spectraName = SPECTRA_CONFIG_DIR;
-	if (name && *name) {
-		spectraName += "/";
-		spectraName += name;
+	std::string path = SpectraConfigLocation::Root();
+	if (path.empty()) {
+		/* no user profile: the old place */
+		char legacy[512];
+		if (os_get_config_path(legacy, sizeof(legacy), "OBS-Spectra") > 0) {
+			path = legacy;
+		}
 	}
-	return spectraName;
+	if (name && *name) {
+		path += "/";
+		path += name;
+	}
+	return path;
+}
+
+static int SpectraConfigPathTo(char *dst, size_t size, const char *name)
+{
+	std::string path = SpectraConfigPath(name);
+	if (path.size() + 1 > size) {
+		return -1;
+	}
+	return snprintf(dst, size, "%s", path.c_str());
 }
 
 int GetAppConfigPath(char *path, size_t size, const char *name)
@@ -1802,10 +1821,10 @@ int GetAppConfigPath(char *path, size_t size, const char *name)
 			return snprintf(path, size, CONFIG_PATH);
 		}
 	} else {
-		return os_get_config_path(path, size, SpectraConfigName(name).c_str());
+		return SpectraConfigPathTo(path, size, name);
 	}
 #else
-	return os_get_config_path(path, size, SpectraConfigName(name).c_str());
+	return SpectraConfigPathTo(path, size, name);
 #endif
 }
 
@@ -1821,10 +1840,10 @@ char *GetAppConfigPathPtr(const char *name)
 			return NULL;
 		}
 	} else {
-		return os_get_config_path_ptr(SpectraConfigName(name).c_str());
+		return bstrdup(SpectraConfigPath(name).c_str());
 	}
 #else
-	return os_get_config_path_ptr(SpectraConfigName(name).c_str());
+	return bstrdup(SpectraConfigPath(name).c_str());
 #endif
 }
 

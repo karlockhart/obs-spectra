@@ -1,4 +1,5 @@
 #include "lucida-settings.hpp"
+#include "lucida-prisma.hpp"
 #include "lucida-regions.hpp"
 #include "lucida-speech.hpp"
 
@@ -88,6 +89,7 @@ QWidget *Page(QLayout *layout)
 }
 
 enum Column { kTag, kTriggers };
+enum EventColumn { kEventName, kEventTriggers, kEventClip };
 
 } // namespace
 
@@ -101,6 +103,7 @@ SettingsDialog::SettingsDialog(Controller *controller_, QWidget *parent) : QDial
 	QTabWidget *tabs = new QTabWidget();
 	tabs->addTab(GeneralPage(s), T("Lucida.Settings.General"));
 	tabs->addTab(TagsPage(s), T("Lucida.Settings.Tags"));
+	tabs->addTab(EventsPage(s), T("Lucida.Settings.Events"));
 	tabs->addTab(SamplingPage(s), T("Lucida.Settings.Sampling"));
 	tabs->addTab(ScreenshotsPage(s), T("Lucida.Settings.Screenshots"));
 	tabs->addTab(SpeechPage(s), T("Lucida.Settings.Speech"));
@@ -307,9 +310,28 @@ QWidget *SettingsDialog::CloudPage(const Settings &s)
 	test->setAutoDefault(false);
 	connect(test, &QPushButton::clicked, this, &SettingsDialog::TestCloud);
 
+	/* pair this PC with Prisma: its URL and the panel's passphrase, or a code */
+	QPushButton *pair = new QPushButton(T("Lucida.Prisma.Connect.Button"));
+	pair->setAutoDefault(false);
+	connect(pair, &QPushButton::clicked, this, [this] {
+		QString current;
+		const QString path = Collect().CloudCredentialsFile();
+		if (!path.isEmpty()) {
+			if (std::optional<PrismaCredentials> creds = PrismaCredentials::FromFile(path)) {
+				current = creds->url;
+			}
+		}
+		PrismaConnectDialog dialog(current, this);
+		if (dialog.exec() == QDialog::Accepted && !dialog.CredentialsPath().isEmpty()) {
+			cloudCredentials->setText(QDir::toNativeSeparators(dialog.CredentialsPath()));
+			cloudTest->setText(T("Lucida.Prisma.Connect.Done"));
+		}
+	});
+
 	QFormLayout *form = new QFormLayout();
 	form->addRow(cloudEnabled);
 	form->addRow(Note(T("Lucida.Settings.Cloud.Note")));
+	form->addRow(QString(), pair);
 	form->addRow(T("Lucida.Settings.CloudCredentials"), row);
 	form->addRow(QString(), cloudFound);
 	form->addRow(cloudFrames);
@@ -778,6 +800,108 @@ QWidget *SettingsDialog::TagsPage(const Settings &s)
 	return Page(layout);
 }
 
+/* --- event rules ------------------------------------------------------------ */
+
+QWidget *SettingsDialog::EventsPage(const Settings &s)
+{
+	eventRules = new QTableWidget(0, 3);
+	eventRules->setHorizontalHeaderLabels(
+		{T("Lucida.Settings.Event"), T("Lucida.Settings.Triggers"), T("Lucida.Settings.EventClip")});
+	eventRules->horizontalHeader()->setSectionResizeMode(kEventName, QHeaderView::ResizeToContents);
+	eventRules->horizontalHeader()->setSectionResizeMode(kEventTriggers, QHeaderView::Stretch);
+	eventRules->horizontalHeader()->setSectionResizeMode(kEventClip, QHeaderView::ResizeToContents);
+	eventRules->verticalHeader()->setVisible(false);
+	eventRules->setSelectionBehavior(QAbstractItemView::SelectRows);
+	for (const EventRule &rule : s.events.rules) {
+		AddEventRule(rule);
+	}
+
+	QPushButton *add = new QPushButton(T("Lucida.Settings.AddRule"));
+	QPushButton *remove = new QPushButton(T("Lucida.Settings.RemoveRule"));
+	for (QPushButton *b : {add, remove}) {
+		b->setAutoDefault(false);
+	}
+	connect(add, &QPushButton::clicked, this, [this] {
+		AddEventRule({});
+		eventRules->setCurrentCell(eventRules->rowCount() - 1, kEventName);
+		eventRules->editItem(eventRules->item(eventRules->rowCount() - 1, kEventName));
+	});
+	connect(remove, &QPushButton::clicked, this, [this] {
+		QList<int> rows;
+		for (const QModelIndex &index : eventRules->selectionModel()->selectedRows()) {
+			rows << index.row();
+		}
+		std::sort(rows.begin(), rows.end(), std::greater<int>());
+		for (int row : rows) {
+			eventRules->removeRow(row);
+		}
+	});
+	QHBoxLayout *buttons = new QHBoxLayout();
+	buttons->addWidget(add);
+	buttons->addWidget(remove);
+	buttons->addStretch(1);
+
+	auto seconds = [](int value, int max) {
+		QSpinBox *box = new QSpinBox();
+		box->setRange(0, max);
+		box->setSuffix(QStringLiteral(" s"));
+		box->setValue(value);
+		return box;
+	};
+	eventClipBefore = seconds(s.events.clipBefore, 600);
+	eventClipAfter = seconds(s.events.clipAfter, 600);
+	eventCooldown = seconds(s.events.cooldown, 3600);
+	eventCooldown->setToolTip(T("Lucida.Settings.EventCooldown.Tip"));
+	QFormLayout *form = new QFormLayout();
+	form->addRow(T("Lucida.Settings.EventClipBefore"), eventClipBefore);
+	form->addRow(T("Lucida.Settings.EventClipAfter"), eventClipAfter);
+	form->addRow(T("Lucida.Settings.EventCooldown"), eventCooldown);
+
+	QVBoxLayout *layout = new QVBoxLayout();
+	layout->addWidget(Note(T("Lucida.Settings.Events.Note")));
+	layout->addWidget(eventRules, 1);
+	layout->addLayout(buttons);
+	layout->addLayout(form);
+	return Page(layout);
+}
+
+void SettingsDialog::AddEventRule(const EventRule &rule)
+{
+	const int row = eventRules->rowCount();
+	eventRules->insertRow(row);
+	eventRules->setItem(row, kEventName, new QTableWidgetItem(rule.name));
+	QTableWidgetItem *triggers = new QTableWidgetItem(rule.triggers.join(QStringLiteral(", ")));
+	triggers->setToolTip(T("Lucida.Settings.Triggers.Tip"));
+	eventRules->setItem(row, kEventTriggers, triggers);
+	QTableWidgetItem *clip = new QTableWidgetItem();
+	clip->setFlags((clip->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+	clip->setCheckState(rule.clip ? Qt::Checked : Qt::Unchecked);
+	clip->setToolTip(T("Lucida.Settings.EventClip.Tip"));
+	eventRules->setItem(row, kEventClip, clip);
+}
+
+QList<EventRule> SettingsDialog::EventRules() const
+{
+	QList<EventRule> out;
+	for (int row = 0; row < eventRules->rowCount(); row++) {
+		EventRule rule;
+		QTableWidgetItem *name = eventRules->item(row, kEventName);
+		QTableWidgetItem *triggers = eventRules->item(row, kEventTriggers);
+		QTableWidgetItem *clip = eventRules->item(row, kEventClip);
+		rule.name = name ? name->text().trimmed() : QString();
+		for (const QString &t : (triggers ? triggers->text() : QString()).split(',', Qt::SkipEmptyParts)) {
+			if (!t.trimmed().isEmpty()) {
+				rule.triggers << t.trimmed();
+			}
+		}
+		rule.clip = clip && clip->checkState() == Qt::Checked;
+		if (!rule.name.isEmpty() && !rule.triggers.isEmpty()) {
+			out << rule;
+		}
+	}
+	return out;
+}
+
 /* --- tag rules -------------------------------------------------------------- */
 
 void SettingsDialog::AddRule(const TagRule &rule)
@@ -862,6 +986,10 @@ Settings SettingsDialog::Collect() const
 
 	s.tagRules = Rules();
 	s.tolerateTypos = tolerateTypos->isChecked();
+	s.events.rules = EventRules();
+	s.events.clipBefore = eventClipBefore->value();
+	s.events.clipAfter = eventClipAfter->value();
+	s.events.cooldown = eventCooldown->value();
 
 	s.cloudEnabled = cloudEnabled->isChecked();
 	const QString creds = cloudCredentials->text().trimmed();

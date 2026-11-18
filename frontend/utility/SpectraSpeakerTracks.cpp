@@ -1,4 +1,5 @@
 #include "SpectraSpeakerTracks.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <obs.hpp>
 
@@ -48,13 +49,12 @@ void Route(obs_source_t *source, Speaker speaker)
 
 bool Enabled(config_t *profile)
 {
-#ifdef SPECTRA_LITE
 	/* Only Lucida's transcripts use the extra tracks */
-	UNUSED_PARAMETER(profile);
-	return false;
-#else
+	using SpectraFeatures::Feature;
+	if (!SpectraFeatures::Enabled(Feature::Lucida) || !SpectraFeatures::Enabled(Feature::Speech)) {
+		return false;
+	}
 	return config_get_bool(profile, "SpectraLoop", "SpeakerTracks");
-#endif
 }
 
 void Apply()

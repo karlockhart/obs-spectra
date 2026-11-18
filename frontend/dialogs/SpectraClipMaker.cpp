@@ -1,4 +1,7 @@
 #include "SpectraClipMaker.hpp"
+#include <utility/SpectraPrisma.hpp>
+#include <utility/SpectraEvents.hpp>
+#include <utility/SpectraFeatures.hpp>
 
 #include <components/ClipTimeline.hpp>
 #include <dialogs/SpectraYouTubeUpload.hpp>
@@ -10,6 +13,8 @@
 
 #include <qt-wrappers.hpp>
 
+#include <QLocale>
+#include <QInputDialog>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QCloseEvent>
@@ -487,6 +492,8 @@ QWidget *SpectraClipMaker::BuildTimeline()
 	connect(timeline, &ClipTimeline::zoomChanged, this, &SpectraClipMaker::UpdateZoomSlider);
 	UpdateZoomSlider();
 	connect(timeline, &ClipTimeline::seekRequested, this, &SpectraClipMaker::Seek);
+	connect(timeline, &ClipTimeline::pinClicked, this, &SpectraClipMaker::Seek);
+	connect(timeline, &ClipTimeline::pinDoubleClicked, this, &SpectraClipMaker::RenameEvent);
 	connect(timeline, &ClipTimeline::scrubStarted, this, [this]() {
 		resumeAfterScrub = playing;
 		if (playing) {
@@ -721,14 +728,14 @@ QWidget *SpectraClipMaker::BuildSidePanel()
 	QTabWidget *tabs = new QTabWidget();
 	tabs->addTab(BuildLayerPanel(), QTStr("Spectra.ClipMaker.CensorTab"));
 	QWidget *captionPanel = BuildCaptionPanel();
-#ifdef SPECTRA_LITE
-	/* No speech recognition to make captions with; the panel's widgets
-	 * stay, unshown, because the export reads them */
-	captionPanel->setParent(tabs);
-	captionPanel->hide();
-#else
-	tabs->addTab(captionPanel, QTStr("Spectra.ClipMaker.CaptionsTab"));
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Speech)) {
+		/* No speech recognition to make captions with; the panel's widgets
+		 * stay, unshown, because the export reads them */
+		captionPanel->setParent(tabs);
+		captionPanel->hide();
+	} else {
+		tabs->addTab(captionPanel, QTStr("Spectra.ClipMaker.CaptionsTab"));
+	}
 	return tabs;
 }
 
@@ -1201,6 +1208,7 @@ void SpectraClipMaker::ScanFinished(int generation, const std::vector<ScannedFil
 					    s.sessionStart});
 	}
 	timeline->SetSegments(timelineSegments);
+	ReloadEvents();
 
 	UpdateLibrary();
 	LayersChanged();
@@ -1458,6 +1466,70 @@ void SpectraClipMaker::SwapToStandby()
 		obs_source_set_muted(next.source, false);
 		obs_source_media_play_pause(next.source, !playing);
 	}
+}
+
+void SpectraClipMaker::ReloadEvents()
+{
+	QVector<ClipTimeline::Pin> pins;
+	pinEvents.clear();
+	auto add = [&](double t, const SpectraEvents::Event &event, const QString &file) {
+		pins.push_back(
+			{t, SpectraEvents::PinText(event), SpectraEvents::PinColor(event), (int)pinEvents.size()});
+		pinEvents.push_back({file, event.time, event.name});
+	};
+	if (mode == Mode::Loop && !folder.isEmpty()) {
+		/* the loop folder's, or an archived folder of segments' */
+		const QString file = SpectraEvents::FilePath(folder);
+		for (const SpectraEvents::Event &event : SpectraEvents::LoadFile(file)) {
+			/* the segment that was recording at the time */
+			for (const Segment &s : segments) {
+				const qint64 into = s.recorded.msecsTo(event.time);
+				if (into >= 0 && into <= (qint64)(s.duration * 1000.0)) {
+					add(s.start + into / 1000.0, event, file);
+					break;
+				}
+			}
+		}
+	}
+	/* a block of time archived or backed up as one file brings its own */
+	for (const Segment &s : segments) {
+		const QString sidecar = SpectraEvents::SidecarPath(s.path);
+		if (!QFileInfo::exists(sidecar)) {
+			continue;
+		}
+		for (const SpectraEvents::Event &event : SpectraEvents::LoadFile(sidecar)) {
+			if (event.offset >= 0.0 && event.offset <= s.duration) {
+				add(s.start + event.offset, event, sidecar);
+			}
+		}
+	}
+	timeline->SetPins(pins);
+}
+
+void SpectraClipMaker::RenameEvent(int id)
+{
+	if (id < 0 || id >= (int)pinEvents.size()) {
+		return;
+	}
+	const PinEvent event = pinEvents[id];
+	bool ok = false;
+	const QString name =
+		QInputDialog::getText(
+			this, QTStr("Spectra.Event.RenameTitle"),
+			QTStr("Spectra.Event.RenameText").arg(QLocale().toString(event.time, QLocale::LongFormat)),
+			QLineEdit::Normal, event.name, &ok)
+			.trimmed();
+	if (!ok || name == event.name) {
+		return;
+	}
+	if (!event.time.isValid() || !SpectraEvents::Rename(event.file, event.time, name)) {
+		QMessageBox::warning(this, QTStr("Spectra.Event.RenameTitle"),
+				     QTStr("Spectra.Event.RenameFailed").arg(QDir::toNativeSeparators(event.file)));
+		return;
+	}
+	blog(LOG_INFO, "[Spectra] Event at %s named \"%s\"", QT_TO_UTF8(event.time.toString(Qt::ISODate)),
+	     QT_TO_UTF8(name));
+	ReloadEvents();
 }
 
 void SpectraClipMaker::Seek(double t)
@@ -2825,9 +2897,16 @@ void SpectraClipMaker::ExportFinished(bool ok, const QString &path, const QStrin
 				QTStr("Spectra.ClipMaker.Saved").arg(QDir::toNativeSeparators(path)), QMessageBox::Ok,
 				this);
 		QPushButton *show = box.addButton(QTStr("Spectra.ClipMaker.ShowFile"), QMessageBox::ActionRole);
+		QPushButton *prisma = SpectraPrisma::Ready()
+					      ? box.addButton(QTStr("Spectra.Prisma.Export"), QMessageBox::ActionRole)
+					      : nullptr;
 		box.exec();
 		if (box.clickedButton() == show) {
 			QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+		} else if (prisma && box.clickedButton() == prisma) {
+			SpectraPrisma::Export(QStringLiteral("clips"), path, QFileInfo(path).completeBaseName(),
+					      QString(), QDateTime(), ClipExport::ProbeDuration(path.toStdString()),
+					      {});
 		}
 	} else if (!cancelled) {
 		OBSMessageBox::warning(this, QTStr("Spectra.ClipMaker.Title"),

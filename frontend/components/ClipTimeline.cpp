@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollBar>
+#include <QToolTip>
 #include <QWheelEvent>
 
 #include <algorithm>
@@ -82,6 +83,34 @@ void ClipTimeline::SetSegments(const QVector<Segment> &segments_)
 		SetZoom(pxPerSec, ScrollTime());
 	}
 	update();
+}
+
+void ClipTimeline::SetPins(const QVector<Pin> &pins_)
+{
+	pins = pins_;
+	hoverPin = -1;
+	update();
+}
+
+/* Pinheads sit in the ruler's top half */
+static constexpr int PIN_HEAD_Y = 7;
+static constexpr int PIN_HEAD_R = 5;
+
+int ClipTimeline::PinAt(const QPoint &pos) const
+{
+	if (pos.x() < ContentLeft() || pos.y() > PIN_HEAD_Y + PIN_HEAD_R + 3) {
+		return -1;
+	}
+	int best = -1;
+	int bestDist = PIN_HEAD_R + 3;
+	for (int i = 0; i < pins.size(); i++) {
+		const int d = std::abs(pos.x() - XAt(pins[i].time));
+		if (d <= bestDist) {
+			best = i;
+			bestDist = d;
+		}
+	}
+	return best;
 }
 
 void ClipTimeline::SetBars(const QVector<Bar> &bars_)
@@ -520,6 +549,24 @@ void ClipTimeline::paintEvent(QPaintEvent *)
 	}
 	p.setFont(font());
 
+	/* Event pins: a thin line down the tracks and a head on the ruler */
+	for (int i = 0; i < pins.size(); i++) {
+		const Pin &pin = pins[i];
+		if (pin.time < visibleStart || pin.time > visibleEnd) {
+			continue;
+		}
+		const int x = XAt(pin.time);
+		QColor color = pin.color.isValid() ? pin.color : QColor(0xff, 0xb0, 0x20);
+		QColor line = color;
+		line.setAlpha(110);
+		p.setPen(QPen(line, 1, Qt::DashLine));
+		p.drawLine(x, PIN_HEAD_Y + PIN_HEAD_R, x, contentBottom);
+		p.setPen(QPen(color.darker(160), 1));
+		p.setBrush(i == hoverPin ? color.lighter(130) : color);
+		p.drawEllipse(QPoint(x, PIN_HEAD_Y), PIN_HEAD_R, PIN_HEAD_R);
+		p.setBrush(Qt::NoBrush);
+	}
+
 	/* Playhead */
 	int px = XAt(playhead);
 	p.setPen(QPen(playheadColor, 2));
@@ -660,6 +707,12 @@ void ClipTimeline::mousePressEvent(QMouseEvent *event)
 		return;
 	}
 
+	const int pin = PinAt(pos);
+	if (pin >= 0) {
+		emit pinClicked(pins[pin].time);
+		return;
+	}
+
 	if (pos.x() < ContentLeft()) {
 		int index = BarIndexAt(pos.y());
 		if (index >= 0) {
@@ -732,6 +785,19 @@ void ClipTimeline::mouseMoveEvent(QMouseEvent *event)
 
 	if (drag == Drag::None) {
 		UpdateHover(pos);
+		const int pin = PinAt(pos);
+		if (pin != hoverPin) {
+			hoverPin = pin;
+			update();
+		}
+		if (pin >= 0) {
+			setCursor(Qt::PointingHandCursor);
+			QToolTip::showText(event->globalPosition().toPoint(),
+					   pins[pin].text + QStringLiteral("\n") + FormatTime(pins[pin].time, false),
+					   this);
+		} else {
+			QToolTip::hideText();
+		}
 		return;
 	}
 
@@ -861,6 +927,14 @@ void ClipTimeline::mouseReleaseEvent(QMouseEvent *event)
 void ClipTimeline::mouseDoubleClickEvent(QMouseEvent *event)
 {
 	const QPoint pos = event->position().toPoint();
+	if (event->button() == Qt::LeftButton) {
+		const int pin = PinAt(pos);
+		if (pin >= 0) {
+			QToolTip::hideText();
+			emit pinDoubleClicked(pins[pin].id);
+			return;
+		}
+	}
 	if (event->button() == Qt::LeftButton && HitAt(pos) == Hit::Range) {
 		ZoomToRange();
 		return;
@@ -871,6 +945,11 @@ void ClipTimeline::mouseDoubleClickEvent(QMouseEvent *event)
 void ClipTimeline::leaveEvent(QEvent *event)
 {
 	QWidget::leaveEvent(event);
+	if (hoverPin >= 0) {
+		hoverPin = -1;
+		QToolTip::hideText();
+		update();
+	}
 	if (drag == Drag::None && hover != Hit::None) {
 		hover = Hit::None;
 		update();
