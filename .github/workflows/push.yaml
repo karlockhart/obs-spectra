@@ -128,6 +128,10 @@ jobs:
       SPECTRA_SIGNING_ENDPOINT: ${{ vars.SPECTRA_SIGNING_ENDPOINT }}
       SPECTRA_SIGNING_ACCOUNT: ${{ vars.SPECTRA_SIGNING_ACCOUNT }}
       SPECTRA_SIGNING_PROFILE: ${{ vars.SPECTRA_SIGNING_PROFILE }}
+      # at most this many signatures per release (default 1000); "fail" stops a
+      # release that can't be signed instead of releasing it unsigned
+      SPECTRA_SIGNING_MAX: ${{ vars.SPECTRA_SIGNING_MAX }}
+      SPECTRA_SIGNING_FALLBACK: ${{ vars.SPECTRA_SIGNING_FALLBACK }}
       # whose build is released: a pull request's, or this run's own
       BUILD_RUN: ${{ needs.find-build.outputs.run-id || github.run_id }}
       BUILD_RUN_URL: ${{ needs.find-build.outputs.run-url || format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
@@ -244,6 +248,10 @@ jobs:
           # installer; signed when the Azure sign-in is set up
           $version = '${{ steps.check.outputs.version }}'
           $sign = $env:SIGN -eq 'true'
+          # every edition shares one cache of signed files and one signature count
+          # (Sign-Spectra.ps1): a file the editions share is signed once
+          $env:SPECTRA_SIGNING_CACHE = Join-Path $env:RUNNER_TEMP 'spectra-signing-cache'
+          $env:SPECTRA_SIGNING_COUNT_FILE = Join-Path $env:RUNNER_TEMP 'spectra-signatures.txt'
           foreach ($edition in @(
               @{ Name = 'Full'; Dir = 'full' },
               @{ Name = 'Lite'; Dir = 'lite' },
@@ -275,6 +283,15 @@ jobs:
           done
           if [[ "${SIGN}" != 'true' ]]; then
             printf '\nThese builds are not code signed.\n' >> ../CHECKSUMS.txt
+          fi
+          for unsigned in UNSIGNED-*.txt; do
+            [[ -e "${unsigned}" ]] || continue
+            edition="${unsigned#UNSIGNED-}"
+            printf '\nThe %s files are not code signed: %s\n' "${edition%.txt}" "$(cat "${unsigned}")" >> ../CHECKSUMS.txt
+            rm "${unsigned}"
+          done
+          if [[ -f "${RUNNER_TEMP}/spectra-signatures.txt" ]]; then
+            echo "Signatures used: $(cat "${RUNNER_TEMP}/spectra-signatures.txt")" >> "${GITHUB_STEP_SUMMARY}"
           fi
           printf '\nBuilt in %s.\n' "${BUILD_RUN_URL}" >> ../CHECKSUMS.txt
 

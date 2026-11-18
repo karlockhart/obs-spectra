@@ -85,11 +85,28 @@ if ((Split-Path -Leaf $Build) -match '^obs-studio-(?<built>.+)-windows-x64\.zip$
 Set-Content -Path (Join-Path $tree 'bin\64bit\obs-spectra-release.txt') -Value $Version -NoNewline -Encoding ascii
 Write-Host '::endgroup::'
 
+# Signing that can't be done (the release's signature budget, the account's
+# quota, the service down) leaves this edition unsigned, and the release notes
+# say so (UNSIGNED-<edition>.txt), unless SPECTRA_SIGNING_FALLBACK is "fail"
 $signCommand = $null
+function Release-Unsigned([string] $why) {
+    if ($env:SPECTRA_SIGNING_FALLBACK -eq 'fail') {
+        throw $why
+    }
+    Write-Host "::warning::$Edition is released unsigned: $why"
+    Set-Content -Path (Join-Path $OutputDir "UNSIGNED-$Edition.txt") -Value $why -Encoding utf8
+}
 if ($Sign) {
     Write-Host "::group::Sign $Edition"
-    & (Join-Path $PSScriptRoot 'Sign-Spectra.ps1') -Path $tree
-    $signCommand = & (Join-Path $PSScriptRoot 'Sign-Spectra.ps1') -Path $tree -InnoCommand
+    try {
+        & (Join-Path $PSScriptRoot 'Sign-Spectra.ps1') -Path $tree
+        $signCommand = & (Join-Path $PSScriptRoot 'Sign-Spectra.ps1') -Path $tree -InnoCommand
+    } catch {
+        if ("$_" -notlike 'SPECTRA-SIGNING-UNAVAILABLE*') {
+            throw
+        }
+        Release-Unsigned "$_"
+    }
     Write-Host '::endgroup::'
 }
 
@@ -97,15 +114,25 @@ Write-Host "::group::Zip $Edition"
 foreach ($zip in "$name.zip", "$name-Portable.zip") {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $OutputDir $zip)
 }
+# Compressed once, on every core: the portable zip is the same zip with
+# portable_mode.txt added, which 7-Zip appends without compressing the rest
+# again (maximum Deflate twice over took most of a release's time)
 Push-Location $tree
 try {
-    & 7z a -tzip -mx=9 (Join-Path $OutputDir "$name.zip") '.\*' | Out-Null
+    & 7z a -tzip -mx=5 -mmt=on (Join-Path $OutputDir "$name.zip") '.\*' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw '7z failed' }
-    # OBS-Spectra updates itself in place with bin/64bit/spectra-updater.exe
-    New-Item -ItemType File -Path 'portable_mode.txt' | Out-Null
-    & 7z a -tzip -mx=9 (Join-Path $OutputDir "$name-Portable.zip") '.\*' | Out-Null
+} finally {
+    Pop-Location
+}
+Copy-Item (Join-Path $OutputDir "$name.zip") (Join-Path $OutputDir "$name-Portable.zip")
+$marker = Join-Path $work 'portable'
+New-Item -ItemType Directory -Force -Path $marker | Out-Null
+# OBS-Spectra updates itself in place with bin/64bit/spectra-updater.exe
+New-Item -ItemType File -Path (Join-Path $marker 'portable_mode.txt') | Out-Null
+Push-Location $marker
+try {
+    & 7z a -tzip (Join-Path $OutputDir "$name-Portable.zip") 'portable_mode.txt' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw '7z failed' }
-    Remove-Item 'portable_mode.txt'
 } finally {
     Pop-Location
 }
@@ -138,11 +165,34 @@ if ($Redist) {
     }
     $isccArgs += "/DRedist=$((Resolve-Path $Redist).Path)"
 }
-if ($signCommand) {
-    $isccArgs += '/DSign', "/Sspectra=$signCommand"
+$script = Join-Path $repo 'frontend\spectra-installer\OBS-Spectra.iss'
+$budgetLeft = $true
+if ($signCommand -and $env:SPECTRA_SIGNING_COUNT_FILE -and (Test-Path $env:SPECTRA_SIGNING_COUNT_FILE)) {
+    $max = if ($env:SPECTRA_SIGNING_MAX) { [int]$env:SPECTRA_SIGNING_MAX } else { 1000 }
+    # the installer and its uninstaller
+    $budgetLeft = [int](Get-Content $env:SPECTRA_SIGNING_COUNT_FILE -Raw) + 2 -le $max
 }
-& $Iscc @isccArgs (Join-Path $repo 'frontend\spectra-installer\OBS-Spectra.iss')
-if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+if ($signCommand -and -not $budgetLeft) {
+    Release-Unsigned 'the installer would go over SPECTRA_SIGNING_MAX'
+    $signCommand = $null
+}
+if ($signCommand) {
+    & $Iscc @isccArgs '/DSign' "/Sspectra=$signCommand" $script
+    if ($LASTEXITCODE -eq 0) {
+        if ($env:SPECTRA_SIGNING_COUNT_FILE) {
+            $count = if (Test-Path $env:SPECTRA_SIGNING_COUNT_FILE) { [int](Get-Content $env:SPECTRA_SIGNING_COUNT_FILE -Raw) } else { 0 }
+            Set-Content -Path $env:SPECTRA_SIGNING_COUNT_FILE -Value ($count + 2) -NoNewline
+        }
+    } else {
+        # most likely the signing (Inno Setup already retried it): build it unsigned
+        Release-Unsigned "signing the installer failed (ISCC $LASTEXITCODE)"
+        $signCommand = $null
+    }
+}
+if (-not $signCommand) {
+    & $Iscc @isccArgs $script
+    if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+}
 Write-Host '::endgroup::'
 
 Remove-Item -Recurse -Force $work

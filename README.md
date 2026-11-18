@@ -162,6 +162,8 @@ Builds make the Full edition, which *Spectra > Features...* switches down to wha
 
 Signing is on once the repository has the variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`: an Entra app with a federated credential for this repository's `release` environment, which only tag pushes may use. GitHub's token names the repository by its owner and repository ids, so the credential's subject is `repo:karlockhart@182013/obs-spectra@1381966325:environment:release` (a second one with the plain `repo:karlockhart/obs-spectra:environment:release` does no harm) and the *Artifact Signing Certificate Profile Signer* role on the certificate profile. `SPECTRA_SIGNING_ENDPOINT`, `SPECTRA_SIGNING_ACCOUNT` and `SPECTRA_SIGNING_PROFILE` override the account `.github/scripts/Sign-Spectra.ps1` signs with. Without them the release is built unsigned. To sign a local build with your own Azure sign-in (`az login`): `.github/scripts/Sign-Spectra.ps1 -Path <folder>`.
 
+A release signs each binary once: the copies the three editions share take the one signed copy, so a release with all three editions uses about 250 signatures of the Basic plan's 5,000 a month (Microsoft bills each one past that). `SPECTRA_SIGNING_MAX` caps the signatures one release may use (1000 by default). When a release can't be signed (the cap reached, the account refusing, or the service still failing after retries), it is released unsigned and its notes say which editions; with `SPECTRA_SIGNING_FALLBACK=fail` it stops instead.
+
 ## License
 
 OBS-Spectra is distributed under the **GNU General Public License v2.0 or later**, the same license as OBS Studio. See [COPYING](COPYING). Third-party components keep their own licenses, listed below.
