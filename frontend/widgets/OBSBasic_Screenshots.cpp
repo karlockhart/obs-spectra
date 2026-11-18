@@ -21,6 +21,8 @@
 
 #include <qt-wrappers.hpp>
 
+#include <QFileInfo>
+
 /* The largest game or window capture in the program output that is hooked
  * onto a window. Its own size is the game's resolution, which the canvas
  * (and so a screenshot of the output) is often smaller than. */
@@ -67,6 +69,15 @@ void OBSBasic::Screenshot(OBSSource source)
 	}
 
 	screenshotData = new ScreenshotObj(source);
+
+	connect(screenshotData, &ScreenshotObj::imageSaved, this, [this](std::string path) {
+		ShowStatusBarMessage(QTStr("Basic.StatusBar.ScreenshotSavedTo").arg(QT_UTF8(path.c_str())));
+		lastScreenshot = path;
+		SpectraToast(SpectraOverlay::Kind::Screenshot, QTStr("Spectra.Overlay.Screenshot"),
+			     QFileInfo(QT_UTF8(path.c_str())).fileName());
+
+		OnEvent(OBS_FRONTEND_EVENT_SCREENSHOT_TAKEN);
+	});
 }
 
 void OBSBasic::ScreenshotGame()

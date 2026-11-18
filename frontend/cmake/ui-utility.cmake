@@ -70,11 +70,19 @@ target_sources(
     utility/SimpleOutput.cpp
     utility/SimpleOutput.hpp
     utility/SpectraDefaults.cpp
+    utility/SpectraConfigLocation.cpp
+    utility/SpectraConfigLocation.hpp
     utility/SpectraDefaults.hpp
+    utility/SpectraEvents.cpp
+    utility/SpectraEvents.hpp
+    utility/SpectraFeatures.cpp
+    utility/SpectraFeatures.hpp
     utility/SpectraGamepad.cpp
     utility/SpectraGamepad.hpp
     utility/SpectraOverlay.cpp
     utility/SpectraOverlay.hpp
+    utility/SpectraPrisma.cpp
+    utility/SpectraPrisma.hpp
     utility/SpectraReleases.cpp
     utility/SpectraReleases.hpp
     utility/SpectraSpeakerTracks.cpp

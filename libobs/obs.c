@@ -27,7 +27,6 @@ struct obs_core *obs = NULL;
 
 static THREAD_LOCAL bool is_ui_thread = false;
 
-extern void add_default_module_paths(void);
 extern char *find_libobs_data_file(const char *file);
 
 static inline void make_video_info(struct video_output_info *vi, struct obs_video_info *ovi)
@@ -1267,7 +1266,8 @@ static bool obs_init(const char *locale, const char *module_config_path, profile
 	obs_register_source(&scene_info);
 	obs_register_source(&group_info);
 	obs_register_source(&audio_line_info);
-	add_default_module_paths();
+
+	obs->core_modules_loaded = false;
 	return true;
 }
 
@@ -1462,11 +1462,6 @@ void obs_shutdown(void)
 		bfree(obs->disabled_modules.array[i]);
 	}
 	da_free(obs->disabled_modules);
-
-	for (size_t i = 0; i < obs->core_modules.num; i++) {
-		bfree(obs->core_modules.array[i]);
-	}
-	da_free(obs->core_modules);
 
 	if (obs->name_store_owned)
 		profiler_name_store_free(obs->name_store);
@@ -2361,11 +2356,11 @@ static obs_source_t *obs_load_source_type(obs_data_t *source_data, bool is_priva
 		}
 	}
 
-	obs_data_set_default_bool(source_data, "monitoring", false);
+	obs_data_set_default_bool(source_data, "monitoring_enabled", false);
 	if (prev_ver < MAKE_SEMANTIC_VERSION(33, 0, 0)) {
-		obs_data_set_bool(source_data, "monitoring", monitoring_type != OBS_MONITORING_TYPE_NONE);
+		obs_data_set_bool(source_data, "monitoring_enabled", monitoring_type != OBS_MONITORING_TYPE_NONE);
 	}
-	obs_source_set_monitoring_enabled(source, obs_data_get_bool(source_data, "monitoring"));
+	obs_source_set_monitoring_enabled(source, obs_data_get_bool(source_data, "monitoring_enabled"));
 
 	obs_data_release(source->private_settings);
 	source->private_settings = obs_data_get_obj(source_data, "private_settings");
@@ -2505,7 +2500,7 @@ obs_data_t *obs_save_source(obs_source_t *source)
 	obs_data_set_int(source_data, "deinterlace_field_order", di_order);
 	obs_data_set_int(source_data, "monitoring_type",
 			 monitoring ? (int)OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT : (int)OBS_MONITORING_TYPE_NONE);
-	obs_data_set_int(source_data, "monitoring_enabled", monitoring);
+	obs_data_set_bool(source_data, "monitoring_enabled", monitoring);
 
 	if (canvas) {
 		obs_data_set_string(source_data, "canvas_uuid", obs_canvas_get_uuid(canvas));

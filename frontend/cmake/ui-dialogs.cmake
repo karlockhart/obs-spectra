@@ -47,8 +47,14 @@ target_sources(
     dialogs/SpectraAudioSetup.hpp
     dialogs/SpectraClipMaker.cpp
     dialogs/SpectraClipMaker.hpp
+    dialogs/SpectraFeaturesDialog.cpp
+    dialogs/SpectraFeaturesDialog.hpp
     dialogs/SpectraLoopSettings.cpp
+    dialogs/SpectraLoopArchive.cpp
+    dialogs/SpectraLoopArchive.hpp
     dialogs/SpectraLoopSettings.hpp
+    dialogs/SpectraScreenshotGallery.cpp
+    dialogs/SpectraScreenshotGallery.hpp
     dialogs/SpectraYouTubeUpload.cpp
     dialogs/SpectraYouTubeUpload.hpp
 )

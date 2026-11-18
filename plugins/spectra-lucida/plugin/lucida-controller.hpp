@@ -3,6 +3,7 @@
 #include <spectra-grab/frame-grabber.hpp>
 #include "recorder.hpp"
 #include "store.hpp"
+#include "lucida-events.hpp"
 #include "cloud.hpp"
 #include "lan.hpp"
 #include "lan-storage.hpp"
@@ -60,6 +61,8 @@ struct Settings {
 	bool followLoop = true;
 	QList<TagRule> tagRules = DefaultTagRules();
 	bool tolerateTypos = true;
+	/* Event pins and auto clips when lines match (lucida-events.hpp) */
+	EventSettings events;
 	/* Backing up to Prisma */
 	bool cloudEnabled = false;
 	QString cloudCredentials; /* empty: found automatically */

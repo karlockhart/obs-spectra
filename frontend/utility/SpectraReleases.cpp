@@ -28,6 +28,12 @@ static QString ZipSuffix(bool portable, Edition edition)
 	return suffix + QStringLiteral(".zip");
 }
 
+static QString InstallerSuffix(Edition edition)
+{
+	/* "-Portable" never comes before it, so it can't be confused with a zip */
+	return ZipSuffix(false, edition).chopped(4) + QStringLiteral("-Setup.exe");
+}
+
 QString Version::Base() const
 {
 	return QStringLiteral("%1.%2.%3").arg(major).arg(minor).arg(patch);
@@ -198,6 +204,28 @@ std::optional<Download> SelectDownload(const Release &release, bool portable, Ed
 		}
 	}
 	return d;
+}
+
+std::optional<Download> SelectInstaller(const Release &release, Edition edition)
+{
+	const QString suffix = InstallerSuffix(edition);
+	for (const Asset &asset : release.assets) {
+		if (!asset.name.endsWith(suffix, Qt::CaseInsensitive) || asset.url.isEmpty()) {
+			continue;
+		}
+		Download d;
+		d.zip = asset;
+		d.installer = true;
+		const QString checksumName = asset.name + QStringLiteral(".sha256");
+		for (const Asset &sum : release.assets) {
+			if (sum.name.compare(checksumName, Qt::CaseInsensitive) == 0) {
+				d.checksum = sum;
+				break;
+			}
+		}
+		return d;
+	}
+	return std::nullopt;
 }
 
 QString ParseSha256(const QByteArray &text)

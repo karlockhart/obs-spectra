@@ -8,9 +8,11 @@
 #include "lucida-dock.hpp"
 #include "lucida-host.hpp"
 #include "lucida-speech.hpp"
+#include "lucida-prisma.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <spectra-grab/spectra-features.hpp>
 #include <util/config-file.h>
 
 #include <QAction>
@@ -45,6 +47,11 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 {
 	switch (event) {
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING: {
+		if (!spectra::FeatureEnabled("Lucida")) {
+			/* Spectra > Features: no controller, dock, OCR or log this session */
+			blog(LOG_INFO, "[Lucida] Switched off in Spectra > Features");
+			break;
+		}
 		auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 		controller = new lucida::Controller(main);
 		dock = new lucida::Dock(controller);
@@ -74,6 +81,8 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 			blog(LOG_WARNING, "[Lucida] %s", message.toUtf8().constData());
 		});
 		controller->Start();
+		/* clips and archived loops to Prisma, when Spectra is connected */
+		lucida::PrismaExports::Get().Start(controller);
 		/* Developer aid: open the viewer straight away */
 		if (qEnvironmentVariableIsSet("SPECTRA_LUCIDA_VIEWER")) {
 			dock->OpenViewer();
@@ -94,6 +103,7 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 		}
 		break;
 	case OBS_FRONTEND_EVENT_EXIT:
+		lucida::PrismaExports::Get().Stop();
 		if (controller) {
 			controller->Stop();
 			controller->StopLan();

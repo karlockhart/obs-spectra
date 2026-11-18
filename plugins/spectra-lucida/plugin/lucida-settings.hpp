@@ -66,6 +66,12 @@ private:
 	QLineEdit *storageFolder;
 	QSpinBox *storageQuota;
 
+	/* Events */
+	QTableWidget *eventRules;
+	QSpinBox *eventClipBefore;
+	QSpinBox *eventClipAfter;
+	QSpinBox *eventCooldown;
+
 	/* Tags */
 	QTableWidget *rules;
 	QCheckBox *tolerateTypos;
@@ -91,6 +97,9 @@ private:
 	QWidget *SamplingPage(const Settings &s);
 	QWidget *ScreenshotsPage(const Settings &s);
 	QWidget *TagsPage(const Settings &s);
+	QWidget *EventsPage(const Settings &s);
+	void AddEventRule(const EventRule &rule);
+	QList<EventRule> EventRules() const;
 	QWidget *CloudPage(const Settings &s);
 	QWidget *NetworkPage(const Settings &s);
 	void FillPaired();

@@ -104,6 +104,9 @@ target_link_libraries(
 
 set_target_properties_obs(spectra-speech PROPERTIES FOLDER spectra)
 
+# whisper.cpp's license (MIT, ggml included) comes with every build
+target_add_resource(spectra-speech "${whisper_root}/LICENSE" "${OBS_DATA_DESTINATION}/spectra-speech/licenses/whisper.cpp")
+
 # Command-line transcription, to try models and settings on recordings:
 # spectra-transcribe <model.bin> <media> [--track N] [--start S] [--duration S] [--language xx] [--vad vad.bin] [--cpu]
 add_executable(spectra-transcribe tools/spectra-transcribe.cpp)

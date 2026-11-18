@@ -1,8 +1,13 @@
 #include "OBSBasic.hpp"
 
+#include <utility/SpectraPrisma.hpp>
 #include <dialogs/SpectraClipMaker.hpp>
 #include <dialogs/SpectraAudioSetup.hpp>
 #include <dialogs/SpectraLoopSettings.hpp>
+#include <dialogs/SpectraFeaturesDialog.hpp>
+#include <dialogs/SpectraScreenshotGallery.hpp>
+#include <dialogs/SpectraLoopArchive.hpp>
+#include <utility/SpectraFeatures.hpp>
 #include <utility/SpectraDefaults.hpp>
 #include <utility/SpectraSpeakerTracks.hpp>
 
@@ -50,6 +55,31 @@ static void ProcEditMoment(void *, calldata_t *cd)
 	});
 }
 
+/* Lucida's event triggers: void spectra_add_event(in string name, in string
+ * detail, in string source, in float time, in bool clip, in int before,
+ * in int after); time in seconds since the epoch */
+static void ProcAddEvent(void *, calldata_t *cd)
+{
+	const char *name = calldata_string(cd, "name");
+	if (!name || !*name) {
+		return;
+	}
+	const char *detail = calldata_string(cd, "detail");
+	const char *source = calldata_string(cd, "source");
+	const QString eventName = QString::fromUtf8(name);
+	const QString eventDetail = QString::fromUtf8(detail ? detail : "");
+	const QString eventSource = QString::fromUtf8(source && *source ? source : "lucida");
+	const QDateTime time = QDateTime::fromMSecsSinceEpoch((qint64)(calldata_float(cd, "time") * 1000.0));
+	const bool clip = calldata_bool(cd, "clip");
+	const int before = (int)calldata_int(cd, "before");
+	const int after = (int)calldata_int(cd, "after");
+	QMetaObject::invokeMethod(qApp, [=]() {
+		if (OBSBasic *main = editMomentTarget.data()) {
+			main->AddDetectedEvent(eventName, eventDetail, eventSource, time, clip, before, after);
+		}
+	});
+}
+
 void OBSBasic::InitSpectra()
 {
 	/* Existing profiles on x264 move to the hardware encoder at startup */
@@ -74,6 +104,11 @@ void OBSBasic::InitSpectra()
 			obs_get_proc_handler(),
 			"void spectra_edit_moment(in string path, in float offset, in float before, in float after)",
 			ProcEditMoment, nullptr);
+		proc_handler_add(
+			obs_get_proc_handler(),
+			"void spectra_add_event(in string name, in string detail, in string source, in float time, "
+			"in bool clip, in int before, in int after)",
+			ProcAddEvent, nullptr);
 	}
 	editMomentTarget = this;
 
@@ -101,6 +136,7 @@ void OBSBasic::InitSpectra()
 	}
 
 	spectraMenu->addAction(QTStr("Spectra.ClipMaker.Menu"), this, &OBSBasic::OpenClipMaker);
+	spectraMenu->addAction(QTStr("Spectra.Gallery.Menu"), this, &OBSBasic::OpenScreenshotGallery);
 
 	spectraMenu->addSeparator();
 	spectraMenu->addAction(QTStr("Spectra.Loop.OpenClips"), this, [this]() {
@@ -108,6 +144,7 @@ void OBSBasic::InitSpectra()
 		QDir().mkpath(dir);
 		QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 	});
+	spectraMenu->addAction(QTStr("Spectra.Archive.Menu"), this, &OBSBasic::OpenLoopArchive);
 	spectraMenu->addAction(QTStr("Spectra.Loop.OpenLoopFolder"), this, [this]() {
 		QString dir = loopRecorder->LoopDirectory();
 		QDir().mkpath(dir);
@@ -117,6 +154,10 @@ void OBSBasic::InitSpectra()
 	spectraMenu->addAction(QTStr("Spectra.Loop.Settings"), this, &OBSBasic::OpenLoopSettings);
 	spectraMenu->addAction(QTStr("Spectra.Audio.Menu"), this, &OBSBasic::OpenAudioSetup);
 	spectraMenu->addAction(QTStr("Spectra.ResetSources"), this, &OBSBasic::ResetSourcesToDefaults);
+	if (SpectraFeatures::AnyAvailable()) {
+		spectraMenu->addAction(QTStr("Spectra.Features.Menu"), this,
+				       [this]() { SpectraFeaturesDialog::Open(this); });
+	}
 
 	connect(loopRecorder, &LoopRecorder::activeChanged, this, &OBSBasic::UpdateLoopRecordingUI);
 	connect(loopRecorder, &LoopRecorder::armedChanged, this,
@@ -157,6 +198,11 @@ void OBSBasic::InitSpectra()
 			SysTrayNotify(msg, QSystemTrayIcon::Information);
 		}
 		QApplication::beep();
+		/* clip hotkey and Lucida's auto clips straight to Prisma */
+		if (config_get_bool(Config(), "SpectraLoop", "PrismaExportClips") && SpectraPrisma::Ready()) {
+			SpectraPrisma::Export(QStringLiteral("clips"), path, QFileInfo(path).completeBaseName(),
+					      QString(), QDateTime::currentDateTime(), -1.0, {});
+		}
 	});
 	connect(loopRecorder, &LoopRecorder::clipFailed, this, [this](const QString &error) {
 		QString msg = QTStr("Spectra.Loop.ClipFailed").arg(error);
@@ -325,6 +371,112 @@ void OBSBasic::OpenClipMakerAt(const QString &segment, double offset, double bef
 {
 	OpenClipMaker();
 	clipMaker->ShowMoment(segment, offset, before, after);
+}
+
+QString OBSBasic::EventName(int slot) const
+{
+	if (slot <= 0) {
+		return QString();
+	}
+	const std::string key = "EventName" + std::to_string(slot);
+	const char *name = config_get_string(Config(), "SpectraLoop", key.c_str());
+	return QString::fromUtf8(name ? name : "").trimmed();
+}
+
+void OBSBasic::UpdateEventHotkeyNames()
+{
+	for (int slot = 0; slot <= SpectraEvents::NamedSlots; slot++) {
+		if (!eventHotkeys[slot]) {
+			continue;
+		}
+		const QString name = EventName(slot);
+		const QString description =
+			slot == 0 ? QTStr("Spectra.Event.Hotkey")
+				  : (name.isEmpty() ? QTStr("Spectra.Event.HotkeyUnnamed").arg(slot)
+						    : QTStr("Spectra.Event.HotkeyNamed").arg(slot).arg(name));
+		obs_hotkey_set_description(eventHotkeys[slot], QT_TO_UTF8(description));
+	}
+}
+
+void OBSBasic::MarkEvent(int slot)
+{
+	if (!loopRecorder || !loopRecorder->Active()) {
+		blog(LOG_INFO, "[Spectra] Event hotkey: the loop recording isn't running");
+		SpectraToast(SpectraOverlay::Kind::Warning, QTStr("Spectra.Event.NotRecording"),
+			     QTStr("Spectra.Event.NotRecordingText"), "event");
+		return;
+	}
+	SpectraEvents::Event event;
+	event.time = QDateTime::currentDateTime();
+	event.name = EventName(slot);
+	if (slot > 0 && event.name.isEmpty()) {
+		event.name = QTStr("Spectra.Event.Numbered").arg(slot);
+	}
+	if (!SpectraEvents::Add(loopRecorder->LoopDirectory(), event)) {
+		blog(LOG_WARNING, "[Spectra] Could not save the event to %s",
+		     QT_TO_UTF8(SpectraEvents::FilePath(loopRecorder->LoopDirectory())));
+		return;
+	}
+	const QString shown = SpectraEvents::DisplayName(event);
+	blog(LOG_INFO, "[Spectra] Event marked: %s", QT_TO_UTF8(shown));
+	SpectraToast(SpectraOverlay::Kind::Info, QTStr("Spectra.Event.Marked"), shown, "event");
+	if (clipMaker) {
+		clipMaker->ReloadEvents();
+	}
+}
+
+void OBSBasic::AddDetectedEvent(const QString &name, const QString &detail, const QString &source,
+				const QDateTime &time, bool clip, int before, int after)
+{
+	if (!loopRecorder || !time.isValid()) {
+		return;
+	}
+	/* a chat line counts while the loop records it; a transcript arrives
+	 * after its segment, so it counts as long as the moment was recorded */
+	const bool late = source == "lucida-speech";
+	if (!loopRecorder->Active() && !late) {
+		return;
+	}
+	SpectraEvents::Event event;
+	event.time = time;
+	event.name = name;
+	event.source = source;
+	event.detail = detail;
+	if (!SpectraEvents::Add(loopRecorder->LoopDirectory(), event)) {
+		blog(LOG_WARNING, "[Spectra] Could not save Lucida's event to %s",
+		     QT_TO_UTF8(SpectraEvents::FilePath(loopRecorder->LoopDirectory())));
+	} else {
+		blog(LOG_INFO, "[Spectra] Lucida pinned the event %s", QT_TO_UTF8(name));
+	}
+	if (clip) {
+		blog(LOG_INFO, "[Spectra] Auto clip for %s: %d s before, %d s after", QT_TO_UTF8(name), before, after);
+		loopRecorder->ClipEndingAt(time.addSecs(after), std::max(1, before + after), name);
+	}
+	if (clipMaker) {
+		clipMaker->ReloadEvents();
+	}
+}
+
+void OBSBasic::OpenLoopArchive()
+{
+	if (!loopArchive) {
+		loopArchive = new SpectraLoopArchive(this, loopRecorder);
+		loopArchive->setAttribute(Qt::WA_DeleteOnClose);
+	}
+	loopArchive->show();
+	loopArchive->raise();
+	loopArchive->activateWindow();
+}
+
+void OBSBasic::OpenScreenshotGallery()
+{
+	if (!screenshotGallery) {
+		screenshotGallery = new SpectraScreenshotGallery(this);
+		screenshotGallery->setAttribute(Qt::WA_DeleteOnClose);
+	}
+	screenshotGallery->show();
+	screenshotGallery->raise();
+	screenshotGallery->activateWindow();
 }
 
 void OBSBasic::OpenLoopSettings()

@@ -26,6 +26,7 @@
 #include <utility/BasicOutputHandler.hpp>
 #include <utility/LoopRecorder.hpp>
 #include <utility/SpectraGamepad.hpp>
+#include <utility/SpectraEvents.hpp>
 #include <utility/SpectraOverlay.hpp>
 #include <utility/OBSCanvas.hpp>
 #include <utility/PreviewProgramSizeObserver.hpp>
@@ -43,6 +44,7 @@
 #include <util/util.hpp>
 
 #include <QAccessible>
+#include <QPointer>
 #include <QSystemTrayIcon>
 
 #include <deque>
@@ -61,6 +63,9 @@ class OBSLogViewer;
 class OBSMissingFiles;
 class OBSProjector;
 class SpectraClipMaker;
+class SpectraScreenshotGallery;
+class SpectraLoopArchive;
+class ScreenshotObj;
 class VolumeControl;
 #ifdef YOUTUBE_ENABLED
 class YouTubeAppDock;
@@ -219,7 +224,6 @@ class OBSBasic : public OBSMainWindow {
 	friend class OBSYoutubeActions;
 	friend struct BasicOutputHandler;
 	friend struct OBSStudioAPI;
-	friend class ScreenshotObj;
 
 	enum class MoveDir { Up, Down, Left, Right };
 
@@ -502,6 +506,8 @@ private:
 	obs_hotkey_id forceStreamingStopHotkey, splitFileHotkey, addChapterHotkey, saveReplayBufferHotkey;
 	obs_hotkey_pair_id loopHotkeys = 0;
 	obs_hotkey_id clipLastHotkey = 0;
+	/* Spectra's event hotkeys: [0] a plain "Event", [1..] the named ones */
+	obs_hotkey_id eventHotkeys[1 + SpectraEvents::NamedSlots] = {};
 
 	void InitHotkeys();
 	void CreateHotkeys();
@@ -887,6 +893,7 @@ private slots:
 	void TogglePreview();
 
 public:
+	void addSnapGuide(SnapGuide guide);
 	inline void GetDisplayRect(int &x, int &y, int &cx, int &cy)
 	{
 		x = previewX;
@@ -1066,12 +1073,16 @@ private:
 	QPointer<QAction> captureStatusAction;
 	QPointer<QAction> loopStatusAction;
 	QPointer<SpectraClipMaker> clipMaker;
+	QPointer<SpectraScreenshotGallery> screenshotGallery;
+	QPointer<SpectraLoopArchive> loopArchive;
 
 	void InitSpectra();
 	void UpdateLoopRecordingUI(bool active);
 	void UpdateLoopRecordingStatus();
 	void OpenLoopSettings();
 	void OpenClipMaker();
+	void OpenScreenshotGallery();
+	void OpenLoopArchive();
 	void OpenAudioSetup();
 	void ResetSourcesToDefaults();
 
@@ -1090,6 +1101,17 @@ public:
 	LoopRecorder *GetLoopRecorder() const { return loopRecorder; }
 	SpectraGamepadPTT *GetGamepadPTT() const { return gamepadPTT; }
 	SpectraOverlay *GetSpectraOverlay() const { return spectraOverlay; }
+	/* Marks an event in the loop recording now: slot 0 is a plain "Event",
+	 * 1.. the named events of the loop recording settings */
+	void MarkEvent(int slot);
+	/* The named event's name in the profile, "" when unnamed */
+	QString EventName(int slot) const;
+	/* After the names changed: the hotkeys' descriptions follow */
+	void UpdateEventHotkeyNames();
+	/* Lucida's event trigger matched a line (the spectra_add_event proc):
+	 * pins the event, and saves a clip around it when asked */
+	void AddDetectedEvent(const QString &name, const QString &detail, const QString &source, const QDateTime &time,
+			      bool clip, int before, int after);
 	void SpectraToast(SpectraOverlay::Kind kind, const QString &title, const QString &text = QString(),
 			  const QString &key = QString());
 	bool SpectraOverlayEnabled() const;
@@ -1408,7 +1430,7 @@ public:
 	 * -------------------------------------
 	 */
 private:
-	QPointer<QObject> screenshotData;
+	QPointer<ScreenshotObj> screenshotData;
 	std::string lastScreenshot;
 
 private slots:

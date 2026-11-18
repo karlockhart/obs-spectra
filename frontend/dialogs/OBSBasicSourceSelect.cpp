@@ -18,6 +18,7 @@
 
 #include "OBSApp.hpp"
 #include "OBSBasicSourceSelect.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <utility/ResizeSignaler.hpp>
 #include <utility/ThumbnailManager.hpp>
@@ -506,6 +507,11 @@ void OBSBasicSourceSelect::rebuildSourceTypeList()
 		uint32_t caps = obs_get_source_output_flags(type);
 
 		if ((caps & OBS_SOURCE_CAP_DISABLED) != 0) {
+			continue;
+		}
+		/* Spectra > Features can switch the browser off */
+		if (strcmp(unversioned_type, "browser_source") == 0 &&
+		    !SpectraFeatures::Enabled(SpectraFeatures::Feature::Browser)) {
 			continue;
 		}
 

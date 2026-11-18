@@ -19,6 +19,7 @@
 #include <monocypher-ed25519.h>
 #include <sqlite3.h>
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -31,6 +32,7 @@
 #include <QPainter>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QThread>
 
 #include <cmath>
@@ -1360,6 +1362,218 @@ int main(int argc, char **argv)
 	});
 
 	/* ---- Spectra: backing up to Prisma ---- */
+
+	Test("prisma_pairing_key_is_pkcs8_both_ways", [] {
+		/* the RFC 8032 key writes back exactly as Prisma's keygen did */
+		auto seed = Ed25519SeedFromPem(QString::fromLatin1(kTestPem));
+		CHECK(seed.has_value());
+		CHECK(Ed25519PemFromSeed(*seed) == QString::fromLatin1(kTestPem));
+		const std::array<uint8_t, 32> fresh = NewEd25519Seed();
+		CHECK((fresh != std::array<uint8_t, 32>{}));
+		auto back = Ed25519SeedFromPem(Ed25519PemFromSeed(fresh));
+		CHECK(back.has_value() && *back == fresh);
+	});
+
+	Test("prisma_pairs_with_a_passphrase", [] {
+		const std::array<uint8_t, 32> seed = *Ed25519SeedFromPem(QString::fromLatin1(kTestPem));
+		PairingInfo info{"Spectra on PC", "spectra", "PC", "33.0.1", {"spectra:read", "spectra:write"}};
+		QJsonObject sent;
+		int answer = 201;
+		auto fake = [&](const HttpRequest &r) {
+			CHECK(r.url == "https://prisma.test/v1/pairings/passphrase");
+			sent = QJsonDocument::fromJson(r.body).object();
+			if (answer != 201) {
+				return HttpResponse{answer, "{\"detail\": \"no\"}", {}, answer == 429 ? 600 : 0};
+			}
+			const QJsonObject ok{{"status", "approved"},
+					     {"url", "https://prisma.test"},
+					     {"audience", "prisma:test"},
+					     {"client_id", "c_pc"},
+					     {"kid", "k9"},
+					     {"tenant", "home"},
+					     {"scopes", QJsonArray{"spectra:read", "spectra:write"}}};
+			return HttpResponse{201, QJsonDocument(ok).toJson(), {}, 0};
+		};
+		PairingResult r = PairWithPassphrase("https://prisma.test/", "purple otter", info, seed, fake);
+		CHECK(r.outcome == PairingResult::Outcome::Paired);
+		CHECK(sent.value("passphrase").toString() == "purple otter");
+		CHECK(sent.value("app").toString() == "spectra");
+		const QByteArray x =
+			QByteArray::fromBase64(sent.value("public_key").toObject().value("x").toString().toLatin1(),
+					       QByteArray::Base64UrlEncoding);
+		CHECK(x.toHex() == kTestPublic);
+		std::optional<PrismaCredentials> creds = PrismaCredentials::FromJson(r.credentialsJson);
+		CHECK(creds.has_value() && creds->clientId == "c_pc" && creds->kid == "k9" && creds->seed == seed);
+		CHECK(r.tenant == "home" && r.scopes.size() == 2);
+
+		answer = 401;
+		CHECK(PairWithPassphrase("https://prisma.test", "wrong", info, seed, fake).outcome ==
+		      PairingResult::Outcome::WrongPassphrase);
+		answer = 403;
+		CHECK(PairWithPassphrase("https://prisma.test", "x", info, seed, fake).outcome ==
+		      PairingResult::Outcome::NoPassphrase);
+		answer = 429;
+		PairingResult locked = PairWithPassphrase("https://prisma.test", "x", info, seed, fake);
+		CHECK(locked.outcome == PairingResult::Outcome::Locked && locked.retryAfter == 600);
+	});
+
+	Test("prisma_pairs_with_a_code", [] {
+		const std::array<uint8_t, 32> seed = *Ed25519SeedFromPem(QString::fromLatin1(kTestPem));
+		PairingInfo info{"Spectra on PC", "spectra", "PC", "33.0.1", {"spectra:write"}};
+		int polls = 0;
+		bool sawPassphrase = false;
+		auto fake = [&](const HttpRequest &r) {
+			const QJsonObject body = QJsonDocument::fromJson(r.body).object();
+			sawPassphrase = sawPassphrase || body.contains("passphrase");
+			if (r.url.endsWith("/v1/pairings")) {
+				const QJsonObject o{{"device_code", "secret"},
+						    {"user_code", "BCDF-GHJK"},
+						    {"verification_uri_complete",
+						     "https://prisma.test/panel/pair?c=BCDF-GHJK"},
+						    {"interval", 5},
+						    {"expires_in", 600}};
+				return HttpResponse{201, QJsonDocument(o).toJson(), {}, 0};
+			}
+			CHECK(r.url.endsWith("/v1/pairings/poll") && body.value("device_code").toString() == "secret");
+			if (++polls < 2) {
+				return HttpResponse{200, "{\"status\": \"pending\"}", {}, 0};
+			}
+			const QJsonObject ok{{"status", "approved"},
+					     {"url", "https://prisma.test"},
+					     {"audience", "prisma:test"},
+					     {"client_id", "c_pc"},
+					     {"kid", "k9"}};
+			return HttpResponse{200, QJsonDocument(ok).toJson(), {}, 0};
+		};
+		PairingResult start = StartCodePairing("https://prisma.test", info, seed, fake);
+		CHECK(start.outcome == PairingResult::Outcome::Pending && start.userCode == "BCDF-GHJK");
+		CHECK(start.interval == 5 && !start.link.isEmpty());
+		CHECK(PollCodePairing("https://prisma.test", start.deviceCode, seed, fake).outcome ==
+		      PairingResult::Outcome::Pending);
+		PairingResult done = PollCodePairing("https://prisma.test", start.deviceCode, seed, fake);
+		CHECK(done.outcome == PairingResult::Outcome::Paired &&
+		      PrismaCredentials::FromJson(done.credentialsJson));
+		CHECK(!sawPassphrase);
+		auto gone = [](const HttpRequest &) {
+			return HttpResponse{404, "{}", {}, 0};
+		};
+		CHECK(PollCodePairing("https://prisma.test", "secret", seed, gone).outcome ==
+		      PairingResult::Outcome::Expired);
+	});
+
+	Test("prisma_export_keys", [] {
+		CHECK(ExportKey("C:/Loop/FiveM 2026-11-18 21-04-33.mkv") == "20261118-210433-FiveM");
+		CHECK(ExportKey("2026-11-18 21-04-33.mkv") == "20261118-210433");
+		CHECK(ExportKey("My clip (2).mp4") == "My_clip_2_");
+		CHECK(ExportKey("C:/Loop/GTA V 2026-11-18 21-04-33.mkv") == "20261118-210433-GTA_V");
+		CHECK(ExportKey(QString::fromUtf8("ÃtÃ© 2026-11-18 21-04-33.mkv")) == "20261118-210433-t");
+		CHECK(ExportKey(QString(200, 'x') + ".mp4").size() == 96);
+		CHECK(VideoContentType("a.MKV") == "video/x-matroska" && VideoContentType("a.mp4") == "video/mp4");
+		CHECK(VideoContentType("a.jxr").isEmpty());
+	});
+
+	Test("prisma_exports_a_video_in_parts_and_resumes", [] {
+		QTemporaryDir dir;
+		const QString path = QDir(dir.path()).filePath("FiveM 2026-11-18 21-04-33.mkv");
+		QByteArray content;
+		for (int i = 0; i < 2500; i++) {
+			content.append(char('a' + i % 26));
+		}
+		{
+			QFile f(path);
+			CHECK(f.open(QIODevice::WriteOnly) && f.write(content) == content.size());
+		}
+		const QString sha =
+			QString::fromLatin1(QCryptographicHash::hash(content, QCryptographicHash::Sha256).toHex());
+
+		std::map<int, QByteArray> stored{{1, content.left(1000)}}; /* part 1 arrived before a crash */
+		QJsonObject put;
+		int expiredOnce = 1;
+		int completes = 0;
+		bool alreadyThere = false;
+		const QString base = "/v1/spectra/sources/me/loops/20261118-210433-FiveM";
+		auto json = [](int status, const QJsonObject &o) {
+			return HttpResponse{status, QJsonDocument(o).toJson(), {}, 0};
+		};
+		auto fake = [&](const HttpRequest &r) -> HttpResponse {
+			const QUrl url(r.url);
+			if (url.path() == "/v1/token") {
+				return json(200, {{"access_token", "t"}, {"expires_in", 900}});
+			}
+			if (url.host() == "storage.test") {
+				for (const auto &[k, v] : r.headers) {
+					CHECK(k != "Authorization");
+				}
+				const int number = url.path().mid(1).toInt();
+				if (number == 2 && expiredOnce-- > 0) {
+					return HttpResponse{403, "expired", {}, 0};
+				}
+				stored[number] = r.body;
+				return HttpResponse{200, {}, {}, 0};
+			}
+			const QJsonObject body = QJsonDocument::fromJson(r.body).object();
+			if (r.method == "PUT" && url.path() == base) {
+				put = body;
+				if (alreadyThere) {
+					return json(200,
+						    {{"item", QJsonObject{{"key", "x"}}}, {"upload", QJsonValue()}});
+				}
+				QJsonArray have;
+				for (const auto &[n, bytes] : stored) {
+					have.append(n);
+				}
+				return json(200, {{"item", QJsonObject{}},
+						  {"upload", QJsonObject{{"part_size", 1000},
+									 {"parts", 3},
+									 {"uploaded_parts", have}}}});
+			}
+			if (url.path() == base + "/parts") {
+				QJsonArray parts;
+				for (const QJsonValue &n : body.value("numbers").toArray()) {
+					const int number = n.toInt();
+					const int offset = (number - 1) * 1000;
+					parts.append(QJsonObject{
+						{"number", number},
+						{"offset", offset},
+						{"size", std::min(1000, 2500 - offset)},
+						{"url", QStringLiteral("https://storage.test/%1").arg(number)}});
+				}
+				return json(200, {{"parts", parts}});
+			}
+			if (url.path() == base + "/complete") {
+				completes++;
+				return stored.size() == 3
+					       ? json(200, {{"key", "20261118-210433-FiveM"}, {"uploaded", true}})
+					       : json(409, {{"detail", "parts missing"}});
+			}
+			return json(404, {});
+		};
+
+		PrismaClient client(TestCredentials(), fake);
+		VideoExport video{"loops", ExportKey(path), path,
+				  QJsonObject{{"title", "FiveM"},
+					      {"started", "2026-11-18T21:04:33Z"},
+					      {"tags", QJsonArray{"", QString(80, 'x'), "a", "a"}}}};
+		qint64 lastDone = 0, lastTotal = 0;
+		PrismaResult r = ExportVideo(client, video, [&](qint64 done, qint64 total) {
+			lastDone = done;
+			lastTotal = total;
+		});
+		CHECK(r.Ok());
+		CHECK(put.value("sha256").toString() == sha && put.value("bytes").toInt() == 2500);
+		CHECK(put.value("content_type").toString() == "video/x-matroska");
+		/* within Prisma's limits: started in seconds, no empty or long tags, none twice */
+		CHECK(put.value("started").isDouble() && put.value("started").toDouble() == 1795035873.0);
+		CHECK((put.value("tags").toArray() == QJsonArray{QString(64, 'x'), "a"}));
+		CHECK(put.value("file_name").toString() == "FiveM 2026-11-18 21-04-33.mkv");
+		CHECK(stored.size() == 3 && stored[2] == content.mid(1000, 1000) && stored[3] == content.mid(2000));
+		CHECK(completes == 1 && lastDone == 2500 && lastTotal == 2500);
+
+		/* the same file again: nothing to send */
+		alreadyThere = true;
+		stored.clear();
+		CHECK(ExportVideo(client, video).Ok() && stored.empty());
+	});
 
 	Test("prisma_signs_its_token_request", [] {
 		auto seed = Ed25519SeedFromPem(QString::fromLatin1(kTestPem));

@@ -11,6 +11,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QStorageInfo>
 
 #include <chrono>
@@ -142,8 +144,46 @@ QString SpectraUpdateJob::QuoteArguments(const QStringList &args)
 	return quoted.join(' ');
 }
 
+/* The installer's AppId for each edition (frontend/spectra-installer/OBS-Spectra.iss) */
+#if defined(SPECTRA_ULTRALIGHT)
+static constexpr const char *SETUP_APP_ID = "OBS-Spectra-Ultralight";
+#elif defined(SPECTRA_LITE)
+static constexpr const char *SETUP_APP_ID = "OBS-Spectra-Lite";
+#else
+static constexpr const char *SETUP_APP_ID = "OBS-Spectra";
+#endif
+
+SpectraUpdateJob::SetupScope SpectraUpdateJob::InstalledBySetup(const QString &installDir)
+{
+	if (installDir.isEmpty()) {
+		return SetupScope::None;
+	}
+	const QString key = QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\%1_is1")
+				    .arg(QString::fromLatin1(SETUP_APP_ID));
+	const QString install = QDir::cleanPath(QDir::fromNativeSeparators(installDir));
+	for (auto [hive, scope] : {std::pair{"HKEY_CURRENT_USER", SetupScope::CurrentUser},
+				   std::pair{"HKEY_LOCAL_MACHINE", SetupScope::AllUsers}}) {
+		QSettings entry(QString::fromLatin1(hive) + key, QSettings::Registry64Format);
+		QString location = entry.value("InstallLocation").toString();
+		if (location.isEmpty()) {
+			continue;
+		}
+		location = QDir::cleanPath(QDir::fromNativeSeparators(location));
+		if (location.compare(install, Qt::CaseInsensitive) == 0) {
+			return scope;
+		}
+	}
+	return SetupScope::None;
+}
+
 QString SpectraUpdateJob::WorkDir() const
 {
+	if (download.installer) {
+		/* an install in Program Files can't be written next to: the installer
+		 * waits in the user's temp folder instead */
+		return QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+			.filePath(QStringLiteral("OBS-Spectra-Update"));
+	}
 	return installDir + QString::fromWCharArray(SpectraUpdater::WORK_SUFFIX);
 }
 
@@ -165,6 +205,19 @@ QString SpectraUpdateJob::Prepare()
 	}
 	if (UpdaterRunning()) {
 		return tr("An update is already being installed.");
+	}
+
+	if (download.installer) {
+		QDir work(WorkDir());
+		if (work.exists() && !work.removeRecursively()) {
+			return tr("Could not delete %1, left by an earlier update.")
+				.arg(QDir::toNativeSeparators(WorkDir()));
+		}
+		if (!QDir().mkpath(WorkDir())) {
+			return tr("OBS-Spectra can't create %1.").arg(QDir::toNativeSeparators(WorkDir()));
+		}
+		ownsWorkDir = true;
+		return QString();
 	}
 
 	std::wstring install = W(installDir);
@@ -374,6 +427,11 @@ QString SpectraUpdateJob::Work()
 		return tr("The download doesn't match its checksum (%1). Try again.").arg(download.checksum.name);
 	}
 
+	if (download.installer) {
+		/* the installer stays where it is until LaunchInstaller() runs it */
+		return QString();
+	}
+
 	Report(Stage::Extracting, 0, 0);
 	auto last = std::chrono::steady_clock::now();
 	std::string zipError =
@@ -427,6 +485,13 @@ void SpectraUpdateJob::Discard()
 		cancelled = true;
 		worker.join();
 	}
+	if (download.installer) {
+		if (ownsWorkDir) {
+			ownsWorkDir = false;
+			QDir(WorkDir()).removeRecursively();
+		}
+		return;
+	}
 	std::wstring install = W(installDir);
 	std::wstring work = SpectraUpdater::WorkDir(install);
 	if (ownsWorkDir && SpectraUpdater::Exists(SpectraUpdater::Join(work, SpectraUpdater::WORK_MARKER)) &&
@@ -476,6 +541,54 @@ bool SpectraUpdateJob::LaunchHelper(const QString &helperExe, const QString &ver
 		*error = tr("Could not start the updater (error %1).").arg(GetLastError());
 		return false;
 	}
+	AllowSetForegroundWindow(pi.dwProcessId);
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+	return true;
+}
+
+bool SpectraUpdateJob::LaunchInstaller(SetupScope scope, QString *error)
+{
+	const QString setup = QDir(WorkDir()).filePath(download.zip.name);
+	if (!QFileInfo::exists(setup)) {
+		*error = tr("The installer is missing from %1.").arg(QDir::toNativeSeparators(WorkDir()));
+		return false;
+	}
+
+	/* /SILENT shows the progress and asks nothing; /WAITPID and /RELAUNCH are
+	 * the installer's own (spectra-installer.iss): wait for this process to
+	 * exit, and start OBS-Spectra again when it is done */
+	QStringList args = {"/SILENT",
+			    "/SUPPRESSMSGBOXES",
+			    "/NORESTART",
+			    "/NOCANCEL",
+			    scope == SetupScope::AllUsers ? "/ALLUSERS" : "/CURRENTUSER",
+			    "/DIR=" + QDir::toNativeSeparators(installDir),
+			    "/WAITPID=" + QString::number(GetCurrentProcessId()),
+			    "/RELAUNCH",
+			    "/LOG=" + QDir::toNativeSeparators(QDir(WorkDir()).filePath("setup.log"))};
+
+	std::wstring exe = W(setup);
+	std::wstring cmd =
+		(QuoteArguments({QDir::toNativeSeparators(setup)}) + " " + QuoteArguments(args)).toStdWString();
+	std::wstring cwd = W(WorkDir());
+
+	STARTUPINFOW si = {sizeof(si)};
+	PROCESS_INFORMATION pi = {};
+	/* out of any job Spectra runs in, so closing Spectra doesn't end it. The
+	 * installer elevates itself when the install is for all users. */
+	BOOL ok = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, CREATE_BREAKAWAY_FROM_JOB, nullptr,
+				 cwd.c_str(), &si, &pi);
+	if (!ok) {
+		ok = CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, cwd.c_str(), &si,
+				    &pi);
+	}
+	if (!ok) {
+		*error = tr("Could not start the installer (error %1).").arg(GetLastError());
+		return false;
+	}
+	/* the installer is the update now: nothing here may delete it */
+	ownsWorkDir = false;
 	AllowSetForegroundWindow(pi.dwProcessId);
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);

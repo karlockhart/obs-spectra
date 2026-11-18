@@ -36,7 +36,9 @@ SpectraUpdateDialog::SpectraUpdateDialog(QWidget *parent, const Release &release
 					 const QString &installDir, const QString &helperExe_)
 	: QDialog(parent),
 	  release(release_),
-	  helperExe(helperExe_)
+	  helperExe(helperExe_),
+	  installRoot(installDir),
+	  installer(download.installer)
 {
 	setWindowTitle(QTStr("Spectra.Update.Title"));
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
@@ -168,6 +170,23 @@ void SpectraUpdateDialog::Install()
 		   args.end());
 
 	QString error;
+	if (installer) {
+		/* a copy the installer put in place: the new installer updates it */
+		if (!job->LaunchInstaller(SpectraUpdateJob::InstalledBySetup(installRoot), &error)) {
+			blog(LOG_WARNING, "[Spectra] Update to %s: %s", QT_TO_UTF8(release.tag), QT_TO_UTF8(error));
+			OnFinished(false, error);
+			job->Discard();
+			return;
+		}
+		blog(LOG_INFO, "[Spectra] Closing for the update to %s; the installer logs to %s",
+		     QT_TO_UTF8(release.tag), QT_TO_UTF8(QDir::toNativeSeparators(job->WorkDir() + "/setup.log")));
+		state = State::Launched;
+		QDialog::accept();
+		if (OBSBasic *main = OBSBasic::Get()) {
+			main->CloseForUpdate();
+		}
+		return;
+	}
 	if (!job->LaunchHelper(helperExe, release.tag, SpectraUpdateJob::QuoteArguments(args), &error)) {
 		blog(LOG_WARNING, "[Spectra] Update to %s: %s", QT_TO_UTF8(release.tag), QT_TO_UTF8(error));
 		OnFinished(false, error);

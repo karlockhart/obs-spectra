@@ -252,6 +252,9 @@ public:
 
 	/* Tags lines as they are added (and when a better reading replaces one) */
 	std::function<QStringList(const QString &body)> labeler;
+	/* Told of each new chat or speech line (wallTs: seconds since the epoch),
+	 * e.g. for Lucida's event triggers */
+	std::function<void(const QString &body, double wallTs, bool speech)> onNewLine;
 	/* Re-tags every line with labeler; returns how many changed */
 	int Relabel();
 	void SetVideo(const std::vector<long long> &lineIds, const VideoSpot &spot);

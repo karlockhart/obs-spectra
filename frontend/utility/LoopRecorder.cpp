@@ -211,6 +211,23 @@ QString LoopRecorder::ClipsDirectory() const
 	return QDir::cleanPath(dir);
 }
 
+QString LoopRecorder::OverflowDirectory() const
+{
+	if (!config_get_bool(main->Config(), LOOP_SECTION, "OverflowEnabled")) {
+		return QString();
+	}
+	const QString dir = ConfigString(main, "OverflowPath");
+	if (dir.isEmpty() || QDir::cleanPath(dir).compare(LoopDirectory(), Qt::CaseInsensitive) == 0) {
+		return QString();
+	}
+	return QDir::cleanPath(dir);
+}
+
+quint64 LoopRecorder::OverflowQuotaBytes() const
+{
+	return config_get_uint(main->Config(), LOOP_SECTION, "OverflowQuotaGB") * 1024ull * 1024ull * 1024ull;
+}
+
 quint64 LoopRecorder::QuotaBytes() const
 {
 	quint64 gb = config_get_uint(main->Config(), LOOP_SECTION, "QuotaGB");
@@ -439,6 +456,7 @@ void LoopRecorder::OnStarted()
 
 void LoopRecorder::OnStopped(int code, const QString &error)
 {
+	stoppedAt = QDateTime::currentDateTime();
 	if (!currentSegment.isEmpty()) {
 		sessionSegments << currentSegment;
 		currentSegment.clear();
@@ -651,8 +669,15 @@ void LoopRecorder::EnforceQuota()
 
 	const quint64 quota = QuotaBytes();
 	const QString current = QDir::cleanPath(currentSegment);
+	const QString overflow = OverflowDirectory();
 	bool removed = false;
 
+	/* With an overflow folder the oldest segments move there instead. If
+	 * moving falls behind (the drive is gone or full) and the loop grows a
+	 * tenth past its quota, they are deleted after all: the recording must
+	 * never fill its drive. */
+	const quint64 hardLimit = overflow.isEmpty() ? quota : quota + quota / 10;
+	QStringList toShip;
 	for (const QFileInfo &fi : files) {
 		if (total <= quota) {
 			break;
@@ -662,6 +687,25 @@ void LoopRecorder::EnforceQuota()
 			continue;
 		}
 		quint64 size = (quint64)fi.size();
+		if (!overflow.isEmpty() && total <= hardLimit) {
+			if (!shipping.contains(path)) {
+				toShip.append(path);
+			}
+			total -= size;
+			continue;
+		}
+		if (!overflow.isEmpty() && !shipWarned) {
+			shipWarned = true;
+			blog(LOG_WARNING,
+			     "[Spectra] Loop recording is past its quota and the overflow folder %s "
+			     "isn't keeping up: deleting the oldest segments",
+			     QT_TO_UTF8(overflow));
+			main->SpectraToast(SpectraOverlay::Kind::Warning, QTStr("Spectra.Loop.Overflow.Behind"),
+					   QDir::toNativeSeparators(overflow), "loop-overflow");
+		}
+		if (shipping.contains(path)) {
+			continue;
+		}
 		if (QFile::remove(path)) {
 			removed = true;
 			total -= size;
@@ -674,6 +718,153 @@ void LoopRecorder::EnforceQuota()
 	if (removed) {
 		emit segmentsChanged();
 	}
+	if (!toShip.isEmpty()) {
+		ShipSegments(toShip, overflow);
+	}
+}
+
+void LoopRecorder::ShipSegments(const QStringList &files, const QString &overflow)
+{
+	if (overflow.isEmpty()) {
+		/* switched off meanwhile: the quota deletes them as before */
+		return;
+	}
+	for (const QString &file : files) {
+		shipping.insert(file);
+	}
+	if (shipBusy) {
+		/* the running move takes the rest when it is done */
+		return;
+	}
+	shipBusy = true;
+	const QStringList batch(shipping.begin(), shipping.end());
+	const quint64 overflowQuota = OverflowQuotaBytes();
+	QPointer<LoopRecorder> self(this);
+	std::thread([self, batch, overflow, overflowQuota]() {
+		QStringList moved, failed;
+		QString error;
+		QStringList sorted = batch;
+		sorted.sort(Qt::CaseInsensitive);
+		if (!QDir().mkpath(overflow)) {
+			error = QStringLiteral("can't create %1").arg(QDir::toNativeSeparators(overflow));
+			failed = sorted;
+		}
+		for (const QString &file : error.isEmpty() ? sorted : QStringList()) {
+			const QString target = QDir(overflow).filePath(QFileInfo(file).fileName());
+			/* the same drive: a rename; another: copy, check, then delete */
+			bool ok = !QFileInfo::exists(target) && QFile::rename(file, target);
+			if (!ok) {
+				const QString part = target + QStringLiteral(".part");
+				QFile::remove(part);
+				ok = QFile::copy(file, part) && QFileInfo(part).size() == QFileInfo(file).size() &&
+				     (!QFileInfo::exists(target) || QFile::remove(target)) &&
+				     QFile::rename(part, target);
+				if (ok) {
+					QFile::remove(file);
+				} else {
+					QFile::remove(part);
+					error = QStringLiteral("could not move %1 to %2")
+							.arg(QFileInfo(file).fileName(),
+							     QDir::toNativeSeparators(overflow));
+				}
+			}
+			(ok ? moved : failed).append(file);
+		}
+
+		/* the overflow folder's own limit: oldest first */
+		if (overflowQuota > 0) {
+			QFileInfoList kept = QDir(overflow).entryInfoList({"*.mkv"}, QDir::Files, QDir::Name);
+			quint64 total = 0;
+			for (const QFileInfo &fi : kept) {
+				total += (quint64)fi.size();
+			}
+			for (const QFileInfo &fi : kept) {
+				if (total <= overflowQuota) {
+					break;
+				}
+				const quint64 size = (quint64)fi.size();
+				if (QFile::remove(fi.absoluteFilePath())) {
+					total -= size;
+				}
+			}
+		}
+
+		QMetaObject::invokeMethod(
+			qApp,
+			[self, moved, failed, error]() {
+				if (self) {
+					self->ShippingDone(moved, failed, error);
+				}
+			},
+			Qt::QueuedConnection);
+	}).detach();
+}
+
+void LoopRecorder::ShippingDone(const QStringList &moved, const QStringList &failed, const QString &error)
+{
+	shipBusy = false;
+	for (const QString &file : moved) {
+		shipping.remove(file);
+		sessionSegments.removeIf(
+			[&](const QString &s) { return QDir::cleanPath(s).compare(file, Qt::CaseInsensitive) == 0; });
+	}
+	for (const QString &file : failed) {
+		/* tried again on the next quota check */
+		shipping.remove(file);
+	}
+	if (!moved.isEmpty()) {
+		blog(LOG_INFO, "[Spectra] Moved %d loop segment(s) to the overflow folder", (int)moved.size());
+		shipWarned = false;
+		emit segmentsChanged();
+	}
+	if (!error.isEmpty()) {
+		blog(LOG_WARNING, "[Spectra] Loop overflow: %s", QT_TO_UTF8(error));
+	}
+	if (!shipping.isEmpty()) {
+		/* more queued up while this ran */
+		const QStringList rest(shipping.begin(), shipping.end());
+		shipping.clear();
+		ShipSegments(rest, OverflowDirectory());
+	}
+}
+
+bool LoopRecorder::IsLocked(const QString &file) const
+{
+	return lockedSegments.contains(QDir::cleanPath(file));
+}
+
+quint64 LoopRecorder::RemoveSegments(const QStringList &files, int *skipped)
+{
+	const QString current = QDir::cleanPath(CurrentSegment());
+	quint64 freed = 0;
+	int left = 0;
+	bool removed = false;
+	for (const QString &file : files) {
+		const QString path = QDir::cleanPath(file);
+		if ((!current.isEmpty() && path.compare(current, Qt::CaseInsensitive) == 0) ||
+		    lockedSegments.contains(path)) {
+			left++;
+			continue;
+		}
+		const quint64 size = (quint64)QFileInfo(path).size();
+		if (!QFile::remove(path)) {
+			left++;
+			continue;
+		}
+		freed += size;
+		removed = true;
+		sessionSegments.removeIf(
+			[&](const QString &s) { return QDir::cleanPath(s).compare(path, Qt::CaseInsensitive) == 0; });
+	}
+	if (skipped) {
+		*skipped = left;
+	}
+	if (removed) {
+		blog(LOG_INFO, "[Spectra] Removed %d loop segment(s), %.1f GB", (int)files.size() - left,
+		     freed / (1024.0 * 1024.0 * 1024.0));
+		emit segmentsChanged();
+	}
+	return freed;
 }
 
 void LoopRecorder::Lock(const QStringList &files)
@@ -708,7 +899,7 @@ void LoopRecorder::ClipLast(int seconds)
 	}
 
 	emit clipStarted(seconds);
-	pendingClips.push_back({seconds, QDateTime::currentDateTime()});
+	pendingClips.push_back({seconds, QDateTime::currentDateTime(), QString()});
 
 	if (Active()) {
 		/* Finalize the segment being written so the clip reaches "now". The
@@ -722,6 +913,30 @@ void LoopRecorder::ClipLast(int seconds)
 	ProcessPendingClips();
 }
 
+void LoopRecorder::ClipEndingAt(const QDateTime &end, int seconds, const QString &name)
+{
+	if (seconds <= 0) {
+		seconds = DefaultClipSeconds();
+	}
+	const qint64 wait = QDateTime::currentDateTime().msecsTo(end);
+	if (wait > 0) {
+		/* the end is still to come: record it first */
+		QTimer::singleShot(wait, this, [this, end, seconds, name]() { ClipEndingAt(end, seconds, name); });
+		return;
+	}
+	if (!Active() && sessionSegments.isEmpty()) {
+		emit clipFailed(QTStr("Spectra.Loop.Error.NothingRecorded"));
+		return;
+	}
+	emit clipStarted(seconds);
+	pendingClips.push_back({seconds, end, name});
+	if (Active() && main->SplitLoopRecording()) {
+		splitTimeout.start();
+		return;
+	}
+	ProcessPendingClips(false);
+}
+
 void LoopRecorder::ProcessPendingClips(bool segmentJustFinalized)
 {
 	std::vector<PendingClip> clips;
@@ -730,13 +945,19 @@ void LoopRecorder::ProcessPendingClips(bool segmentJustFinalized)
 	 * it runs slightly past the moment the clip was asked for. */
 	QDateTime finalized = QDateTime::currentDateTime();
 	for (const PendingClip &clip : clips) {
-		double lag = segmentJustFinalized ? std::max<qint64>(clip.requested.msecsTo(finalized), 0) / 1000.0
-						  : 0.0;
-		ExportClip(clip.seconds, clip.requested, lag);
+		/* without a new segment the footage ends where the loop stopped
+		 * (or now, while it runs) */
+		const QDateTime footageEnd = segmentJustFinalized || Active() || !stoppedAt.isValid() ? finalized
+												      : stoppedAt;
+		double lag = std::max<qint64>(clip.requested.msecsTo(footageEnd), 0) / 1000.0;
+		if (!segmentJustFinalized && !Active() && !stoppedAt.isValid()) {
+			lag = 0.0;
+		}
+		ExportClip(clip.seconds, clip.requested, lag, clip.name);
 	}
 }
 
-void LoopRecorder::ExportClip(int seconds, const QDateTime &requested, double lagSeconds)
+void LoopRecorder::ExportClip(int seconds, const QDateTime &requested, double lagSeconds, const QString &name)
 {
 	if (sessionSegments.isEmpty()) {
 		emit clipFailed(QTStr("Spectra.Loop.Error.NothingRecorded"));
@@ -751,8 +972,14 @@ void LoopRecorder::ExportClip(int seconds, const QDateTime &requested, double la
 
 	QString clipsDir = ClipsDirectory();
 	QDir().mkpath(clipsDir);
-	QString baseName = QStringLiteral("%1 %2").arg(label.isEmpty() ? QStringLiteral("Clip") : label,
-						       requested.toString("yyyy-MM-dd HH-mm-ss"));
+	/* an auto clip is named after its event, safe for a file name */
+	QString title = label.isEmpty() ? QStringLiteral("Clip") : label;
+	if (!name.isEmpty()) {
+		QString safe = name;
+		safe.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral("-"));
+		title = safe.trimmed().left(60);
+	}
+	QString baseName = QStringLiteral("%1 %2").arg(title, requested.toString("yyyy-MM-dd HH-mm-ss"));
 	QString outBase = QDir(clipsDir).filePath(baseName);
 
 	QPointer<LoopRecorder> self(this);

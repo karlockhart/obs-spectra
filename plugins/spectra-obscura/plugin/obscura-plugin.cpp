@@ -11,9 +11,11 @@
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <spectra-grab/spectra-features.hpp>
 #include <util/platform.h>
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QMainWindow>
 #include <QPointer>
 
@@ -110,10 +112,61 @@ static void OnHotkey(void *param, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 		Qt::QueuedConnection);
 }
 
+/* --- the frontend's screenshot gallery sends screenshots here. Procs on the
+ * global proc handler, so the frontend needs no link to this plugin and sees
+ * when Obscura isn't running (switched off, or not in this edition):
+ *   spectra_obscura_ready(out bool ready)
+ *   spectra_obscura_review(in string path)   detect chat, review, censor, save
+ *   spectra_obscura_upload(in string path)   upload the file as it is to imgbb */
+
+static void ProcReady(void *, calldata_t *cd)
+{
+	calldata_set_bool(cd, "ready", !controller.isNull());
+}
+
+static void ProcReview(void *, calldata_t *cd)
+{
+	const char *path = calldata_string(cd, "path");
+	if (!path || !*path) {
+		return;
+	}
+	const QString file = QString::fromUtf8(path);
+	QMetaObject::invokeMethod(
+		qApp,
+		[file] {
+			if (controller) {
+				controller->SubmitPath(file, QStringLiteral("open"));
+			}
+		},
+		Qt::QueuedConnection);
+}
+
+static void ProcUpload(void *, calldata_t *cd)
+{
+	const char *path = calldata_string(cd, "path");
+	if (!path || !*path) {
+		return;
+	}
+	const QString file = QString::fromUtf8(path);
+	QMetaObject::invokeMethod(
+		qApp,
+		[file] {
+			if (controller) {
+				controller->UploadFile(file);
+			}
+		},
+		Qt::QueuedConnection);
+}
+
 static void OnFrontendEvent(enum obs_frontend_event event, void *)
 {
 	switch (event) {
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING: {
+		if (!spectra::FeatureEnabled("Obscura")) {
+			/* Spectra > Features: no controller, hotkeys, dock or OCR this session */
+			blog(LOG_INFO, "[Obscura] Switched off in Spectra > Features");
+			break;
+		}
 		auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 		controller = new obscura::Controller(main);
 		captureHotkey = obs_hotkey_register_frontend(
@@ -132,6 +185,10 @@ static void OnFrontendEvent(enum obs_frontend_event event, void *)
 			}
 		});
 		controller->Start();
+		proc_handler_t *procs = obs_get_proc_handler();
+		proc_handler_add(procs, "void spectra_obscura_ready(out bool ready)", ProcReady, nullptr);
+		proc_handler_add(procs, "void spectra_obscura_review(in string path)", ProcReview, nullptr);
+		proc_handler_add(procs, "void spectra_obscura_upload(in string path)", ProcUpload, nullptr);
 		blog(LOG_INFO, "[Obscura] Started (output: %s)", controller->Cfg().outputDir.toUtf8().constData());
 		/* Developer aid: analyse a screenshot at startup */
 		const QString open = qEnvironmentVariable("SPECTRA_OBSCURA_OPEN");

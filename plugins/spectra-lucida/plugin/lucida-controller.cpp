@@ -5,6 +5,7 @@
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <spectra-grab/spectra-features.hpp>
 #include <util/config-file.h>
 
 #include <QDir>
@@ -91,6 +92,10 @@ void SetDefaults(config_t *c)
 	config_set_default_bool(c, SECTION, "FollowLoop", d.followLoop);
 	config_set_default_string(c, SECTION, "TagRules", TagRulesToJson(d.tagRules).toUtf8().constData());
 	config_set_default_bool(c, SECTION, "TolerateTypos", d.tolerateTypos);
+	config_set_default_string(c, SECTION, "EventRules", "[]");
+	config_set_default_int(c, SECTION, "EventClipBefore", d.events.clipBefore);
+	config_set_default_int(c, SECTION, "EventClipAfter", d.events.clipAfter);
+	config_set_default_int(c, SECTION, "EventCooldown", d.events.cooldown);
 	config_set_default_bool(c, SECTION, "CloudEnabled", d.cloudEnabled);
 	config_set_default_string(c, SECTION, "CloudCredentials", "");
 	config_set_default_bool(c, SECTION, "CloudFrames", d.cloudFrames);
@@ -181,6 +186,10 @@ Settings Settings::Load()
 	s.followLoop = config_get_bool(c, SECTION, "FollowLoop");
 	s.tagRules = TagRulesFromJson(ConfigString(c, SECTION, "TagRules"));
 	s.tolerateTypos = config_get_bool(c, SECTION, "TolerateTypos");
+	s.events.rules = EventRulesFromJson(ConfigString(c, SECTION, "EventRules"));
+	s.events.clipBefore = std::clamp((int)config_get_int(c, SECTION, "EventClipBefore"), 0, 600);
+	s.events.clipAfter = std::clamp((int)config_get_int(c, SECTION, "EventClipAfter"), 0, 600);
+	s.events.cooldown = std::clamp((int)config_get_int(c, SECTION, "EventCooldown"), 0, 3600);
 	s.cloudEnabled = config_get_bool(c, SECTION, "CloudEnabled");
 	s.cloudCredentials = ConfigString(c, SECTION, "CloudCredentials");
 	s.cloudFrames = config_get_bool(c, SECTION, "CloudFrames");
@@ -243,6 +252,10 @@ void Settings::Save() const
 	config_set_bool(c, SECTION, "FollowLoop", followLoop);
 	config_set_string(c, SECTION, "TagRules", TagRulesToJson(tagRules).toUtf8().constData());
 	config_set_bool(c, SECTION, "TolerateTypos", tolerateTypos);
+	config_set_string(c, SECTION, "EventRules", EventRulesToJson(events.rules).toUtf8().constData());
+	config_set_int(c, SECTION, "EventClipBefore", events.clipBefore);
+	config_set_int(c, SECTION, "EventClipAfter", events.clipAfter);
+	config_set_int(c, SECTION, "EventCooldown", events.cooldown);
 	config_set_bool(c, SECTION, "CloudEnabled", cloudEnabled);
 	config_set_string(c, SECTION, "CloudCredentials", cloudCredentials.toUtf8().constData());
 	config_set_bool(c, SECTION, "CloudFrames", cloudFrames);
@@ -272,7 +285,16 @@ void Settings::Save() const
 
 QString Settings::CloudCredentialsFile() const
 {
-	return CloudCredentialsPath(cloudCredentials, {QFileInfo(dbPath).absolutePath(), DefaultFolder()});
+	/* first where Connect to Prisma writes them (Lucida's settings folder) */
+	char *config = obs_module_config_path("");
+	const QString paired = QString::fromUtf8(config ? config : "");
+	bfree(config);
+	QStringList folders;
+	if (!paired.isEmpty()) {
+		folders << paired;
+	}
+	folders << QFileInfo(dbPath).absolutePath() << DefaultFolder();
+	return CloudCredentialsPath(cloudCredentials, folders);
 }
 
 QString Settings::LanDisplayName() const
@@ -370,6 +392,7 @@ bool LoopRecordingActive()
 
 Controller::Controller(QObject *parent) : QObject(parent), settings(Settings::Load())
 {
+	EventTriggers::Get().Apply(settings.events, settings.tolerateTypos);
 	loopDir = LoopDirectory();
 	clipsDir = ClipsDirectory();
 	looping = LoopRecordingActive();
@@ -523,6 +546,7 @@ void Controller::SetCarnivore(bool on)
 
 void Controller::ApplySettings(const Settings &s)
 {
+	EventTriggers::Get().Apply(s.events, s.tolerateTypos);
 	bool wasRunning = running;
 	const bool wasCarnivore = settings.recorder.carnivore;
 	/* the network service restarts only for its own settings, so other PCs
@@ -584,6 +608,9 @@ void Controller::Run(Settings s)
 	Tagger tagger(s.tagRules, s.tolerateTypos);
 	store.labeler = [&tagger](const QString &body) {
 		return tagger.Tags(body);
+	};
+	store.onNewLine = [](const QString &body, double wallTs, bool speech) {
+		EventTriggers::Get().Check(body, wallTs, speech);
 	};
 
 	/* per-game profiles: their games are read too, each its own way */
@@ -1198,7 +1225,7 @@ void Controller::RunStorage(Settings s, std::shared_ptr<lan::Service> service)
 		}
 	}
 	lan::StorageClient client(*service, LanStorageStatePath());
-	client.speech = s.speech.enabled && s.speech.onStorage;
+	client.speech = s.speech.enabled && s.speech.onStorage && spectra::FeatureEnabled("Speech");
 	/* transcripts from the storage PC are tagged as this PC's own are */
 	Tagger tagger(s.tagRules, s.tolerateTypos);
 	if (store) {

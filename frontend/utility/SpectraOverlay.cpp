@@ -1,4 +1,5 @@
 #include "SpectraOverlay.hpp"
+#include <utility/SpectraFeatures.hpp>
 
 #include <widgets/OBSBasic.hpp>
 
@@ -229,17 +230,20 @@ SpectraOverlay::Kind SpectraOverlay::KindFromName(const QString &name)
 
 const QList<SpectraOverlay::Category> &SpectraOverlay::Categories()
 {
-	static const QList<Category> categories = {
-		{"ShowLoop", "Spectra.Overlay.Show.Loop"},
-		{"ShowClips", "Spectra.Overlay.Show.Clips"},
-		{"ShowScreenshots", "Spectra.Overlay.Show.Screenshots"},
-#ifndef SPECTRA_LITE
-		{"ShowObscura", "Spectra.Overlay.Show.Obscura"},
-#endif
-		{"ShowUploads", "Spectra.Overlay.Show.Uploads"},
-		{"ShowCapture", "Spectra.Overlay.Show.Capture"},
-		{"ShowErrors", "Spectra.Overlay.Show.Errors"},
-	};
+	static const QList<Category> categories = [] {
+		QList<Category> list = {
+			{"ShowLoop", "Spectra.Overlay.Show.Loop"},
+			{"ShowClips", "Spectra.Overlay.Show.Clips"},
+			{"ShowScreenshots", "Spectra.Overlay.Show.Screenshots"},
+		};
+		if (SpectraFeatures::Enabled(SpectraFeatures::Feature::Obscura)) {
+			list.append(Category{"ShowObscura", "Spectra.Overlay.Show.Obscura"});
+		}
+		list.append(Category{"ShowUploads", "Spectra.Overlay.Show.Uploads"});
+		list.append(Category{"ShowCapture", "Spectra.Overlay.Show.Capture"});
+		list.append(Category{"ShowErrors", "Spectra.Overlay.Show.Errors"});
+		return list;
+	}();
 	return categories;
 }
 

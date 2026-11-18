@@ -33,6 +33,8 @@ private:
 
 	SpectraReleases::Release release;
 	QString helperExe;
+	QString installRoot;
+	bool installer = false;
 	SpectraUpdateJob *job;
 	State state = State::Working;
 

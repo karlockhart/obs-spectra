@@ -1,4 +1,5 @@
 #include "AutoConfigStartPage.hpp"
+#include <utility/SpectraFeatures.hpp>
 #include "AutoConfig.hpp"
 #include "ui_AutoConfigStartPage.h"
 
@@ -13,11 +14,11 @@ AutoConfigStartPage::AutoConfigStartPage(QWidget *parent) : QWizardPage(parent),
 	ui->setupUi(this);
 	setTitle(QTStr("Basic.AutoConfig.StartPage"));
 	setSubTitle(QTStr("Basic.AutoConfig.StartPage.SubTitle"));
-#ifdef SPECTRA_ULTRALIGHT
-	/* Ultralight records only (AutoConfig starts on Recording) */
-	ui->prioritizeStreaming->hide();
-	ui->prioritizeRecording->setChecked(true);
-#endif
+	if (!SpectraFeatures::Enabled(SpectraFeatures::Feature::Streaming)) {
+		/* Recording only (AutoConfig starts on Recording) */
+		ui->prioritizeStreaming->hide();
+		ui->prioritizeRecording->setChecked(true);
+	}
 
 	OBSBasic *main = OBSBasic::Get();
 	if (main->VCamEnabled()) {

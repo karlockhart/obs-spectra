@@ -23,16 +23,29 @@ jobs:
   create-release:
     name: Create Release 🛫
     if: github.ref_type == 'tag'
-    runs-on: ubuntu-26.04
+    # Windows: signtool, the Artifact Signing dlib and Inno Setup only run there
+    runs-on: windows-2025-vs2026
     needs: build-project
+    # The Azure sign-in trusts this environment's OIDC token (subject
+    # repo:karlockhart/obs-spectra:environment:release), whatever the tag is
+    environment:
+      name: release
     permissions:
       contents: write
+      id-token: write
     defaults:
       run:
-        shell: bash
+        shell: pwsh
+    env:
+      # Signing is on once the repository has the Azure variables (README: Releases)
+      SIGN: ${{ vars.AZURE_CLIENT_ID != '' }}
+      SPECTRA_SIGNING_ENDPOINT: ${{ vars.SPECTRA_SIGNING_ENDPOINT }}
+      SPECTRA_SIGNING_ACCOUNT: ${{ vars.SPECTRA_SIGNING_ACCOUNT }}
+      SPECTRA_SIGNING_PROFILE: ${{ vars.SPECTRA_SIGNING_PROFILE }}
     steps:
       - name: Check Release Tag ☑️
         id: check
+        shell: bash
         run: |
           : Check Release Tag ☑️
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
@@ -50,12 +63,22 @@ jobs:
             echo 'validTag=false' >> $GITHUB_OUTPUT
           fi
 
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: fromJSON(steps.check.outputs.validTag)
+        with:
+          path: repo
+          sparse-checkout: |
+            .github/scripts
+            frontend/spectra-installer
+            frontend/cmake/windows
+
       - name: Download Build Artifacts 📥
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: fromJSON(steps.check.outputs.validTag)
         with:
           pattern: obs-studio-windows-x64-*
           merge-multiple: true
+          path: full
 
       - name: Download Lite Build Artifacts 📥
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -73,52 +96,62 @@ jobs:
           merge-multiple: true
           path: ultralight
 
+      - name: Sign In to Azure 🔑
+        if: fromJSON(steps.check.outputs.validTag) && env.SIGN == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          # the identity may only sign with the certificate profile: it sees no subscription
+          allow-no-subscriptions: true
+
+      - name: Set Up Inno Setup and the VC++ Runtime 🧰
+        if: fromJSON(steps.check.outputs.validTag)
+        run: |
+          : Set Up Inno Setup and the VC++ Runtime 🧰
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Inno Setup' }
+          }
+          # Microsoft's latest supported Visual C++ runtime, bundled for PCs without it
+          Invoke-WebRequest -Uri 'https://aka.ms/vc14/vc_redist.x64.exe' -OutFile vc_redist.x64.exe -UseBasicParsing
+
       - name: Package Release 📦
         if: fromJSON(steps.check.outputs.validTag)
         run: |
           : Package Release 📦
-          if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
-
           # Every release ships OBS-Spectra, Lite and Ultralight, each as an
-          # installed-style zip and a portable one. All leave out debug symbols
-          # and Spectra's own test programs; the obs-*-test encoder probes stay
-          # because OBS runs them at startup.
-          version='${{ steps.check.outputs.version }}'
-
-          # package <build zip> <release zip name without .zip>
-          package() {
-            rm -rf package
-            mkdir package
-            unzip -q "$1" -d package
-            rm -f "$1"
-            find package -name '*.pdb' -delete
-            find package -name '*-tests.exe' -delete
-            rm -rf package/data/*-tests
-
-            (cd package && zip -qr9 "${{ github.workspace }}/$2.zip" .)
-            # OBS-Spectra updates itself in place with bin/64bit/spectra-updater.exe
-            touch package/portable_mode.txt
-            (cd package && zip -qr9 "${{ github.workspace }}/$2-Portable.zip" .)
-            rm -rf package
+          # installed-style zip, a portable one and an installer; signed when
+          # the Azure sign-in is set up
+          $version = '${{ steps.check.outputs.version }}'
+          $sign = $env:SIGN -eq 'true'
+          foreach ($edition in @(
+              @{ Name = 'Full'; Dir = 'full' },
+              @{ Name = 'Lite'; Dir = 'lite' },
+              @{ Name = 'Ultralight'; Dir = 'ultralight' })) {
+            $zip = Get-ChildItem -Path $edition.Dir -Filter 'obs-studio-*-windows-x64.zip' | Select-Object -First 1
+            if (-not $zip) { throw "No $($edition.Name) build" }
+            ./repo/.github/scripts/Package-Spectra-Windows.ps1 -Build $zip.FullName -Edition $edition.Name `
+              -Version $version -OutputDir release -Redist vc_redist.x64.exe -Sign:$sign
           }
-
-          package obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64"
-          # No edition's names may end like another's (see SpectraReleases.cpp)
-          package lite/obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64-Lite"
-          package ultralight/obs-studio-*-windows-x64.zip "OBS-Spectra-${version}-Windows-x64-Ultralight"
 
       - name: Generate Checksums 🪪
         if: fromJSON(steps.check.outputs.validTag)
+        shell: bash
         run: |
           : Generate Checksums 🪪
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
 
-          cd ${{ github.workspace }}
-          echo "### Checksums" > CHECKSUMS.txt
-          for file in *.zip; do
+          cd release
+          echo "### Checksums" > ../CHECKSUMS.txt
+          for file in *.zip *-Setup.exe; do
             sha256sum "${file}" > "${file}.sha256"
-            echo "    ${file}: $(cut -d " " -f 1 "${file}.sha256")" >> CHECKSUMS.txt
+            echo "    ${file}: $(cut -d " " -f 1 "${file}.sha256")" >> ../CHECKSUMS.txt
           done
+          if [[ "${SIGN}" != 'true' ]]; then
+            printf '\nThese builds are not code signed.\n' >> ../CHECKSUMS.txt
+          fi
 
       - name: Create Release 🛫
         if: fromJSON(steps.check.outputs.validTag)
@@ -129,16 +162,9 @@ jobs:
           tag_name: ${{ steps.check.outputs.version }}
           name: OBS-Spectra ${{ steps.check.outputs.version }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
+          fail_on_unmatched_files: true
           files: |
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64.zip.sha256
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Portable.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Portable.zip.sha256
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite.zip.sha256
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite-Portable.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Lite-Portable.zip.sha256
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight.zip.sha256
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight-Portable.zip
-            ${{ github.workspace }}/OBS-Spectra-${{ steps.check.outputs.version }}-Windows-x64-Ultralight-Portable.zip.sha256
+            release/*.zip
+            release/*.zip.sha256
+            release/*-Setup.exe
+            release/*-Setup.exe.sha256

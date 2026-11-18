@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QHash>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
@@ -30,6 +31,12 @@ public:
 	QString LoopDirectory() const;
 	QString ClipsDirectory() const;
 	quint64 QuotaBytes() const;
+	/* Where the disk quota moves the oldest segments instead of deleting
+	 * them ("OverflowEnabled", "OverflowPath"); empty when it deletes them */
+	QString OverflowDirectory() const;
+	/* The overflow folder's own limit, oldest deleted first; 0: no limit
+	 * (until its drive is full) */
+	quint64 OverflowQuotaBytes() const;
 	int SegmentSeconds() const;
 	int DefaultClipSeconds() const;
 	bool AutoStartEnabled() const;
@@ -82,6 +89,10 @@ public:
 
 	/* Saves the last `seconds` of the loop as one file in the clips folder. */
 	void ClipLast(int seconds);
+	/* Saves the `seconds` of the loop that end at `end` (waiting for it when
+	 * it is still to come), named after `name` when one is given: Lucida's
+	 * auto clips */
+	void ClipEndingAt(const QDateTime &end, int seconds, const QString &name = QString());
 
 	/* Current disk usage of the loop folder, in bytes. */
 	quint64 UsedBytes() const;
@@ -99,6 +110,12 @@ public:
 	/* Locked segments are never deleted by the disk quota */
 	void Lock(const QStringList &files);
 	void Unlock(const QStringList &files);
+	bool IsLocked(const QString &file) const;
+
+	/* Deletes segments for good (Spectra > Loop Recordings), never the one
+	 * being written or a locked one (a clip is being saved from it). Returns
+	 * the bytes freed; *skipped counts what was left. */
+	quint64 RemoveSegments(const QStringList &files, int *skipped = nullptr);
 
 	/* Re-reads settings, e.g. after the settings dialog was accepted. */
 	void SettingsChanged();
@@ -126,7 +143,10 @@ private:
 	struct PendingClip {
 		int seconds;
 		QDateTime requested;
+		QString name;
 	};
+	/* when the last loop recording stopped, for clips that end before it */
+	QDateTime stoppedAt;
 
 	OBSBasic *main;
 	QTimer processTimer;
@@ -152,6 +172,10 @@ private:
 	QStringList sessionSegments;
 	std::vector<PendingClip> pendingClips;
 	QHash<QString, int> lockedSegments;
+	/* segments on their way to the overflow folder, and whether a move runs */
+	QSet<QString> shipping;
+	bool shipBusy = false;
+	bool shipWarned = false;
 
 	bool armed = false;
 	bool autoStarted = false;
@@ -165,7 +189,9 @@ private:
 	void CheckWriting();
 	void UpdateCapture();
 	void EnforceQuota();
+	void ShipSegments(const QStringList &files, const QString &overflow);
+	void ShippingDone(const QStringList &moved, const QStringList &failed, const QString &error);
 	void ProcessPendingClips(bool segmentJustFinalized = true);
-	void ExportClip(int seconds, const QDateTime &requested, double lagSeconds);
+	void ExportClip(int seconds, const QDateTime &requested, double lagSeconds, const QString &name = QString());
 	QString LabelForPattern(const QString &pattern) const;
 };
