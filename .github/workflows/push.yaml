@@ -1,11 +1,14 @@
 name: Push
 run-name: ${{ github.ref_name }} push run 🚀
 on:
+  # Not master: everything reaches it through a pull request, whose build
+  # already compiled the merge result, so building it again on the merge
+  # only repeats that. Version tags build the release (the version is
+  # compiled in from the tag, so the PR's binaries can't be shipped).
   push:
     paths-ignore:
       - '**.md'
     branches:
-      - master
       - 'release/**'
     tags:
       - '*'
