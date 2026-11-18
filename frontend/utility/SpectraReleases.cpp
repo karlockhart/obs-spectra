@@ -99,6 +99,20 @@ bool IsReleaseTag(const QString &version)
 	return re.match(version).hasMatch();
 }
 
+QString StampedVersion(const QString &compiled, const QString &stamp)
+{
+	const QString tag = stamp.trimmed();
+	if (!IsReleaseTag(tag)) {
+		return compiled;
+	}
+	const Version built = ParseVersion(compiled);
+	const Version stamped = ParseVersion(tag);
+	if (!built.valid() || built.Base() != stamped.Base()) {
+		return compiled;
+	}
+	return tag;
+}
+
 Channel ChannelFromSetting(const QString &setting, const QString &currentVersion)
 {
 	if (setting == QLatin1String("rc")) {

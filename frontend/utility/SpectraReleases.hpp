@@ -41,6 +41,15 @@ Version ParseVersion(const QString &version);
  * replace themselves with a download. */
 bool IsReleaseTag(const QString &version);
 
+/* The release stamp a release package carries next to obs-spectra.exe
+ * (bin/64bit/obs-spectra-release.txt, written by Package-Spectra-Windows.ps1).
+ * A release can be packaged from a pull request's build, which compiled in a
+ * development version like 33.0.1-3-g3588d94; the stamp says which release
+ * it is. It counts only when it is a release tag of the same OBS version the
+ * build was compiled from, so a stray or stale stamp changes nothing. */
+constexpr const char *RELEASE_STAMP = "obs-spectra-release.txt";
+QString StampedVersion(const QString &compiled, const QString &stamp);
+
 enum class Channel { Stable, ReleaseCandidates };
 
 /* The "Spectra" "UpdateChannel" setting: "stable" or "rc". Unset, a release

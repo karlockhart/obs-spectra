@@ -70,6 +70,19 @@ Get-ChildItem -Path $tree -Recurse -File -Include *.pdb, *-tests.exe | Remove-It
 Get-ChildItem -Path (Join-Path $tree 'data') -Directory -Filter '*-tests' -ErrorAction SilentlyContinue |
     Remove-Item -Recurse -Force
 Get-ChildItem -Path (Join-Path $tree '*') -File -Include portable_mode*, obs_portable_mode* | Remove-Item -Force
+
+# The release this is. A build from a pull request compiled in a development
+# version (33.0.1-3-g3588d94); OBS-Spectra reports the stamp instead when it
+# is a release of the same OBS version (SpectraReleases::StampedVersion), so
+# the build must be of the tag's OBS version.
+$tagBase = ($Version -split '-')[0]
+if ((Split-Path -Leaf $Build) -match '^obs-studio-(?<built>.+)-windows-x64\.zip$') {
+    $builtBase = ($Matches['built'] -split '-')[0]
+    if ($builtBase -ne $tagBase) {
+        throw "The build is of OBS $builtBase, but $Version is a release of OBS $tagBase"
+    }
+}
+Set-Content -Path (Join-Path $tree 'bin\64bit\obs-spectra-release.txt') -Value $Version -NoNewline -Encoding ascii
 Write-Host '::endgroup::'
 
 $signCommand = $null
