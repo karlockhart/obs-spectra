@@ -8,22 +8,39 @@ if(NOT OS_WINDOWS OR NOT CMAKE_VS_PLATFORM_NAME STREQUAL x64)
   return()
 endif()
 
-# onnxruntime (MIT) - prebuilt release matching RapidOCR's tested version
+# onnxruntime (MIT) - Microsoft's prebuilt release matching RapidOCR's tested
+# version, from NuGet: the GitHub release it used to come from is gone. Its
+# onnxruntime.dll, headers, license and notices are the same files the
+# release zip had; the package has no import library, so one is made from
+# onnxruntime.def (the DLL's two exports).
 spectra_fetch(
-  onnxruntime
-  URL https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-win-x64-1.30.0.zip
-  SHA256 c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949
+  onnxruntime-nuget
+  URL https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.30.0/microsoft.ml.onnxruntime.1.30.0.nupkg
+  SHA256 30df119bd9164eaa187666d93147448fdd4a9a1a3caf83f1505daf7af2d1c5d2
   EXTRACT
 )
-set(onnxruntime_root "${SPECTRA_ONNXRUNTIME_PATH}/onnxruntime-win-x64-1.30.0")
+set(onnxruntime_root "${SPECTRA_ONNXRUNTIME_NUGET_PATH}")
+set(onnxruntime_dll "${onnxruntime_root}/runtimes/win-x64/native/onnxruntime.dll")
+set(onnxruntime_implib "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime.lib")
+if(NOT EXISTS "${onnxruntime_implib}" OR "${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime.def" IS_NEWER_THAN "${onnxruntime_implib}")
+  execute_process(
+    COMMAND "${CMAKE_AR}" /nologo /machine:x64 "/def:${CMAKE_CURRENT_SOURCE_DIR}/onnxruntime.def" "/out:${onnxruntime_implib}"
+    RESULT_VARIABLE implib_result
+    OUTPUT_VARIABLE implib_output
+    ERROR_VARIABLE implib_output
+  )
+  if(NOT implib_result EQUAL 0)
+    message(FATAL_ERROR "Could not make onnxruntime.lib: ${implib_output}")
+  endif()
+endif()
 
 add_library(Spectra::onnxruntime SHARED IMPORTED)
 set_target_properties(
   Spectra::onnxruntime
   PROPERTIES
-    IMPORTED_LOCATION "${onnxruntime_root}/lib/onnxruntime.dll"
-    IMPORTED_IMPLIB "${onnxruntime_root}/lib/onnxruntime.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${onnxruntime_root}/include"
+    IMPORTED_LOCATION "${onnxruntime_dll}"
+    IMPORTED_IMPLIB "${onnxruntime_implib}"
+    INTERFACE_INCLUDE_DIRECTORIES "${onnxruntime_root}/build/native/include"
 )
 
 # RapidOCR 3.9.2 default models (Apache-2.0): PP-OCRv6 small det/rec
@@ -74,14 +91,13 @@ add_custom_command(
   POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${OBS_OUTPUT_DIR}/$<CONFIG>/${OBS_EXECUTABLE_DESTINATION}"
   COMMAND
-    "${CMAKE_COMMAND}" -E copy_if_different "${onnxruntime_root}/lib/onnxruntime.dll"
-    "${onnxruntime_root}/lib/onnxruntime_providers_shared.dll"
+    "${CMAKE_COMMAND}" -E copy_if_different "${onnxruntime_dll}"
     "${OBS_OUTPUT_DIR}/$<CONFIG>/${OBS_EXECUTABLE_DESTINATION}/"
   COMMENT "Copy onnxruntime to the executable directory"
   VERBATIM
 )
 install(
-  FILES "${onnxruntime_root}/lib/onnxruntime.dll" "${onnxruntime_root}/lib/onnxruntime_providers_shared.dll"
+  FILES "${onnxruntime_dll}"
   DESTINATION "${OBS_EXECUTABLE_DESTINATION}"
   COMPONENT Runtime
 )

@@ -185,7 +185,7 @@ Their license files come with every build, in `data/spectra-vision/licenses/` an
 
 | Component | Version | License | Used for |
 | --- | --- | --- | --- |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) by Microsoft | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). |
+| [ONNX Runtime](https://onnxruntime.ai) by Microsoft, from its [NuGet package](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime/1.30.0) | 1.30.0 | MIT | Running the OCR models (`spectra-vision`). |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) ONNX models by RapidAI: PP-OCRv6 small detection and recognition models | 3.9.2 | Apache-2.0 | Reading text on screen. The models are [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)'s (PaddlePaddle, Apache-2.0), converted to ONNX by RapidAI and downloaded from [ModelScope](https://www.modelscope.cn/models/RapidAI/RapidOCR). |
 | [SQLite](https://www.sqlite.org) | 3.53.4 | Public domain | Lucida's chat log, with full-text search (FTS5). |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) by the ggml authors, with [ggml](https://github.com/ggml-org/ggml) built in | 1.9.4 | MIT | Speech recognition (`spectra-speech`): Lucida's transcripts and the Clip Maker's captions, on the CPU or, with Vulkan, the graphics card. |
