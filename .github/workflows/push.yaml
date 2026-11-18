@@ -228,7 +228,6 @@ jobs:
       - name: Set Up Inno Setup and the VC++ Runtime 🧰
         if: fromJSON(steps.check.outputs.validTag)
         run: |
-          : Set Up Inno Setup and the VC++ Runtime 🧰
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             choco install innosetup --no-progress -y
@@ -240,7 +239,6 @@ jobs:
       - name: Package Release 📦
         if: fromJSON(steps.check.outputs.validTag)
         run: |
-          : Package Release 📦
           # Every release ships OBS-Spectra, and Lite and Ultralight when they
           # were built, each as an installed-style zip, a portable one and an
           # installer; signed when the Azure sign-in is set up
